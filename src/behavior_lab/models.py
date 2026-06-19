@@ -92,8 +92,8 @@ class LogisticFormulaHypothesis:
         self,
         rows: list[dict[str, Any]],
         *,
-        learning_rate: float = 0.04,
-        iterations: int = 650,
+        learning_rate: float = 0.05,
+        iterations: int = 160,
         l2: float = 0.01,
     ) -> FittedLogisticFormula:
         if not rows:
@@ -214,8 +214,9 @@ def fit_two_state_model(rows: list[dict[str, Any]]) -> TwoStateModeModel:
 class SymbolicSearch:
     """Small symbolic-regression-style search over safe formula terms."""
 
-    def __init__(self, max_terms: int = 6):
+    def __init__(self, max_terms: int = 5, candidate_limit: int = 14):
         self.max_terms = max_terms
+        self.candidate_limit = candidate_limit
 
     def candidate_terms(self, rows: list[dict[str, Any]]) -> list[str]:
         variables = numeric_features(rows)
@@ -228,7 +229,7 @@ class SymbolicSearch:
             interactions.append("fatigue * ambiguity")
         if "public_commitment" in variables and "deadline_near" in variables:
             interactions.append("public_commitment * deadline_near")
-        return base_terms + threshold_terms + interactions
+        return (base_terms + threshold_terms + interactions)[: self.candidate_limit]
 
     def search(self, training_rows: list[dict[str, Any]], development_rows: list[dict[str, Any]], target_name: str) -> FittedLogisticFormula:
         terms = self.candidate_terms(training_rows)
@@ -294,5 +295,5 @@ class ModelFoundry:
             formula_terms.append("explicit_first_step * indicator(ambiguity > 0.6)")
         spec = HypothesisSpec.formula("task_start_default_override_v1", target_name, formula_terms)
         models.append(LogisticFormulaHypothesis(spec).fit(training_rows))
-        models.append(SymbolicSearch(max_terms=6).search(training_rows, development_rows, target_name))
+        models.append(SymbolicSearch(max_terms=5, candidate_limit=14).search(training_rows, development_rows, target_name))
         return models

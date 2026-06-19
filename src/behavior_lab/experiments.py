@@ -7,6 +7,7 @@ from statistics import mean
 from typing import Any
 
 from behavior_lab.core import InterventionTrial, new_id, utc_now
+from behavior_lab.causal import TreatmentComparator
 from behavior_lab.evaluation import BinaryPredictor
 from behavior_lab.ledger import ImmutableLedger
 
@@ -72,6 +73,8 @@ class ExperimentScheduler:
         probability: float = 0.5,
         preregistration_id: str | None = None,
     ) -> dict[str, Any]:
+        if not 0.0 < probability < 1.0:
+            raise ValueError("Assignment probability must be strictly between 0 and 1")
         assigned = treatment if self.random.random() < probability else comparator
         assignment = {
             "assignment_id": new_id("a"),
@@ -119,35 +122,11 @@ class ExperimentScheduler:
         comparator: str,
         outcome_name: str,
     ) -> dict[str, Any]:
-        treatment_values = []
-        comparator_values = []
-        for trial in self.ledger.payloads("intervention_trial"):
-            comparison = trial.get("comparison", {})
-            if comparison.get("treatment") != treatment or comparison.get("comparator") != comparator:
-                continue
-            assigned = trial.get("assignment", {}).get("assigned_treatment")
-            if outcome_name not in trial.get("outcomes", {}):
-                continue
-            value = 1.0 if trial["outcomes"][outcome_name] else 0.0
-            if assigned == treatment:
-                treatment_values.append(value)
-            elif assigned == comparator:
-                comparator_values.append(value)
-        treatment_mean = mean(treatment_values) if treatment_values else 0.0
-        comparator_mean = mean(comparator_values) if comparator_values else 0.0
-        effect = treatment_mean - comparator_mean
-        se = _binomial_se(treatment_mean, len(treatment_values)) + _binomial_se(comparator_mean, len(comparator_values))
-        return {
-            "treatment": treatment,
-            "comparator": comparator,
-            "outcome": outcome_name,
-            "treatment_n": len(treatment_values),
-            "comparator_n": len(comparator_values),
-            "treatment_mean": treatment_mean,
-            "comparator_mean": comparator_mean,
-            "difference_in_means": effect,
-            "uncertainty_interval": [effect - 1.96 * se, effect + 1.96 * se],
-        }
+        return TreatmentComparator(self.ledger).compare(
+            treatment=treatment,
+            comparator=comparator,
+            outcome_name=outcome_name,
+        ).to_dict()
 
     def launch_real_intervention(self, proposal: ExperimentProposal, *, approved_by_human: bool = False) -> dict[str, Any]:
         if not approved_by_human:

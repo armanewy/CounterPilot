@@ -13,6 +13,7 @@ from behavior_lab.ledger import ImmutableLedger
 from behavior_lab.models import ModelFoundry
 from behavior_lab.evaluation import evaluate_model, paired_compare, pareto_frontier
 from behavior_lab.worlds import make_world
+from behavior_lab.stress import LabStressTester
 
 
 def _print_json(payload: Any) -> None:
@@ -120,6 +121,15 @@ def command_demo(args: argparse.Namespace) -> None:
     )
 
 
+def command_stress_test(args: argparse.Namespace) -> None:
+    tester = LabStressTester()
+    data_dir = Path(args.data_dir)
+    if args.matrix:
+        _print_json(tester.run_world_matrix(data_dir, episodes=args.episodes, seed=args.seed))
+    else:
+        _print_json(tester.run(data_dir, episodes=args.episodes, seed=args.seed))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Behavior Discovery Lab")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -143,6 +153,13 @@ def build_parser() -> argparse.ArgumentParser:
     verify = subparsers.add_parser("verify-ledger", help="Verify the append-only hash chain")
     verify.add_argument("--data-dir", default=".behavior_lab")
     verify.set_defaults(func=command_verify_ledger)
+
+    stress = subparsers.add_parser("stress-test", help="Run self-audits for leakage, hidden-label redaction, baselines, and mechanism recovery")
+    stress.add_argument("--data-dir", default=".stress_lab")
+    stress.add_argument("--episodes", type=int, default=160)
+    stress.add_argument("--seed", type=int, default=17)
+    stress.add_argument("--matrix", action="store_true", help="Run the audit across all synthetic hidden worlds")
+    stress.set_defaults(func=command_stress_test)
 
     demo = subparsers.add_parser("demo", help="Run all four waves end-to-end")
     demo.add_argument("--data-dir", default=".demo")
