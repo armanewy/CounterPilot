@@ -1,50 +1,91 @@
-# Stress Test Notes
+# Stress Testing Behavior Discovery Lab
 
-This repository is not just a behavior predictor. It is an infrastructure spike for a closed-loop discovery lab: hypotheses are generated, fitted, compared, falsified, and only trusted when they survive chronological and prospective evaluation.
+The stress suite is intended to falsify the laboratory itself before the laboratory is trusted to evaluate behavioral theories.
 
-## Issues found in the submitted version
+## One-world audit
 
-1. **Test ergonomics gap**: the project used a `src/` layout but did not include pytest configuration, so `python -m pytest` failed unless the package was installed or `PYTHONPATH=src` was set manually.
-2. **Discovery loop was too slow for iteration**: symbolic search repeatedly fitted logistic formulas with 650 gradient steps across too many candidate terms. That made the core tests feel hung and violated the “see things happen quickly” requirement.
-3. **A/B comparison bookkeeping was too thin**: treatment-effect estimation returned a difference in means, but did not expose block-level effects, a standard error, or tiny-sample warnings.
-4. **No executable self-audit**: the README claimed temporal-firewall and blind-evaluation properties, but there was no one-command stress test that exercised those claims.
-
-## Changes made
-
-- Added `pytest.ini` so tests run without manual path setup.
-- Reduced logistic fitting iterations and bounded symbolic-search candidates to keep the MVP fast while preserving the model zoo idea.
-- Added `behavior_lab.causal.TreatmentComparator` for transparent treatment-vs-comparator comparison with uncertainty intervals, block slices, and tiny-sample warnings.
-- Updated `ExperimentScheduler.estimate_treatment_effect` to delegate to `TreatmentComparator`.
-- Added assignment-probability validation so invalid randomized designs fail early.
-- Added `behavior_lab.stress.LabStressTester`, a runnable self-audit that checks:
-  - pre-decision temporal snapshots do not contain post-decision fields,
-  - hidden evaluation payloads redact labels and failure rows,
-  - a discovered model is compared against the base-rate baseline,
-  - the best discovered formula is scored against the synthetic hidden mechanism,
-  - a separately labeled known-driver formula probe checks whether the DSL can express parts of the mechanism,
-  - prospective split gaps are surfaced as warnings.
-- Added `python -m behavior_lab stress-test` and `--matrix` mode across the synthetic hidden worlds.
-- Added tests for causal comparison, probability validation, and the stress tester.
-- Added append-only split manifests so cases do not migrate between splits as new observations arrive.
-- Added ledger-enforced hidden/prospective evaluation budgets through `ResearchAPI`.
-- Persisted fitted formula artifacts so a later `ResearchAPI` session can rehydrate them.
-- Added `ResearchAPI.run_offline_experiment` for preregistered synthetic trial ingestion.
-- Added `batch-stress` with lock files, run start/end records, config hashes, and idempotent skip behavior.
-
-## Remaining honest gaps
-
-- The “LLM scientist” is represented by a typed `ResearchAPI` plus a provider-agnostic `LLMHypothesisGenerator` validation seam, but no hosted/local LLM client is included. That is intentional for the MVP; the evaluator should mature before an LLM is allowed to propose hypotheses automatically.
-- The prospective split is synthetic and often small. Split manifests now prevent migration, but real credibility still requires freezing a model and collecting future events after the freeze.
-- The DSL is safe and useful, but small. It cannot yet express richer temporal state machines beyond the included hand-built two-state baseline.
-- Treatment-effect estimates are deliberately simple randomized difference-in-means summaries, not a full causal inference system.
-- The personal-data adapters are still stubs/boundaries. That is correct for now: manual or synthetic data should prove the loop before importing sensitive personal data.
-
-## Commands
-
-```powershell
-python -m pytest
-python -m behavior_lab demo --data-dir .demo --episodes 120 --iterations 2 --offline-trials 4
-python -m behavior_lab stress-test --data-dir runs/stress-habit --episodes 120
-python -m behavior_lab stress-test --data-dir runs/stress-matrix --episodes 100 --matrix
-python -m behavior_lab batch-stress --data-dir runs/batch --worlds habit,threshold --seeds 11,23 --episode-counts 100,300
+```bash
+python -m behavior_lab stress-test \
+  --data-dir runs/stress-habit \
+  --world habit \
+  --episodes 160 \
+  --seed 17
 ```
+
+Checks include:
+
+- pre-decision snapshots exclude known post-decision fields and provenance;
+- campaign training, development, and hidden blocks are chronological;
+- the initial prospective block is empty;
+- hidden output omits raw labels, failure rows, direct prevalence, and baseline lift;
+- the best development candidate is compared with the base-rate baseline;
+- the best genuinely discovered formula receives evaluator-only hidden-driver variable recall;
+- a separate known-driver probe checks whether the formula language can express the hidden variables;
+- intervention-direction predictions are compared with the synthetic world's true intervention direction.
+
+`best_discovered_formula_hidden_driver_recall` is variable recall only. It does not prove equation, threshold, sign, coefficient, dynamics, or causal equivalence.
+
+## World matrix
+
+```bash
+python -m behavior_lab stress-test \
+  --data-dir runs/stress-matrix \
+  --episodes 120 \
+  --seed 17 \
+  --matrix
+```
+
+The matrix covers:
+
+- habit plus override;
+- latent two-mode behavior;
+- threshold behavior;
+- nonstationarity;
+- confounding.
+
+A laboratory that only succeeds on the first world is not general.
+
+## Locked batch matrix
+
+```bash
+python -m behavior_lab batch-stress \
+  --data-dir runs/batch \
+  --worlds habit,two_mode,threshold,nonstationary,confounded \
+  --seeds 11,23,47,89,131 \
+  --episode-counts 100,300,1000
+```
+
+Each world/seed/sample-size job has its own specification hash, ledger, lock file, start record, and terminal record. Re-running an expanded matrix skips already completed identical jobs and runs only new jobs.
+
+## Test suite
+
+```bash
+python -m pytest
+python -m unittest discover -s tests -q
+python -m compileall -q src tests examples
+```
+
+The adversarial tests cover:
+
+- concurrent ledger appends;
+- world restart continuity and configuration pinning;
+- conflicting split assignments;
+- hidden budget persistence and campaign-renaming attacks;
+- empty prospective evaluation before future collection;
+- frozen artifact and training-snapshot consistency;
+- duplicate experiment outcomes;
+- preregistration trial limits;
+- tampered assignment payloads;
+- canonical provenance protection;
+- variable-propensity treatment comparison;
+- non-finite predictions;
+- formula resource limits and function arity;
+- semantic model-artifact corruption;
+- stale run-lock recovery;
+- malformed LLM proposals;
+- target and feature validation;
+- hypothesis-lineage ID stability.
+
+## Important limitation
+
+Hidden labels are not directly returned, but aggregate scores inevitably carry statistical information. A constant predictor can, in principle, reveal something about aggregate label prevalence from a proper scoring rule. The default one-query lockbox limits adaptive probing; it does not provide differential privacy or cryptographic secrecy.

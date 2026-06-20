@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import _bootstrap  # noqa: F401
+
 import tempfile
 import unittest
 from pathlib import Path
@@ -57,6 +59,55 @@ class CausalAndStressTests(unittest.TestCase):
             self.assertEqual(result.treatment_n + result.comparator_n, 6)
             self.assertTrue(result.by_block)
             self.assertGreaterEqual(result.standard_error, 0.0)
+
+
+    def test_effect_estimate_isolated_by_preregistration_and_interval_is_nonzero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            gym = WorldGym(Path(tmp), world=HabitPlusOverrideWorld(seed=21))
+            scheduler = ExperimentScheduler(gym.ledger, seed=7)
+            preregs = [
+                scheduler.preregister(
+                    question=f"experiment {index}",
+                    treatment="explicit_first_step",
+                    comparator="generic_task_description",
+                    target="started_within_10_minutes",
+                    population="tasks",
+                    planned_trials=8,
+                    stopping_rule="fixed",
+                    analysis_plan="difference in means",
+                    approval_required=False,
+                )
+                for index in range(2)
+            ]
+            for index, prereg in enumerate(preregs):
+                for _ in range(8):
+                    assignment = scheduler.assign_intervention(
+                        {"fatigue": 0.2},
+                        treatment="explicit_first_step",
+                        comparator="generic_task_description",
+                        preregistration_id=prereg,
+                    )
+                    assigned = assignment["assignment"]["assigned_treatment"]
+                    success = assigned == "explicit_first_step" if index == 0 else assigned != "explicit_first_step"
+                    scheduler.record_trial_outcome(
+                        assignment,
+                        {"started_within_10_minutes": success},
+                    )
+            first = scheduler.estimate_treatment_effect(
+                treatment="explicit_first_step",
+                comparator="generic_task_description",
+                outcome_name="started_within_10_minutes",
+                preregistration_id=preregs[0],
+            )
+            second = scheduler.estimate_treatment_effect(
+                treatment="explicit_first_step",
+                comparator="generic_task_description",
+                outcome_name="started_within_10_minutes",
+                preregistration_id=preregs[1],
+            )
+            self.assertGreater(first["difference_in_means"], 0)
+            self.assertLess(second["difference_in_means"], 0)
+            self.assertGreater(first["uncertainty_interval"][1] - first["uncertainty_interval"][0], 0)
 
     def test_lab_stress_tester_runs_and_redacts_hidden(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

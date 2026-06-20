@@ -7,7 +7,6 @@ from typing import Any
 from behavior_lab.core import DecisionEpisode, utc_now
 from behavior_lab.experiments import ExperimentProposal, ExperimentScheduler
 from behavior_lab.ledger import ImmutableLedger
-from behavior_lab.registry import ModelRegistry
 
 
 class PersonalLab:
@@ -22,7 +21,6 @@ class PersonalLab:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.ledger = ImmutableLedger(self.data_dir / "ledger.jsonl")
         self.scheduler = ExperimentScheduler(self.ledger)
-        self.registry = ModelRegistry(self.ledger)
         self.subject_id = subject_id
 
     def record_decision_episode(
@@ -108,15 +106,33 @@ class PersonalLab:
         )
         return asdict(trial)
 
-    def estimate_effect(self, treatment: str, comparator: str) -> dict[str, Any]:
+    def estimate_effect(
+        self, treatment: str, comparator: str, *, preregistration_id: str | None = None
+    ) -> dict[str, Any]:
         return self.scheduler.estimate_treatment_effect(
             treatment=treatment,
             comparator=comparator,
             outcome_name="started_within_10_minutes",
+            preregistration_id=preregistration_id,
         )
 
     def freeze_model_for_prospective_block(self, model_id: str, reason: str) -> dict[str, Any]:
-        return self.registry.freeze_candidate(model_id, split="prospective", reason=reason)
+        """Reject artifact-free freezes and direct callers to the research lockbox.
+
+        A scientifically meaningful freeze must bind a persisted model artifact,
+        its training snapshot, and an immutable split manifest. ``PersonalLab``
+        records decisions and experiments but does not fit or persist predictor
+        artifacts, so fabricating a freeze marker here would create false
+        prospective guarantees. Use ``ResearchAPI.freeze_candidate`` after the
+        personal-data bridge has materialized a campaign and fitted the model.
+        """
+
+        del model_id, reason
+        raise RuntimeError(
+            "PersonalLab cannot freeze an unregistered model. Fit and persist the model "
+            "through ResearchAPI, then call ResearchAPI.freeze_candidate so the freeze "
+            "is bound to an artifact hash, training snapshot, split snapshot, and ledger cut."
+        )
 
     def launch_real_intervention(self, proposal: ExperimentProposal, *, approved_by_human: bool = False) -> dict[str, Any]:
         return self.scheduler.launch_real_intervention(proposal, approved_by_human=approved_by_human)

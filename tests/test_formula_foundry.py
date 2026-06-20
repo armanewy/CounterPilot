@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import _bootstrap  # noqa: F401
+
 import tempfile
 import unittest
 from pathlib import Path

@@ -10,6 +10,16 @@ class FormulaSyntaxError(ValueError):
     pass
 
 
+class FormulaEvaluationError(ValueError):
+    pass
+
+
+MAX_EXPRESSION_LENGTH = 256
+MAX_AST_NODES = 64
+MAX_TERMS = 16
+MAX_ABS_CONSTANT = 1_000_000.0
+
+
 def _threshold(x: float, c: float) -> float:
     return 1.0 if x > c else 0.0
 
@@ -24,14 +34,26 @@ def _interaction(x: float, y: float) -> float:
 
 ALLOWED_FUNCTIONS: dict[str, Callable[..., float]] = {
     "abs": lambda x: float(abs(x)),
-    "exp": lambda x: float(math.exp(max(min(x, 50.0), -50.0))),
+    "exp": lambda x: float(math.exp(max(min(float(x), 50.0), -50.0))),
     "indicator": _indicator,
     "interaction": _interaction,
-    "log": lambda x: float(math.log(max(x, 1e-12))),
+    "log": lambda x: float(math.log(max(float(x), 1e-12))),
     "max": lambda *args: float(max(args)),
     "min": lambda *args: float(min(args)),
-    "sqrt": lambda x: float(math.sqrt(max(x, 0.0))),
+    "sqrt": lambda x: float(math.sqrt(max(float(x), 0.0))),
     "threshold": _threshold,
+}
+
+FUNCTION_ARITY: dict[str, tuple[int, int | None]] = {
+    "abs": (1, 1),
+    "exp": (1, 1),
+    "indicator": (1, 1),
+    "interaction": (2, 2),
+    "log": (1, 1),
+    "max": (1, None),
+    "min": (1, None),
+    "sqrt": (1, 1),
+    "threshold": (2, 2),
 }
 
 
@@ -44,17 +66,31 @@ class FormulaTerm:
 
     @classmethod
     def parse(cls, expression: str) -> "FormulaTerm":
+        expression = str(expression).strip()
+        if not expression:
+            raise FormulaSyntaxError("Formula terms may not be empty")
+        if len(expression) > MAX_EXPRESSION_LENGTH:
+            raise FormulaSyntaxError(f"Formula term exceeds {MAX_EXPRESSION_LENGTH} characters")
         try:
             tree = ast.parse(expression, mode="eval")
         except SyntaxError as exc:
             raise FormulaSyntaxError(f"Invalid formula term: {expression}") from exc
+        if sum(1 for _ in ast.walk(tree)) > MAX_AST_NODES:
+            raise FormulaSyntaxError(f"Formula term exceeds {MAX_AST_NODES} syntax nodes")
         visitor = _Validator()
         visitor.visit(tree)
         return cls(expression=expression, tree=tree, variables=visitor.variables, operators=visitor.operators)
 
     def evaluate(self, context: dict[str, Any]) -> float:
-        value = _eval_node(self.tree.body, context)
-        return float(value)
+        try:
+            value = float(_eval_node(self.tree.body, context))
+        except FormulaSyntaxError:
+            raise
+        except (ArithmeticError, TypeError, ValueError, OverflowError) as exc:
+            raise FormulaEvaluationError(f"Could not evaluate formula term {self.expression!r}: {exc}") from exc
+        if not math.isfinite(value):
+            raise FormulaEvaluationError(f"Formula term {self.expression!r} produced a non-finite value")
+        return value
 
 
 class _Validator(ast.NodeVisitor):
@@ -93,13 +129,33 @@ class _Validator(ast.NodeVisitor):
             raise FormulaSyntaxError(f"Unsupported syntax: {type(node).__name__}")
         super().generic_visit(node)
 
+    def visit_Constant(self, node: ast.Constant) -> None:
+        if isinstance(node.value, bool):
+            return
+        if not isinstance(node.value, (int, float)):
+            raise FormulaSyntaxError("Only numeric and boolean constants are allowed")
+        value = float(node.value)
+        if not math.isfinite(value) or abs(value) > MAX_ABS_CONSTANT:
+            raise FormulaSyntaxError("Formula constant is non-finite or unreasonably large")
+
     def visit_Name(self, node: ast.Name) -> None:
+        if node.id.startswith("__"):
+            raise FormulaSyntaxError("Dunder names are forbidden")
         if node.id not in ALLOWED_FUNCTIONS:
             self.variables.add(node.id)
 
     def visit_Call(self, node: ast.Call) -> None:
+        if node.keywords:
+            raise FormulaSyntaxError("Formula functions do not accept keyword arguments")
         if not isinstance(node.func, ast.Name) or node.func.id not in ALLOWED_FUNCTIONS:
             raise FormulaSyntaxError("Only whitelisted formula functions are allowed")
+        minimum, maximum = FUNCTION_ARITY[node.func.id]
+        count = len(node.args)
+        if count < minimum or (maximum is not None and count > maximum):
+            expected = str(minimum) if minimum == maximum else f"at least {minimum}"
+            raise FormulaSyntaxError(
+                f"Function {node.func.id!r} expects {expected} argument(s), received {count}"
+            )
         self.operators += 1
         for arg in node.args:
             self.visit(arg)
@@ -134,7 +190,9 @@ def _eval_node(node: ast.AST, context: dict[str, Any]) -> Any:
         value = context.get(node.id, 0.0)
         if isinstance(value, bool):
             return 1.0 if value else 0.0
-        return value
+        if not isinstance(value, (int, float)):
+            raise FormulaEvaluationError(f"Variable {node.id!r} is not numeric")
+        return float(value)
     if isinstance(node, ast.BinOp):
         left = float(_eval_node(node.left, context))
         right = float(_eval_node(node.right, context))
@@ -147,7 +205,10 @@ def _eval_node(node: ast.AST, context: dict[str, Any]) -> Any:
         if isinstance(node.op, ast.Div):
             return left / right if abs(right) > 1e-12 else 0.0
         if isinstance(node.op, ast.Pow):
-            return float(math.pow(left, max(min(right, 6.0), -6.0)))
+            exponent = max(min(right, 6.0), -6.0)
+            if left < 0.0 and not float(exponent).is_integer():
+                raise FormulaEvaluationError("Fractional powers of negative values are undefined")
+            return float(math.pow(left, exponent))
     if isinstance(node, ast.UnaryOp):
         value = float(_eval_node(node.operand, context))
         if isinstance(node.op, ast.USub):
@@ -195,7 +256,12 @@ class Formula:
 
     @classmethod
     def parse(cls, terms: list[str]) -> "Formula":
-        return cls([FormulaTerm.parse(term) for term in terms])
+        if len(terms) > MAX_TERMS:
+            raise FormulaSyntaxError(f"A formula may contain at most {MAX_TERMS} terms")
+        cleaned = [str(term).strip() for term in terms]
+        if len(set(cleaned)) != len(cleaned):
+            raise FormulaSyntaxError("Duplicate formula terms are not allowed")
+        return cls([FormulaTerm.parse(term) for term in cleaned])
 
     @property
     def variables(self) -> set[str]:

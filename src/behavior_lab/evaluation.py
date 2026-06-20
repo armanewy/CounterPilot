@@ -8,6 +8,10 @@ from typing import Any, Protocol
 from behavior_lab.core import EvaluationMetrics
 
 
+class InvalidPredictionError(ValueError):
+    pass
+
+
 class BinaryPredictor(Protocol):
     model_id: str
     complexity: int
@@ -17,7 +21,10 @@ class BinaryPredictor(Protocol):
 
 
 def clamp_probability(value: float) -> float:
-    return min(max(float(value), 1e-6), 1.0 - 1e-6)
+    probability = float(value)
+    if not math.isfinite(probability):
+        raise InvalidPredictionError(f"Model returned a non-finite probability: {value!r}")
+    return min(max(probability, 1e-6), 1.0 - 1e-6)
 
 
 def log_loss_one(probability: float, target: int) -> float:

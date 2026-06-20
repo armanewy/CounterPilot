@@ -1,61 +1,214 @@
 # Behavior Discovery Lab
 
-Behavior Discovery Lab is a local, executable MVP for the four-wave research infrastructure described in the prompt:
+Behavior Discovery Lab is a local research harness for discovering and falsifying executable behavioral hypotheses.
 
-1. **World Gym**: hidden synthetic behavioral worlds, append-only event ledger, temporal firewall, and blind evaluation.
-2. **Formula Forge**: safe hypothesis DSL, logistic/rule/tree/state-style models, model comparison, Pareto frontier, residuals, counterexamples, and lineage.
-3. **Personal N-of-1 Lab**: randomized intervention assignment, preregistration, crossover trials, treatment-effect estimation, and prospective model freezing.
-4. **Autonomous Discovery Loop**: offline hypothesis generation, fitting, mutation, experiment proposal, observation consumption, and retire/promote decisions.
+A hypothesis may be a compact formula, rule, threshold, state model, nearest-neighbor policy, or another reloadable predictor. The laboratory keeps creativity and judgment separate:
 
-The core has no runtime dependencies beyond Python's standard library. Install the package in editable mode before using the CLI, or run with `PYTHONPATH=src`.
-
-## Quick Start
-
-```powershell
-cd C:\Users\aoztu\Downloads\BehaviorDiscoveryLab
-python -m pip install -e .
-python -m behavior_lab demo --data-dir .demo --episodes 180 --iterations 3
-python -m pytest
+```text
+Generate hypotheses
+        ↓
+Fit only on campaign training data
+        ↓
+Iterate on development data
+        ↓
+Freeze the selected model artifact and data cut
+        ↓
+Spend one hidden lockbox query
+        ↓
+Collect genuinely new observations
+        ↓
+Spend one prospective query
 ```
 
-The demo seeds a hidden synthetic world, fits a heterogeneous model zoo, evaluates it through the blind judge, preregisters a randomized micro-experiment, estimates treatment effects from simulated trials, and runs an autonomous offline discovery loop.
+This repository is an infrastructure MVP, not a validated human-behavior oracle.
+
+## What is implemented
+
+- Hidden synthetic behavior worlds with deterministic, restart-safe event generation.
+- Append-only JSONL ledger with a hash chain and local-process write locking.
+- Immutable, chronological split manifests scoped to research campaigns.
+- Pre-decision snapshots that structurally exclude known post-decision fields.
+- A bounded mathematical DSL for formulas.
+- A heterogeneous model foundry: base rate, recent rate, nearest neighbor, threshold, decision stump, two-state model, linear formula, and symbolic search.
+- Campaign-scoped, hashed, reloadable model artifacts.
+- Development diagnostics, residuals, counterexamples, paired comparison, and complexity frontiers.
+- Persistent hidden/prospective evaluation budgets.
+- Cross-campaign protection against reusing previously queried hidden cases.
+- Preregistered randomized experiments with assignment and outcome integrity checks.
+- Deterministic, restart-safe randomization streams that remain independent across repeated registrations of the same design.
+- Difference-in-means and inverse-probability-weighted treatment comparisons.
+- A provider-neutral, validated LLM hypothesis-generator seam.
+- Locked, idempotent synthetic batch stress runs.
+
+The core runtime uses only Python's standard library.
+
+## Quick start
+
+Python 3.11 or newer is required.
+
+```bash
+python -m pip install -e .
+python -m pytest
+python -m behavior_lab stress-test \
+  --data-dir runs/stress-habit \
+  --world habit \
+  --episodes 160 \
+  --seed 17
+```
+
+Run the complete demonstration:
+
+```bash
+python -m behavior_lab demo \
+  --data-dir runs/demo \
+  --world habit \
+  --episodes 180 \
+  --iterations 3 \
+  --offline-trials 12 \
+  --prospective-episodes 40
+```
+
+The demo resets its output directory by default. Pass `--no-reset` only when you intentionally want to continue the same ledger.
+
+## What you should see
+
+The stress report should show:
+
+```json
+{
+  "temporal_firewall_ok": true,
+  "split_chronology_ok": true,
+  "initial_prospective_empty": true,
+  "hidden_payload_redacted": true
+}
+```
+
+The initial campaign should contain training, development, and hidden cases, but **zero prospective cases**. Prospective means observations first recorded after a model freeze; it does not mean "the newest fraction of an existing file."
+
+The discovery loop should:
+
+1. Create a fresh campaign for each offline iteration.
+2. Use only training and development results while mutating hypotheses.
+3. Leave every intermediate hidden split unqueried.
+4. Select one final candidate using development data.
+5. Freeze the exact persisted artifact, split snapshot, and data cutoff.
+6. Submit that frozen candidate once to the final hidden lockbox.
+7. Generate new observations after the freeze.
+8. Submit the same frozen artifact once to the prospective evaluator.
+
+## Campaign semantics
+
+A campaign is an immutable view of the observations available when it starts.
+
+```text
+Existing observations at campaign creation
+  → chronological training/development/hidden assignment
+
+New observations before freeze
+  → staging
+
+New observations after freeze
+  → prospective, bound to that freeze ID
+```
+
+Staging data never moves backward into a campaign's training set. Start a new campaign to incorporate it.
+
+Model artifacts are campaign-scoped. Reopen `ResearchAPI` using the same campaign ID to reload its models:
+
+```python
+api = ResearchAPI(gym, campaign_id="experiment-001")
+# ... fit model ...
+
+reloaded = ResearchAPI(gym, campaign_id="experiment-001")
+```
+
+A different campaign may deliberately refit or import a model, but it does not silently inherit another campaign's fitted registry.
+
+## Lockbox limits
+
+`ResearchAPI` defaults to:
+
+- One hidden aggregate submission per hidden case set.
+- One prospective aggregate submission per frozen candidate.
+
+Renaming a campaign does not reset a hidden budget when the hidden cases overlap a previously queried set.
+
+Hidden and prospective responses omit raw labels, failure rows, direct prevalence, and baseline lift. However, **any aggregate scoring metric carries some statistical information**. The one-query budget is therefore a scientific discipline, not perfect information-theoretic secrecy.
+
+`ResearchAPI` is a logical boundary inside one Python process. Do not give untrusted generated code direct filesystem access to the ledger or evaluator. A production LLM researcher should run out of process and receive only typed RPC tools.
 
 ## CLI
 
-```powershell
-python -m behavior_lab demo
-python -m behavior_lab seed-world --data-dir .behavior_lab --world habit --episodes 200
-python -m behavior_lab run-loop --data-dir .behavior_lab --iterations 5
-python -m behavior_lab verify-ledger --data-dir .behavior_lab
-python -m behavior_lab stress-test --data-dir runs/stress-habit --episodes 120
-python -m behavior_lab stress-test --data-dir runs/stress-matrix --episodes 100 --matrix
-python -m behavior_lab batch-stress --data-dir runs/batch --worlds habit,threshold --seeds 11,23 --episode-counts 100,300
+```bash
+python -m behavior_lab seed-world --data-dir runs/world --world habit --episodes 200 --seed 7
+python -m behavior_lab run-loop --data-dir runs/world --world habit --iterations 4
+python -m behavior_lab verify-ledger --data-dir runs/world
+python -m behavior_lab stress-test --data-dir runs/matrix --episodes 120 --matrix
+python -m behavior_lab batch-stress \
+  --data-dir runs/batch \
+  --worlds habit,two_mode,threshold,nonstationary,confounded \
+  --seeds 11,23,47 \
+  --episode-counts 100,300
 python examples/first_research_session.py
 ```
 
-## Design Notes
+## Automated background research
 
-- The event ledger is append-only JSONL with a hash chain. Edits are represented as new facts, not rewrites.
-- The temporal firewall builds prediction snapshots from pre-decision fields only.
-- Hidden and prospective evaluation do not expose labels or failure rows.
-- Split assignments are append-only ledger records, so existing cases do not migrate between training, development, hidden, and prospective splits when new observations arrive.
-- `ResearchAPI` records hidden/prospective evaluation budget use in the ledger and defaults to one hidden and one prospective submission per campaign.
-- Formula fits are persisted with terms, coefficients, feature schema, and a training snapshot hash, then rehydrated by new `ResearchAPI` sessions.
-- Real intervention launch paths require explicit approval; offline synthetic experiments do not.
-- Hypotheses are executable artifacts with stable IDs, parent lineage, assumptions, falsification conditions, and counted complexity.
-- `ResearchAPI` is the LLM-facing facade for schema inspection, training-data queries, hypothesis submission, fitting, evaluation, residual inspection, model comparison, experiment proposal, simulation, and frozen-candidate submission.
-- `LLMHypothesisGenerator` is a provider-agnostic adapter seam that validates proposed terms against the safe DSL and the variables exposed by `ResearchAPI`.
-- `ResearchAPI.run_offline_experiment` preregisters, randomizes, appends synthetic trials, verifies the ledger, and returns an allowed summary.
-- `batch-stress` runs fixed synthetic research matrices with per-run lock files and idempotent completion records.
+Start by automating synthetic falsification, not real-life interventions.
 
+A safe researcher may repeatedly use:
 
-## Stress testing
-
-Run:
-
-```powershell
-python -m behavior_lab stress-test --data-dir runs/stress-habit --episodes 120
-python -m behavior_lab stress-test --data-dir runs/stress-matrix --episodes 100 --matrix
+```text
+inspect_schema
+list_variables
+describe_target
+query_training_data
+submit_hypothesis
+fit_hypothesis
+evaluate on development
+inspect residuals and counterexamples
+propose synthetic experiment
+run preregistered offline experiment
 ```
 
-The stress test is intentionally adversarial for an MVP: it checks temporal-firewall behavior, hidden-label redaction, baseline comparison, best-formula mechanism recall, and a separate formula-language known-driver probe. See `docs/STRESS_TEST.md` for the current audit, fixes, and remaining gaps.
+A gatekeeper should exclusively control:
+
+```text
+hidden evaluation
+candidate freeze
+prospective evaluation
+real intervention launch
+```
+
+See [`docs/AUTOMATION.md`](docs/AUTOMATION.md) for the recommended worker lifecycle and budgets.
+
+## Scientific interpretation
+
+Do not celebrate a model because its prose sounds human or because it wins once on development data.
+
+A credible progression is:
+
+```text
+beats base rate on development
+→ survives multiple seeds
+→ survives a hidden chronological block
+→ is frozen
+→ survives genuinely future observations
+→ predicts intervention direction
+→ remains competitive at lower complexity
+```
+
+The stress tester's mechanism score is only exact-variable recall against a synthetic hidden world. It is not proof that the recovered equation is causally or mathematically equivalent.
+
+## Current limitations
+
+- The LLM adapter validates proposals but does not include a hosted or local model client.
+- The evaluator is a logical in-process boundary, not a hostile-code sandbox.
+- The formula DSL is intentionally small.
+- The causal layer supports randomized binary comparisons, not arbitrary observational causal identification.
+- Personal data adapters are intentionally absent.
+- Pre-decision structural filtering cannot detect semantic leakage hidden inside misleading field names or prose.
+- Aggregate lockbox metrics leak limited information by their nature.
+- Real credibility requires enough future observations collected after a model freeze.
+
+See [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) for the stress-test findings and fixes applied to this version.
