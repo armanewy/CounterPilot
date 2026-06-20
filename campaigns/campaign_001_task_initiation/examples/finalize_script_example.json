@@ -1,0 +1,12 @@
+{
+  "completed_that_day": false,
+  "outcome_sources": {
+    "completed_that_day": "manual_observation",
+    "start_latency_seconds": "timer_assisted",
+    "started_within_10_minutes": "timer_assisted",
+    "worked_for_20_minutes": "manual_observation"
+  },
+  "start_latency_seconds": 180,
+  "started_within_10_minutes": true,
+  "worked_for_20_minutes": true
+}

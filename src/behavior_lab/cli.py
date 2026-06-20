@@ -14,6 +14,17 @@ from behavior_lab.bridge import (
     validate_snapshot_file,
     write_campaign_001_template,
 )
+from behavior_lab.campaign001_collector import (
+    DEFAULT_DATA_DIR,
+    amend_capture,
+    finalize_capture,
+    invalidate_capture,
+    load_script,
+    missed_capture,
+    resume_capture,
+    start_capture,
+    status_capture,
+)
 from behavior_lab.discovery import DiscoveryLoop
 from behavior_lab.evaluation import evaluate_model, paired_compare, pareto_frontier
 from behavior_lab.gym import TARGET, WorldGym
@@ -160,6 +171,39 @@ def command_bridge_import(args: argparse.Namespace) -> None:
     _print_json(asdict(result))
 
 
+def command_campaign_001_capture_start(args: argparse.Namespace) -> None:
+    _print_json(start_capture(args.data_dir, script=load_script(args.script)))
+
+
+def command_campaign_001_capture_finalize(args: argparse.Namespace) -> None:
+    _print_json(finalize_capture(args.episode_id, args.data_dir, script=load_script(args.script)))
+
+
+def command_campaign_001_capture_resume(args: argparse.Namespace) -> None:
+    _print_json(resume_capture(args.data_dir, episode_id=args.episode_id, script=load_script(args.script)))
+
+
+def command_campaign_001_capture_missed(args: argparse.Namespace) -> None:
+    _print_json(missed_capture(args.data_dir, script=load_script(args.script)))
+
+
+def command_campaign_001_capture_status(args: argparse.Namespace) -> None:
+    _print_json(status_capture(args.data_dir))
+
+
+def command_campaign_001_capture_amend(args: argparse.Namespace) -> None:
+    value: Any
+    try:
+        value = json.loads(args.value)
+    except json.JSONDecodeError:
+        value = args.value
+    _print_json(amend_capture(args.episode_id, args.field, value, args.reason, args.data_dir))
+
+
+def command_campaign_001_capture_invalidate(args: argparse.Namespace) -> None:
+    _print_json(invalidate_capture(args.episode_id, args.reason, args.data_dir))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Behavior Discovery Lab")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -222,6 +266,49 @@ def build_parser() -> argparse.ArgumentParser:
     bridge_import.add_argument("--data-dir", required=True)
     bridge_import.add_argument("--campaign-id", default=CAMPAIGN_001_ID)
     bridge_import.set_defaults(func=command_bridge_import)
+
+    capture = subparsers.add_parser("campaign-001-capture", help="Local Campaign 001 episode collector")
+    capture_subparsers = capture.add_subparsers(dest="capture_command", required=True)
+
+    capture_start = capture_subparsers.add_parser("start", help="Seal a pre-decision Campaign 001 episode")
+    capture_start.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR))
+    capture_start.add_argument("--script", help="JSON object for deterministic/manual-free capture")
+    capture_start.set_defaults(func=command_campaign_001_capture_start)
+
+    capture_finalize = capture_subparsers.add_parser("finalize", help="Finalize outcomes and import a bridge export")
+    capture_finalize.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR))
+    capture_finalize.add_argument("--episode-id", required=True)
+    capture_finalize.add_argument("--script", help="JSON object containing protected outcomes")
+    capture_finalize.set_defaults(func=command_campaign_001_capture_finalize)
+
+    capture_resume = capture_subparsers.add_parser("resume", help="List or finalize resumable local episodes")
+    capture_resume.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR))
+    capture_resume.add_argument("--episode-id")
+    capture_resume.add_argument("--script", help="JSON object containing protected outcomes")
+    capture_resume.set_defaults(func=command_campaign_001_capture_resume)
+
+    capture_missed = capture_subparsers.add_parser("missed", help="Record an eligible task missed before capture")
+    capture_missed.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR))
+    capture_missed.add_argument("--script", help="JSON object describing the missed eligible task")
+    capture_missed.set_defaults(func=command_campaign_001_capture_missed)
+
+    capture_status = capture_subparsers.add_parser("status", help="Show operational collector status only")
+    capture_status.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR))
+    capture_status.set_defaults(func=command_campaign_001_capture_status)
+
+    capture_amend = capture_subparsers.add_parser("amend", help="Append a correction note without changing sealed data")
+    capture_amend.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR))
+    capture_amend.add_argument("--episode-id", required=True)
+    capture_amend.add_argument("--field", required=True)
+    capture_amend.add_argument("--value", required=True)
+    capture_amend.add_argument("--reason", required=True)
+    capture_amend.set_defaults(func=command_campaign_001_capture_amend)
+
+    capture_invalidate = capture_subparsers.add_parser("invalidate", help="Invalidate an unfinished local capture")
+    capture_invalidate.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR))
+    capture_invalidate.add_argument("--episode-id", required=True)
+    capture_invalidate.add_argument("--reason", required=True)
+    capture_invalidate.set_defaults(func=command_campaign_001_capture_invalidate)
 
     demo = subparsers.add_parser("demo", help="Run all waves end-to-end with campaign-safe lockboxes")
     demo.add_argument("--data-dir", default=".demo")

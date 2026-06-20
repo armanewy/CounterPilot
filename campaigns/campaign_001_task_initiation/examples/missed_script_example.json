@@ -1,0 +1,7 @@
+{
+  "eligible_episode": true,
+  "occurred_at": "2026-06-20T11:00:00-04:00",
+  "reason": "Task decision happened before collector was opened.",
+  "task_description": "Reply to a project email",
+  "timezone": "America/New_York"
+}

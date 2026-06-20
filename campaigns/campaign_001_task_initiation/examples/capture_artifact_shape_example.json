@@ -1,0 +1,34 @@
+{
+  "campaign_id": "campaign_001_task_initiation",
+  "collector_schema_version": "campaign_001_task_initiation_capture.v1",
+  "episode_id": "c001_example",
+  "episode_status": "completed",
+  "example_only": true,
+  "protected_outcome": {
+    "completed_that_day": false,
+    "start_latency_seconds": 180,
+    "started_within_10_minutes": true,
+    "worked_for_20_minutes": true
+  },
+  "sealed_pre_decision_snapshot": {
+    "available_actions": [
+      "start_now",
+      "defer",
+      "switch_task",
+      "abandon"
+    ],
+    "campaign_id": "campaign_001_task_initiation",
+    "pre_decision_features": {
+      "ambiguity": 1,
+      "deadline_hours": 24.0,
+      "estimated_minutes": 45,
+      "fatigue": 1,
+      "first_step_explicit": true,
+      "public_commitment": false,
+      "recent_context_switches": 2,
+      "task_type": "coding",
+      "time_of_day": "morning"
+    },
+    "schema_version": "behavior_lab_campaign_snapshot.v1"
+  }
+}
