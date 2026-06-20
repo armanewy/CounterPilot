@@ -1,0 +1,32 @@
+{
+  "bridge_schema_version": "behavior_lab_campaign_snapshot.v1",
+  "campaign_id": "campaign_001_task_initiation",
+  "collection_plan": {
+    "initial_block": "50 natural episodes",
+    "interventions": "none during initial observational block",
+    "manual_entry_ok": true
+  },
+  "post_decision_outcomes": {
+    "completed_that_day": "boolean",
+    "start_latency_seconds": "non-negative integer",
+    "started_within_10_minutes": "boolean",
+    "worked_for_20_minutes": "boolean"
+  },
+  "pre_decision_features": {
+    "ambiguity": "integer 0..3",
+    "deadline_hours": "non-negative number",
+    "estimated_minutes": "positive integer",
+    "fatigue": "integer 0..3",
+    "first_step_explicit": "boolean",
+    "public_commitment": "boolean",
+    "recent_context_switches": "non-negative integer",
+    "task_type": "string",
+    "time_of_day": "string"
+  },
+  "target": {
+    "name": "started_within_10_minutes",
+    "question": "Did I begin the intended task within 10 minutes?",
+    "type": "binary"
+  },
+  "title": "Campaign 001 - task initiation"
+}

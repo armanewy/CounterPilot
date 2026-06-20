@@ -1,0 +1,35 @@
+{
+  "available_actions": [
+    "start_now",
+    "defer",
+    "switch_task",
+    "abandon"
+  ],
+  "campaign_id": "campaign_001_task_initiation",
+  "decision_time": "2026-06-20T09:00:00-04:00",
+  "episode_id": "replace-with-stable-id",
+  "observation_cutoff": "2026-06-20T08:59:59-04:00",
+  "pre_decision_features": {
+    "ambiguity": 1,
+    "deadline_hours": 24,
+    "estimated_minutes": 45,
+    "fatigue": 1,
+    "first_step_explicit": false,
+    "public_commitment": false,
+    "recent_context_switches": 0,
+    "task_type": "coding",
+    "time_of_day": "morning"
+  },
+  "protected_outcome": {
+    "completed_that_day": false,
+    "start_latency_seconds": 600,
+    "started_within_10_minutes": false,
+    "worked_for_20_minutes": false
+  },
+  "provenance": {
+    "entry_method": "manual"
+  },
+  "schema_version": "behavior_lab_campaign_snapshot.v1",
+  "subject_id": "arman",
+  "task_description": "replace with the intended task"
+}

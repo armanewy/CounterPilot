@@ -7,6 +7,13 @@ from pathlib import Path
 import shutil
 from typing import Any
 
+from behavior_lab.bridge import (
+    CAMPAIGN_001_ID,
+    import_snapshot_file,
+    prepare_snapshot_file,
+    validate_snapshot_file,
+    write_campaign_001_template,
+)
 from behavior_lab.discovery import DiscoveryLoop
 from behavior_lab.evaluation import evaluate_model, paired_compare, pareto_frontier
 from behavior_lab.gym import TARGET, WorldGym
@@ -127,6 +134,32 @@ def command_batch_stress(args: argparse.Namespace) -> None:
     _print_json(SyntheticBatchRunner(args.data_dir).run(config))
 
 
+def command_campaign_template(args: argparse.Namespace) -> None:
+    template = write_campaign_001_template(args.output)
+    _print_json({"output": str(Path(args.output).resolve()), "campaign_id": template["campaign_id"]})
+
+
+def command_bridge_hash(args: argparse.Namespace) -> None:
+    snapshots = prepare_snapshot_file(args.input, args.output)
+    _print_json(
+        {
+            "input": str(Path(args.input).resolve()),
+            "output": str(Path(args.output).resolve()),
+            "snapshots": len(snapshots),
+            "source_hashes": [snapshot["source_hash"] for snapshot in snapshots],
+        }
+    )
+
+
+def command_bridge_validate(args: argparse.Namespace) -> None:
+    _print_json(validate_snapshot_file(args.input, campaign_id=args.campaign_id))
+
+
+def command_bridge_import(args: argparse.Namespace) -> None:
+    result = import_snapshot_file(args.input, data_dir=args.data_dir, campaign_id=args.campaign_id)
+    _print_json(asdict(result))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Behavior Discovery Lab")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -169,6 +202,26 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--seeds", default="11,23,47,89,131")
     batch.add_argument("--episode-counts", default="100,300,1000")
     batch.set_defaults(func=command_batch_stress)
+
+    template = subparsers.add_parser("campaign-001-template", help="Write a raw manual-entry template for Campaign 001")
+    template.add_argument("--output", default="campaigns/campaign_001_task_initiation/manual_entry_template.json")
+    template.set_defaults(func=command_campaign_template)
+
+    bridge_hash = subparsers.add_parser("bridge-hash", help="Add source_hash values to raw Behavior Lab snapshot exports")
+    bridge_hash.add_argument("--input", required=True)
+    bridge_hash.add_argument("--output", required=True)
+    bridge_hash.set_defaults(func=command_bridge_hash)
+
+    bridge_validate = subparsers.add_parser("bridge-validate", help="Validate immutable Behavior Lab campaign snapshots")
+    bridge_validate.add_argument("--input", required=True)
+    bridge_validate.add_argument("--campaign-id", default=CAMPAIGN_001_ID)
+    bridge_validate.set_defaults(func=command_bridge_validate)
+
+    bridge_import = subparsers.add_parser("bridge-import", help="Import validated Behavior Lab snapshots into an append-only ledger")
+    bridge_import.add_argument("--input", required=True)
+    bridge_import.add_argument("--data-dir", required=True)
+    bridge_import.add_argument("--campaign-id", default=CAMPAIGN_001_ID)
+    bridge_import.set_defaults(func=command_bridge_import)
 
     demo = subparsers.add_parser("demo", help="Run all waves end-to-end with campaign-safe lockboxes")
     demo.add_argument("--data-dir", default=".demo")

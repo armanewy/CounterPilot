@@ -22,6 +22,8 @@ Spend one prospective query
 
 This repository is an infrastructure MVP, not a validated human-behavior oracle.
 
+`v0.3.0` is frozen as the laboratory version for the first real-use campaign.
+
 ## What is implemented
 
 - Hidden synthetic behavior worlds with deterministic, restart-safe event generation.
@@ -137,12 +139,67 @@ Hidden and prospective responses omit raw labels, failure rows, direct prevalenc
 
 `ResearchAPI` is a logical boundary inside one Python process. Do not give untrusted generated code direct filesystem access to the ledger or evaluator. A production LLM researcher should run out of process and receive only typed RPC tools.
 
+## Campaign 001: Task Initiation
+
+The first real campaign is observational only:
+
+```text
+campaign_id: campaign_001_task_initiation
+target: Did I begin the intended task within 10 minutes?
+initial block: 50 natural episodes
+interventions: none
+```
+
+Record pre-decision features before the task decision:
+
+```text
+task_type
+time_of_day
+fatigue: 0..3
+ambiguity: 0..3
+estimated_minutes
+first_step_explicit
+deadline_hours
+recent_context_switches
+public_commitment
+```
+
+Record outcomes afterward under `protected_outcome`:
+
+```text
+started_within_10_minutes
+start_latency_seconds
+worked_for_20_minutes
+completed_that_day
+```
+
+Manual collection flow:
+
+```bash
+python -m behavior_lab campaign-001-template \
+  --output campaigns/campaign_001_task_initiation/manual_entry_template.json
+
+python -m behavior_lab bridge-hash \
+  --input manual_raw.jsonl \
+  --output export_hashed.jsonl
+
+python -m behavior_lab bridge-validate \
+  --input export_hashed.jsonl
+
+python -m behavior_lab bridge-import \
+  --input export_hashed.jsonl \
+  --data-dir data/campaign_001_task_initiation
+```
+
+The bridge imports immutable Behavior Lab export snapshots into `data/campaign_001_task_initiation/ledger.jsonl`. It rejects missing fields, outcome leakage into pre-decision features, malformed source hashes, and duplicate episode IDs.
+
 ## CLI
 
 ```bash
 python -m behavior_lab seed-world --data-dir runs/world --world habit --episodes 200 --seed 7
 python -m behavior_lab run-loop --data-dir runs/world --world habit --iterations 4
 python -m behavior_lab verify-ledger --data-dir runs/world
+python -m behavior_lab bridge-import --input export_hashed.jsonl --data-dir data/campaign_001_task_initiation
 python -m behavior_lab stress-test --data-dir runs/matrix --episodes 120 --matrix
 python -m behavior_lab batch-stress \
   --data-dir runs/batch \
