@@ -6,11 +6,22 @@ Target:
 Did I begin the intended task within 10 minutes?
 ```
 
-Start with 50 natural episodes and no interventions. Use manual entry if needed; do not fabricate backfilled labels or infer missing fields.
+Active campaign schema: `1.1`. The old `1.0` schema is preserved in `campaign.schema.v1.0.json`.
+
+Start with five pilot episodes, then 50 natural episodes and no interventions. Use manual entry if needed; do not fabricate backfilled labels or infer missing fields.
+
+Eligibility rule:
+
+```text
+Record any self-directed task expected to require at least ten minutes when I genuinely intend to begin it within the next fifteen minutes.
+```
+
+Exclude emergencies, meetings already in progress, trivial actions, and tasks someone else is actively directing.
 
 ## Manual Entry Flow
 
 1. Write one raw JSON object per episode using the fields in `campaign.json`.
+   Use `has_deadline: false` with `deadline_hours: null` when there is no deadline.
 2. Keep outcomes only under `protected_outcome`.
 3. Add source hashes:
 
@@ -44,4 +55,4 @@ Create a research campaign from the imported ledger and compare:
 - Two-state model
 - LLM-proposed formulas
 
-Do not run the randomized A/B intervention until the natural observational block has been collected and inspected.
+Do not inspect hypotheses, model performance, or randomized A/B interventions until the natural observational block has been collected.

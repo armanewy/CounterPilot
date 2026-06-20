@@ -147,7 +147,11 @@ class WorldGym:
     def decision_episode_rows(self) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         for record in self.ledger.scan("decision_episode"):
-            row = supervised_rows([record["payload"]], self.target_name)
+            payload = record["payload"]
+            provenance = payload.get("data_provenance", {}).get("provenance", {})
+            if provenance.get("collection_phase") == "pilot":
+                continue
+            row = supervised_rows([payload], self.target_name)
             if not row:
                 continue
             materialized = row[0]

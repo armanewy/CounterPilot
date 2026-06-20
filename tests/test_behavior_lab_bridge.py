@@ -9,6 +9,7 @@ from pathlib import Path
 
 from behavior_lab.bridge import (
     CAMPAIGN_001_ID,
+    CAMPAIGN_001_SCHEMA_VERSION,
     BridgeValidationError,
     import_snapshot_file,
     load_snapshots,
@@ -102,6 +103,21 @@ class BehaviorLabBridgeTests(unittest.TestCase):
             snapshot = with_source_hash(_raw_snapshot())
             path.write_text(json.dumps({"snapshots": [snapshot]}), encoding="utf-8")
             self.assertEqual(load_snapshots(path), [snapshot])
+
+    def test_campaign_schema_1_1_allows_explicit_no_deadline(self) -> None:
+        snapshot = _raw_snapshot()
+        snapshot["campaign_schema_version"] = CAMPAIGN_001_SCHEMA_VERSION
+        snapshot["pre_decision_features"]["has_deadline"] = False
+        snapshot["pre_decision_features"]["deadline_hours"] = None
+        validate_snapshot(with_source_hash(snapshot), campaign_id=CAMPAIGN_001_ID)
+
+    def test_campaign_schema_1_1_rejects_deadline_without_flag_consistency(self) -> None:
+        snapshot = _raw_snapshot()
+        snapshot["campaign_schema_version"] = CAMPAIGN_001_SCHEMA_VERSION
+        snapshot["pre_decision_features"]["has_deadline"] = False
+        snapshot["pre_decision_features"]["deadline_hours"] = 24
+        with self.assertRaises(BridgeValidationError):
+            validate_snapshot(with_source_hash(snapshot), campaign_id=CAMPAIGN_001_ID)
 
 
 if __name__ == "__main__":

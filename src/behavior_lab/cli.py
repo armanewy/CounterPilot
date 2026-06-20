@@ -172,7 +172,8 @@ def command_bridge_import(args: argparse.Namespace) -> None:
 
 
 def command_campaign_001_capture_start(args: argparse.Namespace) -> None:
-    _print_json(start_capture(args.data_dir, script=load_script(args.script)))
+    phase = "pilot" if args.pilot else None
+    _print_json(start_capture(args.data_dir, script=load_script(args.script), collection_phase=phase))
 
 
 def command_campaign_001_capture_finalize(args: argparse.Namespace) -> None:
@@ -184,7 +185,8 @@ def command_campaign_001_capture_resume(args: argparse.Namespace) -> None:
 
 
 def command_campaign_001_capture_missed(args: argparse.Namespace) -> None:
-    _print_json(missed_capture(args.data_dir, script=load_script(args.script)))
+    phase = "pilot" if args.pilot else None
+    _print_json(missed_capture(args.data_dir, script=load_script(args.script), collection_phase=phase))
 
 
 def command_campaign_001_capture_status(args: argparse.Namespace) -> None:
@@ -273,6 +275,7 @@ def build_parser() -> argparse.ArgumentParser:
     capture_start = capture_subparsers.add_parser("start", help="Seal a pre-decision Campaign 001 episode")
     capture_start.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR))
     capture_start.add_argument("--script", help="JSON object for deterministic/manual-free capture")
+    capture_start.add_argument("--pilot", action="store_true", help="Mark this episode as part of the five-episode pilot")
     capture_start.set_defaults(func=command_campaign_001_capture_start)
 
     capture_finalize = capture_subparsers.add_parser("finalize", help="Finalize outcomes and import a bridge export")
@@ -290,6 +293,7 @@ def build_parser() -> argparse.ArgumentParser:
     capture_missed = capture_subparsers.add_parser("missed", help="Record an eligible task missed before capture")
     capture_missed.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR))
     capture_missed.add_argument("--script", help="JSON object describing the missed eligible task")
+    capture_missed.add_argument("--pilot", action="store_true", help="Mark this missed episode as part of the pilot")
     capture_missed.set_defaults(func=command_campaign_001_capture_missed)
 
     capture_status = capture_subparsers.add_parser("status", help="Show operational collector status only")

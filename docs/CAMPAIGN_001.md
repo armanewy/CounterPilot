@@ -14,13 +14,16 @@ Did I begin the intended task within 10 minutes?
 
 ## Pre-Decision Fields
 
+Schema `1.1` is active. Schema `1.0` is retained in `campaigns/campaign_001_task_initiation/campaign.schema.v1.0.json`.
+
 - `task_type`
 - `time_of_day`
 - `fatigue`: integer `0..3`
 - `ambiguity`: integer `0..3`
 - `estimated_minutes`
 - `first_step_explicit`
-- `deadline_hours`
+- `has_deadline`
+- `deadline_hours`: non-negative number when `has_deadline` is true; `null` when `has_deadline` is false
 - `recent_context_switches`
 - `public_commitment`
 
@@ -33,4 +36,12 @@ Did I begin the intended task within 10 minutes?
 
 ## Rule
 
-Collect 50 natural episodes before any intervention. The next success criterion is not another test suite; it is a frozen, simple hypothesis surviving genuinely future observations.
+Run five pilot episodes first and retain them in the ledger as `collection_phase: pilot`. Then collect 50 natural episodes before any intervention. The next success criterion is not another test suite; it is a frozen, simple hypothesis surviving genuinely future observations.
+
+Eligibility rule:
+
+```text
+Record any self-directed task expected to require at least ten minutes when I genuinely intend to begin it within the next fifteen minutes.
+```
+
+Exclude emergencies, meetings already in progress, trivial actions, and tasks someone else is actively directing.

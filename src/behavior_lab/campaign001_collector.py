@@ -16,11 +16,12 @@ from behavior_lab.bridge import (
     CAMPAIGN_001_FEATURES,
     CAMPAIGN_001_ID,
     CAMPAIGN_001_OUTCOMES,
+    CAMPAIGN_001_SCHEMA_VERSION,
     CAMPAIGN_001_TARGET,
     BridgeImportResult,
     BridgeValidationError,
+    ensure_campaign_definition,
     import_snapshot_file,
-    source_hash_for_snapshot,
     validate_snapshot,
     validate_snapshot_file,
     with_source_hash,
@@ -31,7 +32,14 @@ from behavior_lab.temporal import assert_feature_map_is_pre_decision
 
 
 CAPTURE_SCHEMA_VERSION = "campaign_001_task_initiation_capture.v1"
-ELIGIBILITY_RULE_VERSION = "campaign_001_natural_observation.v1"
+AUDIT_SCHEMA_VERSION = "campaign_001_episode_audit.v1"
+AUDIT_RECORD_TYPE = "campaign_001_episode_audit"
+ELIGIBILITY_RULE_VERSION = "campaign_001_eligibility.v1.1"
+ELIGIBILITY_RULE_TEXT = (
+    "Record any self-directed task expected to require at least ten minutes when I genuinely intend "
+    "to begin it within the next fifteen minutes. Exclude emergencies, meetings already in progress, "
+    "trivial actions, and tasks someone else is actively directing."
+)
 DEFAULT_AVAILABLE_ACTIONS = ["start_now", "defer", "switch_task", "abandon"]
 DEFAULT_DATA_DIR = Path("data") / CAMPAIGN_001_ID
 FIELD_SOURCE_STATUSES = {"manual", "derived", "unavailable"}
@@ -98,9 +106,12 @@ def start_capture(
     data_dir: str | Path = DEFAULT_DATA_DIR,
     *,
     script: dict[str, Any] | None = None,
+    collection_phase: str | None = None,
     input_func: Any = input,
 ) -> dict[str, Any]:
     script = script if script is not None else _prompt_start(input_func)
+    if collection_phase is not None:
+        script = {**script, "collection_phase": collection_phase}
     _reject_outcomes_in_start(script)
     paths = paths_for(data_dir)
     recovered = recover_atomic_writes(paths.root)
@@ -117,6 +128,7 @@ def start_capture(
     available_actions = _available_actions(script)
     snapshot = {
         "schema_version": BRIDGE_SCHEMA_VERSION,
+        "campaign_schema_version": CAMPAIGN_001_SCHEMA_VERSION,
         "campaign_id": CAMPAIGN_001_ID,
         "episode_id": episode_id,
         "subject_id": str(script.get("subject_id") or "arman"),
@@ -135,6 +147,8 @@ def start_capture(
             "manual_note": script.get("manual_note"),
             "eligible_episode": bool(script.get("eligible_episode", True)),
             "eligibility_rule_version": str(script.get("eligibility_rule_version") or ELIGIBILITY_RULE_VERSION),
+            "eligibility_rule": ELIGIBILITY_RULE_TEXT,
+            "collection_phase": _collection_phase(script),
             "collection_mode": str(script.get("collection_mode") or "natural_observation"),
             "intervention": None,
         },
@@ -177,6 +191,10 @@ def start_capture(
             raise CollectorError(f"Capture already exists with a different pre-decision hash: {episode_id}")
         return _start_summary(existing, artifact_path, recovered=recovered, already_exists=True)
     atomic_write_json(artifact_path, artifact)
+    if status == "incomplete":
+        audit_record = _append_capture_audit(paths, artifact, artifact_path, "incomplete_pre_decision")
+        artifact["audit_ledger_record_id"] = audit_record["record_id"]
+        atomic_write_json(artifact_path, artifact)
     return _start_summary(artifact, artifact_path, recovered=recovered, already_exists=False)
 
 
@@ -193,6 +211,8 @@ def finalize_capture(
     artifact = _load_capture(artifact_path)
     if artifact.get("episode_status") == "invalidated":
         raise CollectorError("Invalidated episodes cannot be finalized")
+    if artifact.get("episode_status") == "missed_followup" and artifact.get("bridge_import"):
+        return _finalize_summary(artifact, artifact_path, already_imported=True)
     if artifact.get("episode_status") == "completed" and artifact.get("bridge_import"):
         return _finalize_summary(artifact, artifact_path, already_imported=True)
     validation = artifact.get("pre_decision_validation", {})
@@ -225,6 +245,9 @@ def finalize_capture(
                 "missing_outcome_fields": missing_outcomes,
             }
         ]
+        atomic_write_json(artifact_path, missed)
+        audit_record = _append_capture_audit(paths, missed, artifact_path, "missed_followup")
+        missed["audit_ledger_record_id"] = audit_record["record_id"]
         atomic_write_json(artifact_path, missed)
         return _finalize_summary(missed, artifact_path, already_imported=False)
 
@@ -341,6 +364,9 @@ def invalidate_capture(
         {"event": "episode_invalidated", "reason": reason, "recorded_at": utc_now()}
     ]
     atomic_write_json(artifact_path, artifact)
+    audit_record = _append_capture_audit(paths, artifact, artifact_path, "invalidated")
+    artifact["audit_ledger_record_id"] = audit_record["record_id"]
+    atomic_write_json(artifact_path, artifact)
     return {"episode_id": episode_id, "episode_status": "invalidated", "artifact_path": str(artifact_path.resolve())}
 
 
@@ -348,9 +374,12 @@ def missed_capture(
     data_dir: str | Path = DEFAULT_DATA_DIR,
     *,
     script: dict[str, Any] | None = None,
+    collection_phase: str | None = None,
     input_func: Any = input,
 ) -> dict[str, Any]:
     script = script if script is not None else _prompt_missed(input_func)
+    if collection_phase is not None:
+        script = {**script, "collection_phase": collection_phase}
     paths = paths_for(data_dir)
     recover_atomic_writes(paths.root)
     missed_uuid = str(script.get("missed_uuid") or uuid4())
@@ -364,6 +393,8 @@ def missed_capture(
         "record_type": "missed_pre_decision_episode",
         "eligible_episode": bool(script.get("eligible_episode", True)),
         "eligibility_rule_version": str(script.get("eligibility_rule_version") or ELIGIBILITY_RULE_VERSION),
+        "eligibility_rule": ELIGIBILITY_RULE_TEXT,
+        "collection_phase": _collection_phase(script),
         "episode_status": "incomplete",
         "capture_status": "missed_pre_decision",
         "occurred_at": occurred_at,
@@ -384,9 +415,13 @@ def missed_capture(
     }
     path = paths.missed / f"{missed_id}.json"
     atomic_write_json(path, artifact)
+    audit_record = _append_missed_audit(paths, artifact, path)
+    artifact["audit_ledger_record_id"] = audit_record["record_id"]
+    atomic_write_json(path, artifact)
     return {
         "missed_id": missed_id,
         "artifact_path": str(path.resolve()),
+        "audit_ledger_record_id": audit_record["record_id"],
         "eligible_episode": artifact["eligible_episode"],
         "capture_status": artifact["capture_status"],
     }
@@ -401,16 +436,21 @@ def status_capture(data_dir: str | Path = DEFAULT_DATA_DIR) -> dict[str, Any]:
     pending_followups = 0
     overdue_followups = 0
     natural_completed = 0
+    pilot_completed = 0
     for capture in captures:
         status = str(capture.get("episode_status") or "incomplete")
         if status in counts:
             counts[status] += 1
+        collection_phase = _artifact_collection_phase(capture)
         if (
             status == "completed"
             and capture.get("sealed_pre_decision_snapshot", {}).get("provenance", {}).get("collection_mode")
             == "natural_observation"
+            and collection_phase == "real"
         ):
             natural_completed += 1
+        if status == "completed" and collection_phase == "pilot":
+            pilot_completed += 1
         pending_followups += sum(1 for followup in capture.get("followups", []) if followup.get("status") == "pending")
         overdue_followups += _overdue_followup_count(capture)
     ledger_path = paths.ledger_dir / "ledger.jsonl"
@@ -420,17 +460,22 @@ def status_capture(data_dir: str | Path = DEFAULT_DATA_DIR) -> dict[str, Any]:
         ledger = ImmutableLedger(ledger_path)
         ledger_valid = ledger.verify_hash_chain()
         ledger_records = len(ledger.scan())
+        audit_records = len(ledger.scan(AUDIT_RECORD_TYPE))
+    else:
+        audit_records = 0
     return {
         "data_dir": str(paths.root.resolve()),
         "campaign_id": CAMPAIGN_001_ID,
         "capture_files": len(captures),
         "missed_eligible_episode_count": sum(1 for item in missed if item.get("eligible_episode") is True),
         "completed_natural_episode_count": natural_completed,
+        "completed_pilot_episode_count": pilot_completed,
         "episode_status_counts": counts,
         "pending_followup_count": pending_followups,
         "overdue_followup_count": overdue_followups,
         "ledger_path": str(ledger_path.resolve()),
         "ledger_records": ledger_records,
+        "audit_records": audit_records,
         "ledger_valid": ledger_valid,
     }
 
@@ -445,6 +490,8 @@ def validate_pre_decision_snapshot(
     missing = list(missing_fields or [])
     if snapshot.get("schema_version") != BRIDGE_SCHEMA_VERSION:
         errors.append(f"schema_version must be {BRIDGE_SCHEMA_VERSION!r}")
+    if snapshot.get("campaign_schema_version") != CAMPAIGN_001_SCHEMA_VERSION:
+        errors.append(f"campaign_schema_version must be {CAMPAIGN_001_SCHEMA_VERSION!r}")
     if snapshot.get("campaign_id") != CAMPAIGN_001_ID:
         errors.append(f"campaign_id must be {CAMPAIGN_001_ID!r}")
     try:
@@ -556,16 +603,43 @@ def _collect_features(script: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
     source_statuses: dict[str, str] = {}
     missing: list[str] = []
     errors: list[str] = []
+    has_deadline_value = source.get("has_deadline")
+    has_deadline_missing = _is_missing(has_deadline_value)
+    parsed_has_deadline: bool | None = None
+    if has_deadline_missing:
+        missing.append("has_deadline")
+        features["has_deadline"] = None
+        source_statuses["has_deadline"] = "unavailable"
+    else:
+        try:
+            parsed_has_deadline = _coerce_bool(has_deadline_value, "has_deadline")
+            features["has_deadline"] = parsed_has_deadline
+            supplied_statuses = script.get("source_statuses", {})
+            supplied_status = supplied_statuses.get("has_deadline") if isinstance(supplied_statuses, dict) else None
+            source_statuses["has_deadline"] = _validate_field_source(supplied_status or "manual")
+        except (TypeError, ValueError) as exc:
+            features["has_deadline"] = has_deadline_value
+            source_statuses["has_deadline"] = "manual"
+            errors.append(str(exc))
+
     for name in FEATURE_NAMES:
+        if name == "has_deadline":
+            continue
         value = source.get(name)
         supplied_statuses = script.get("source_statuses", {})
         supplied_status = supplied_statuses.get(name) if isinstance(supplied_statuses, dict) else None
         if _is_missing(value):
-            features[name] = None
-            source_statuses[name] = "unavailable"
-            missing.append(name)
+            if name == "deadline_hours" and parsed_has_deadline is False:
+                features[name] = None
+                source_statuses[name] = _validate_field_source(supplied_status or "manual")
+            else:
+                features[name] = None
+                source_statuses[name] = "unavailable"
+                missing.append(name)
             continue
         try:
+            if name == "deadline_hours" and parsed_has_deadline is False:
+                raise ValueError("deadline_hours must be null when has_deadline is false")
             features[name] = _coerce_feature(name, value)
             source_statuses[name] = _validate_field_source(supplied_status or "manual")
         except (TypeError, ValueError) as exc:
@@ -610,7 +684,7 @@ def _coerce_feature(name: str, value: Any) -> Any:
         if not text:
             raise ValueError(f"{name} must be a non-empty string")
         return text
-    if name in {"first_step_explicit", "public_commitment"}:
+    if name in {"first_step_explicit", "public_commitment", "has_deadline"}:
         return _coerce_bool(value, name)
     if name in {"fatigue", "ambiguity", "estimated_minutes", "recent_context_switches"}:
         number = _coerce_int(value, name)
@@ -762,6 +836,90 @@ def _ledger_valid(data_dir: Path) -> bool:
     return ImmutableLedger(ledger_path).verify_hash_chain()
 
 
+def _append_capture_audit(
+    paths: CollectorPaths,
+    artifact: dict[str, Any],
+    artifact_path: Path,
+    audit_event: str,
+) -> dict[str, Any]:
+    payload = {
+        "audit_schema_version": AUDIT_SCHEMA_VERSION,
+        "campaign_id": CAMPAIGN_001_ID,
+        "campaign_schema_version": CAMPAIGN_001_SCHEMA_VERSION,
+        "audit_event": audit_event,
+        "record_kind": "captured_episode",
+        "episode_id": artifact.get("episode_id"),
+        "episode_status": artifact.get("episode_status"),
+        "eligible_episode": artifact.get("eligible_episode"),
+        "eligibility_rule_version": artifact.get("eligibility_rule_version"),
+        "eligibility_rule": ELIGIBILITY_RULE_TEXT,
+        "collection_phase": _artifact_collection_phase(artifact),
+        "pre_decision_hash": artifact.get("pre_decision_hash"),
+        "pre_decision_validation": artifact.get("pre_decision_validation"),
+        "invalidation_reason": artifact.get("invalidation_reason"),
+        "missing_outcome_fields": artifact.get("missing_outcome_fields", []),
+        "sealed_pre_decision_snapshot": artifact.get("sealed_pre_decision_snapshot"),
+        "protected_outcome": artifact.get("protected_outcome"),
+        "artifact_hash": stable_hash({key: value for key, value in artifact.items() if key != "audit_ledger_record_id"}),
+        "artifact_path": str(artifact_path.resolve()),
+    }
+    return _append_audit_payload(paths, payload)
+
+
+def _append_missed_audit(paths: CollectorPaths, artifact: dict[str, Any], artifact_path: Path) -> dict[str, Any]:
+    payload = {
+        "audit_schema_version": AUDIT_SCHEMA_VERSION,
+        "campaign_id": CAMPAIGN_001_ID,
+        "campaign_schema_version": CAMPAIGN_001_SCHEMA_VERSION,
+        "audit_event": "missed_eligible",
+        "record_kind": "missed_pre_decision_episode",
+        "missed_id": artifact.get("missed_id"),
+        "episode_status": artifact.get("episode_status"),
+        "eligible_episode": artifact.get("eligible_episode"),
+        "eligibility_rule_version": artifact.get("eligibility_rule_version"),
+        "eligibility_rule": ELIGIBILITY_RULE_TEXT,
+        "collection_phase": artifact.get("collection_phase"),
+        "occurred_at": artifact.get("occurred_at"),
+        "task_description": artifact.get("task_description"),
+        "reason": artifact.get("reason"),
+        "source_hash": artifact.get("source_hash"),
+        "artifact_hash": stable_hash({key: value for key, value in artifact.items() if key != "audit_ledger_record_id"}),
+        "artifact_path": str(artifact_path.resolve()),
+    }
+    return _append_audit_payload(paths, payload)
+
+
+def _append_audit_payload(paths: CollectorPaths, payload: dict[str, Any]) -> dict[str, Any]:
+    ledger = ImmutableLedger(paths.ledger_dir / "ledger.jsonl")
+    ensure_campaign_definition(ledger, CAMPAIGN_001_ID)
+    body = dict(payload)
+    audit_hash = stable_hash(body)
+    body["audit_hash"] = audit_hash
+    record_id = f"campaign_001_audit_{audit_hash[:16]}"
+    existing = ledger.find_record(record_id, AUDIT_RECORD_TYPE)
+    if existing is not None:
+        if existing.get("payload") != body:
+            raise CollectorError(f"Existing audit record {record_id!r} differs from current payload")
+        ledger.verify_hash_chain()
+        return {"record_id": record_id, "imported": False, "ledger": str(ledger.path), "ledger_valid": True}
+    ledger.append(AUDIT_RECORD_TYPE, body, record_id=record_id, unique_record_id=True)
+    ledger.verify_hash_chain()
+    return {"record_id": record_id, "imported": True, "ledger": str(ledger.path), "ledger_valid": True}
+
+
+def _collection_phase(script: dict[str, Any]) -> str:
+    value = str(script.get("collection_phase") or "real").strip().lower()
+    if value not in {"pilot", "real"}:
+        raise CollectorError("collection_phase must be 'pilot' or 'real'")
+    return value
+
+
+def _artifact_collection_phase(artifact: dict[str, Any]) -> str:
+    snapshot = artifact.get("sealed_pre_decision_snapshot", {})
+    provenance = snapshot.get("provenance", {}) if isinstance(snapshot, dict) else {}
+    return str(provenance.get("collection_phase") or "real")
+
+
 def _script_time(script: dict[str, Any], key: str) -> str:
     value = script.get(key)
     if value is not None:
@@ -870,7 +1028,8 @@ def _prompt_start(input_func: Any) -> dict[str, Any]:
         "ambiguity": input_func("ambiguity 0-3: ").strip(),
         "estimated_minutes": input_func("estimated_minutes: ").strip(),
         "first_step_explicit": input_func("first_step_explicit true/false: ").strip(),
-        "deadline_hours": input_func("deadline_hours (blank if unavailable): ").strip(),
+        "has_deadline": input_func("has_deadline true/false: ").strip(),
+        "deadline_hours": input_func("deadline_hours (blank only when has_deadline is false): ").strip(),
         "recent_context_switches": input_func("recent_context_switches: ").strip(),
         "public_commitment": input_func("public_commitment true/false: ").strip(),
         "manual_note": input_func("optional note (not a feature): ").strip() or None,

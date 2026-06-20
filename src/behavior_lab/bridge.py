@@ -12,9 +12,11 @@ from behavior_lab.temporal import assert_feature_map_is_pre_decision
 
 BRIDGE_SCHEMA_VERSION = "behavior_lab_campaign_snapshot.v1"
 CAMPAIGN_001_ID = "campaign_001_task_initiation"
+CAMPAIGN_001_SCHEMA_VERSION_1_0 = "1.0"
+CAMPAIGN_001_SCHEMA_VERSION = "1.1"
 CAMPAIGN_001_TARGET = "started_within_10_minutes"
 
-CAMPAIGN_001_FEATURES: dict[str, type] = {
+CAMPAIGN_001_FEATURES_V1_0: dict[str, type] = {
     "task_type": str,
     "time_of_day": str,
     "fatigue": int,
@@ -24,6 +26,11 @@ CAMPAIGN_001_FEATURES: dict[str, type] = {
     "deadline_hours": float,
     "recent_context_switches": int,
     "public_commitment": bool,
+}
+
+CAMPAIGN_001_FEATURES: dict[str, type] = {
+    **CAMPAIGN_001_FEATURES_V1_0,
+    "has_deadline": bool,
 }
 
 CAMPAIGN_001_OUTCOMES: dict[str, type] = {
@@ -50,6 +57,51 @@ class BridgeImportResult:
 def campaign_001_definition() -> dict[str, Any]:
     return {
         "campaign_id": CAMPAIGN_001_ID,
+        "campaign_schema_version": CAMPAIGN_001_SCHEMA_VERSION,
+        "title": "Campaign 001 - task initiation",
+        "target": {
+            "name": CAMPAIGN_001_TARGET,
+            "question": "Did I begin the intended task within 10 minutes?",
+            "type": "binary",
+        },
+        "collection_plan": {
+            "eligibility_rule": (
+                "Record any self-directed task expected to require at least ten minutes "
+                "when I genuinely intend to begin it within the next fifteen minutes. "
+                "Exclude emergencies, meetings already in progress, trivial actions, and "
+                "tasks someone else is actively directing."
+            ),
+            "initial_block": "50 natural episodes",
+            "interventions": "none during initial observational block",
+            "manual_entry_ok": True,
+            "pilot_block": "5 pilot episodes retained in the ledger and excluded from model fitting",
+        },
+        "pre_decision_features": {
+            "task_type": "string",
+            "time_of_day": "string",
+            "fatigue": "integer 0..3",
+            "ambiguity": "integer 0..3",
+            "estimated_minutes": "positive integer",
+            "first_step_explicit": "boolean",
+            "has_deadline": "boolean",
+            "deadline_hours": "non-negative number when has_deadline is true; null when has_deadline is false",
+            "recent_context_switches": "non-negative integer",
+            "public_commitment": "boolean",
+        },
+        "protected_outcome": {
+            "started_within_10_minutes": "boolean",
+            "start_latency_seconds": "non-negative integer",
+            "worked_for_20_minutes": "boolean",
+            "completed_that_day": "boolean",
+        },
+        "bridge_schema_version": BRIDGE_SCHEMA_VERSION,
+    }
+
+
+def campaign_001_definition_1_0() -> dict[str, Any]:
+    return {
+        "campaign_id": CAMPAIGN_001_ID,
+        "campaign_schema_version": CAMPAIGN_001_SCHEMA_VERSION_1_0,
         "title": "Campaign 001 - task initiation",
         "target": {
             "name": CAMPAIGN_001_TARGET,
@@ -168,10 +220,14 @@ def validate_snapshot(snapshot: dict[str, Any], *, campaign_id: str | None = Non
     parse_time(decision_time)
     parse_time(observation_cutoff)
 
+    campaign_schema_version = str(snapshot.get("campaign_schema_version") or CAMPAIGN_001_SCHEMA_VERSION_1_0)
+    if campaign_schema_version not in {CAMPAIGN_001_SCHEMA_VERSION_1_0, CAMPAIGN_001_SCHEMA_VERSION}:
+        raise BridgeValidationError(f"Unsupported campaign_schema_version {campaign_schema_version!r}")
+
     features = snapshot.get("pre_decision_features")
     if not isinstance(features, dict):
         raise BridgeValidationError("pre_decision_features must be an object")
-    _validate_campaign_001_features(features)
+    _validate_campaign_001_features(features, campaign_schema_version=campaign_schema_version)
     assert_feature_map_is_pre_decision(features, target_name=CAMPAIGN_001_TARGET)
 
     outcome = snapshot.get("protected_outcome")
@@ -204,6 +260,7 @@ def snapshot_to_decision_episode(snapshot: dict[str, Any]) -> DecisionEpisode:
         situation={
             "type": "task_initiation",
             "campaign_id": validated["campaign_id"],
+            "campaign_schema_version": str(validated.get("campaign_schema_version") or CAMPAIGN_001_SCHEMA_VERSION_1_0),
             "task_type": task_type,
             "description": str(validated.get("task_description") or task_type),
         },
@@ -215,6 +272,7 @@ def snapshot_to_decision_episode(snapshot: dict[str, Any]) -> DecisionEpisode:
             "source": "behavior_lab_bridge",
             "schema_version": validated["schema_version"],
             "campaign_id": validated["campaign_id"],
+            "campaign_schema_version": str(validated.get("campaign_schema_version") or CAMPAIGN_001_SCHEMA_VERSION_1_0),
             "source_hash": source_hash,
             "provenance": dict(validated["provenance"]),
         },
@@ -243,7 +301,7 @@ def import_snapshot_file(
         raise BridgeValidationError("No snapshots to import")
     validate_snapshot_file(path, campaign_id=campaign_id)
     ledger = ImmutableLedger(Path(data_dir) / "ledger.jsonl")
-    campaign_recorded = _ensure_campaign_definition(ledger, campaign_id)
+    campaign_recorded = ensure_campaign_definition(ledger, campaign_id)
     episodes = [snapshot_to_decision_episode(snapshot) for snapshot in snapshots]
     entries = [
         ("decision_episode", episode, episode.episode_id)
@@ -260,7 +318,7 @@ def import_snapshot_file(
     )
 
 
-def _ensure_campaign_definition(ledger: ImmutableLedger, campaign_id: str) -> bool:
+def ensure_campaign_definition(ledger: ImmutableLedger, campaign_id: str) -> bool:
     record_id = f"campaign_definition_{campaign_id}"
     existing = ledger.find_record(record_id, "campaign_definition")
     definition = campaign_001_definition()
@@ -272,15 +330,31 @@ def _ensure_campaign_definition(ledger: ImmutableLedger, campaign_id: str) -> bo
     return True
 
 
-def _validate_campaign_001_features(features: dict[str, Any]) -> None:
-    missing = sorted(set(CAMPAIGN_001_FEATURES) - set(features))
-    extra = sorted(set(features) - set(CAMPAIGN_001_FEATURES))
+def _validate_campaign_001_features(features: dict[str, Any], *, campaign_schema_version: str) -> None:
+    expected_features = (
+        CAMPAIGN_001_FEATURES_V1_0
+        if campaign_schema_version == CAMPAIGN_001_SCHEMA_VERSION_1_0
+        else CAMPAIGN_001_FEATURES
+    )
+    missing = sorted(set(expected_features) - set(features))
+    extra = sorted(set(features) - set(expected_features))
     if missing:
         raise BridgeValidationError(f"Missing pre-decision fields: {missing}")
     if extra:
         raise BridgeValidationError(f"Unexpected pre-decision fields: {extra}")
-    for name, expected_type in CAMPAIGN_001_FEATURES.items():
+    for name, expected_type in expected_features.items():
         value = features[name]
+        if campaign_schema_version == CAMPAIGN_001_SCHEMA_VERSION and name == "deadline_hours":
+            has_deadline = features["has_deadline"]
+            if not isinstance(has_deadline, bool):
+                raise BridgeValidationError("has_deadline must be boolean")
+            if has_deadline:
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    raise BridgeValidationError("deadline_hours must be a number when has_deadline is true")
+                continue
+            if value is not None:
+                raise BridgeValidationError("deadline_hours must be null when has_deadline is false")
+            continue
         if expected_type is bool:
             if not isinstance(value, bool):
                 raise BridgeValidationError(f"{name} must be boolean")
@@ -301,7 +375,7 @@ def _validate_campaign_001_features(features: dict[str, Any]) -> None:
         raise BridgeValidationError("ambiguity must be in 0..3")
     if int(features["estimated_minutes"]) <= 0:
         raise BridgeValidationError("estimated_minutes must be positive")
-    if float(features["deadline_hours"]) < 0:
+    if features.get("deadline_hours") is not None and float(features["deadline_hours"]) < 0:
         raise BridgeValidationError("deadline_hours must be non-negative")
     if int(features["recent_context_switches"]) < 0:
         raise BridgeValidationError("recent_context_switches must be non-negative")
@@ -328,6 +402,7 @@ def campaign_001_raw_template() -> dict[str, Any]:
     now = utc_now()
     return {
         "schema_version": BRIDGE_SCHEMA_VERSION,
+        "campaign_schema_version": CAMPAIGN_001_SCHEMA_VERSION,
         "campaign_id": CAMPAIGN_001_ID,
         "episode_id": "replace-with-stable-id",
         "subject_id": "arman",
@@ -342,6 +417,7 @@ def campaign_001_raw_template() -> dict[str, Any]:
             "ambiguity": 1,
             "estimated_minutes": 45,
             "first_step_explicit": False,
+            "has_deadline": True,
             "deadline_hours": 24,
             "recent_context_switches": 0,
             "public_commitment": False,

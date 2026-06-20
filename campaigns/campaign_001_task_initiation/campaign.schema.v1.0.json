@@ -1,13 +1,11 @@
 {
   "bridge_schema_version": "behavior_lab_campaign_snapshot.v1",
   "campaign_id": "campaign_001_task_initiation",
-  "campaign_schema_version": "1.1",
+  "campaign_schema_version": "1.0",
   "collection_plan": {
-    "eligibility_rule": "Record any self-directed task expected to require at least ten minutes when I genuinely intend to begin it within the next fifteen minutes. Exclude emergencies, meetings already in progress, trivial actions, and tasks someone else is actively directing.",
     "initial_block": "50 natural episodes",
     "interventions": "none during initial observational block",
-    "manual_entry_ok": true,
-    "pilot_block": "5 pilot episodes retained in the ledger and excluded from model fitting"
+    "manual_entry_ok": true
   },
   "post_decision_outcomes": {
     "completed_that_day": "boolean",
@@ -17,11 +15,10 @@
   },
   "pre_decision_features": {
     "ambiguity": "integer 0..3",
-    "deadline_hours": "non-negative number when has_deadline is true; null when has_deadline is false",
+    "deadline_hours": "non-negative number",
     "estimated_minutes": "positive integer",
     "fatigue": "integer 0..3",
     "first_step_explicit": "boolean",
-    "has_deadline": "boolean",
     "public_commitment": "boolean",
     "recent_context_switches": "non-negative integer",
     "task_type": "string",

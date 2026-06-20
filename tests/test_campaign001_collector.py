@@ -13,6 +13,7 @@ import unittest
 
 from behavior_lab.bridge import source_hash_for_snapshot, validate_snapshot_file
 from behavior_lab.campaign001_collector import (
+    AUDIT_RECORD_TYPE,
     CollectorError,
     amend_capture,
     atomic_write_json,
@@ -24,6 +25,7 @@ from behavior_lab.campaign001_collector import (
     start_capture,
     status_capture,
 )
+from behavior_lab.gym import WorldGym
 from behavior_lab.ledger import ImmutableLedger
 
 
@@ -40,6 +42,7 @@ def _start_script(**overrides: object) -> dict:
         "ambiguity": 1,
         "estimated_minutes": 45,
         "first_step_explicit": True,
+        "has_deadline": True,
         "deadline_hours": 24,
         "recent_context_switches": 2,
         "public_commitment": False,
@@ -129,13 +132,27 @@ class Campaign001CollectorTests(unittest.TestCase):
             final = resume_capture(tmp, episode_id=start["episode_id"], script=_outcome_script())
             self.assertEqual(final["episode_status"], "completed")
 
-    def test_missing_fields_are_explicit_and_block_finalization(self) -> None:
+    def test_no_deadline_is_explicit_and_can_be_finalized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            start = start_capture(tmp, script=_start_script(deadline_hours=None))
+            start = start_capture(tmp, script=_start_script(has_deadline=False, deadline_hours=None))
+            final = finalize_capture(start["episode_id"], tmp, script=_outcome_script())
             artifact = _read_json(start["artifact_path"])
-            self.assertEqual(start["episode_status"], "incomplete")
-            self.assertIn("deadline_hours", start["missing_fields"])
             self.assertIsNone(artifact["sealed_pre_decision_snapshot"]["pre_decision_features"]["deadline_hours"])
+            self.assertFalse(artifact["sealed_pre_decision_snapshot"]["pre_decision_features"]["has_deadline"])
+            self.assertEqual(final["episode_status"], "completed")
+
+    def test_missing_required_fields_are_explicit_and_reach_audit_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            start = start_capture(tmp, script=_start_script(task_type=None))
+            artifact = _read_json(start["artifact_path"])
+            ledger = ImmutableLedger(Path(tmp) / "ledger.jsonl")
+            audit = ledger.payloads(AUDIT_RECORD_TYPE)
+            self.assertEqual(start["episode_status"], "incomplete")
+            self.assertIn("task_type", start["missing_fields"])
+            self.assertIsNone(artifact["sealed_pre_decision_snapshot"]["pre_decision_features"]["task_type"])
+            self.assertEqual(len(audit), 1)
+            self.assertEqual(audit[0]["episode_status"], "incomplete")
+            self.assertEqual(audit[0]["audit_event"], "incomplete_pre_decision")
             with self.assertRaises(CollectorError):
                 finalize_capture(start["episode_id"], tmp, script=_outcome_script())
 
@@ -162,7 +179,10 @@ class Campaign001CollectorTests(unittest.TestCase):
             )
             artifact = _read_json(missed["artifact_path"])
             status = status_capture(tmp)
+            ledger = ImmutableLedger(Path(tmp) / "ledger.jsonl")
             self.assertEqual(artifact["capture_status"], "missed_pre_decision")
+            self.assertEqual(len(ledger.payloads(AUDIT_RECORD_TYPE)), 1)
+            self.assertIn("audit_ledger_record_id", missed)
             self.assertEqual(status["missed_eligible_episode_count"], 1)
             self.assertEqual(status["completed_natural_episode_count"], 0)
 
@@ -180,7 +200,7 @@ class Campaign001CollectorTests(unittest.TestCase):
             finalize_capture(completed["episode_id"], tmp, script=_outcome_script())
             incomplete = start_capture(
                 tmp,
-                script=_start_script(episode_uuid="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", deadline_hours=None),
+                script=_start_script(episode_uuid="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", task_type=None),
             )
             invalid = start_capture(tmp, script=_start_script(episode_uuid="cccccccc-cccc-cccc-cccc-cccccccccccc"))
             invalidate_capture(invalid["episode_id"], "boundary ambiguous", tmp)
@@ -196,6 +216,7 @@ class Campaign001CollectorTests(unittest.TestCase):
             self.assertEqual(status["episode_status_counts"]["completed"], 2)
             self.assertEqual(status["episode_status_counts"]["incomplete"], 1)
             self.assertEqual(status["episode_status_counts"]["invalidated"], 1)
+            self.assertGreaterEqual(status["audit_records"], 2)
             self.assertEqual(incomplete["episode_status"], "incomplete")
 
     def test_bridge_export_keeps_actions_and_protected_outcome_separate(self) -> None:
@@ -345,13 +366,27 @@ class Campaign001CollectorTests(unittest.TestCase):
             )
             artifact = _read_json(final["artifact_path"])
             status = status_capture(tmp)
+            ledger = ImmutableLedger(Path(tmp) / "ledger.jsonl")
             self.assertEqual(final["episode_status"], "missed_followup")
             self.assertFalse(final["imported"])
             self.assertIsNone(final["ledger_record_id"])
             self.assertFalse((Path(tmp) / "bridge_exports" / f"{start['episode_id']}.jsonl").exists())
-            self.assertFalse((Path(tmp) / "ledger.jsonl").exists())
+            self.assertEqual(len(ledger.payloads("decision_episode")), 0)
+            self.assertEqual(len(ledger.payloads(AUDIT_RECORD_TYPE)), 1)
             self.assertEqual(artifact["protected_outcome"]["completed_that_day"], None)
             self.assertEqual(status["episode_status_counts"]["missed_followup"], 1)
+
+    def test_pilot_completed_episode_is_retained_but_not_model_fit_row(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            start = start_capture(tmp, script=_start_script(), collection_phase="pilot")
+            finalize_capture(start["episode_id"], tmp, script=_outcome_script())
+            ledger = ImmutableLedger(Path(tmp) / "ledger.jsonl")
+            self.assertEqual(len(ledger.payloads("decision_episode")), 1)
+            status = status_capture(tmp)
+            self.assertEqual(status["completed_pilot_episode_count"], 1)
+            self.assertEqual(status["completed_natural_episode_count"], 0)
+            gym = WorldGym(tmp, campaign_id="campaign_001_task_initiation")
+            self.assertEqual(gym.decision_episode_rows(), [])
 
 
 if __name__ == "__main__":
