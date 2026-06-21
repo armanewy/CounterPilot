@@ -1,0 +1,856 @@
+{
+  "schema_version": 1,
+  "contract_id": "nber_ebay_best_offer_replication_targets_v1",
+  "created_utc": "2026-06-21",
+  "scope": "Wave 1 Prompt 1C: published-result replication contract before full NBER normalization",
+  "source_dataset": "NBER Best Offer Sequential Bargaining",
+  "raw_data_policy": {
+    "raw_csv_downloaded": false,
+    "large_raw_files_not_downloaded": [
+      {
+        "url": "https://nber.org/bargaining/anon_bo_lists.csv.gz",
+        "listed_size": "4.1G"
+      },
+      {
+        "url": "https://nber.org/bargaining/anon_bo_threads.csv.gz",
+        "listed_size": "1.3G"
+      },
+      {
+        "url": "https://nber.org/bargaining/bargaining_data.zip",
+        "listed_size": "5.5G"
+      }
+    ],
+    "allowed_cached_sources_dir": "C:\\OfferLabData\\source_docs"
+  },
+  "source_artifacts": [
+    {
+      "id": "nber_dataset_page",
+      "path": "C:\\OfferLabData\\source_docs\\best-offer-sequential-bargaining.html",
+      "url": "https://www.nber.org/research/data/best-offer-sequential-bargaining",
+      "sha256": "546BE9EC06750E04E973DB6CA02703711554A96FC98AE838DAFFC3A16E05154D"
+    },
+    {
+      "id": "nber_appendix_listing",
+      "path": "C:\\OfferLabData\\source_docs\\data-appendix-w24306-bargaining.html",
+      "url": "http://www.nber.org/data-appendix/w24306/bargaining",
+      "sha256": "DB01C80EFF129D4E451F4799EC4A1394E5691123EE69D24F4F2954CFEFF62EAA"
+    },
+    {
+      "id": "nber_codebook",
+      "path": "C:\\OfferLabData\\source_docs\\Codebook.xlsx",
+      "url": "https://nber.org/bargaining/Codebook.xlsx",
+      "sha256": "3FA5E83046AC29E610CF2BCF02FD85682F93F3608C689C5A434D794C65BB6516"
+    },
+    {
+      "id": "nber_readme_pdf",
+      "path": "C:\\OfferLabData\\source_docs\\README.pdf",
+      "url": "http://www.nber.org/data-appendix/w24306/bargaining/README.pdf",
+      "sha256": "B7C1DE64087C77ECC88A7746299EAD5642FBBBD62AA2618815A937866B9E4246"
+    },
+    {
+      "id": "nber_working_paper_pdf",
+      "path": "C:\\OfferLabData\\source_docs\\w24306.pdf",
+      "url": "https://www.nber.org/system/files/working_papers/w24306/w24306.pdf",
+      "sha256": "5E12E4DAC6DE91570013B6AC34B8757D17237DF783ABB58A6E40D23B77A1227B"
+    },
+    {
+      "id": "released_code_zip",
+      "path": "C:\\OfferLabData\\source_docs\\sequential_bargaining_QJE_code.zip",
+      "url": "https://nber.org/bargaining/sequential_bargaining_QJE_code.zip",
+      "sha256": "94790B8638A0BE5D96807A1D09E970BBE7C2A8282FC91B95838F1220CA6D882E"
+    },
+    {
+      "id": "paper_sample_do",
+      "path": "C:\\OfferLabData\\source_docs\\paper_sample.do",
+      "url": "released_code_zip:paper_sample.do",
+      "sha256": "9AFD57C2DC711EB00B6709CA4A6CAB335505EC6B3966E1F76EF4BCA16A9D3F97"
+    },
+    {
+      "id": "summary_stats_main_do",
+      "path": "C:\\OfferLabData\\source_docs\\summary_stats_main.do",
+      "url": "released_code_zip:summary_stats_main.do",
+      "sha256": "56FD56F3F0D5DB82970BEBF2AF6C698C43D345CB63A357BF172DFF75F8C81184"
+    },
+    {
+      "id": "summary_stats_ref_do",
+      "path": "C:\\OfferLabData\\source_docs\\summary_stats_ref.do",
+      "url": "released_code_zip:summary_stats_ref.do",
+      "sha256": "995B3A1B782CC946887D8D6201B8630D004ADB11721FABA307F9D12563BD2CE3"
+    },
+    {
+      "id": "game_tree_do",
+      "path": "C:\\OfferLabData\\source_docs\\game_tree.do",
+      "url": "released_code_zip:game_tree.do",
+      "sha256": "20DAFFC2F5727012703B5832750FEFE368B51CFB25036EE54DCB923F5245C80B"
+    }
+  ],
+  "codebook_contract": {
+    "listings_table": "anon_bo_lists.csv / bo_lists sheet",
+    "threads_table": "anon_bo_threads.csv / bo_threads sheet",
+    "join_keys": [
+      "anon_item_id",
+      "anon_item_id plus anon_byr_id for listing-buyer threads"
+    ],
+    "accepted_status_ids": [
+      1,
+      9
+    ],
+    "countered_status_id": 7,
+    "seller_counter_offer_type_id": 2,
+    "buyer_offer_type_ids": [
+      0,
+      1
+    ],
+    "used_condition_rule": "item_cndtn_id >= 3000 when item_cndtn_id is not missing",
+    "reference_price_rule": "count4 is not missing and count4 >= 20, with item_cndtn_id not missing for the reference-price sample"
+  },
+  "targets": [
+    {
+      "id": "struct_raw_listings_before_restrictions",
+      "level": "structural_invariant",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "paper_sample_do"
+      ],
+      "source_detail": "Appendix A, Table A1; paper_sample.do pre-collapse listing-level sample construction",
+      "population_filters": [
+        "All Best-Offer-enabled single-unit US eBay listings in the released listings table before paper restrictions"
+      ],
+      "formula": "count distinct anon_item_id before applying crit_1k, crit_price, crit_offr, crit_numoff_byr, crit_numoff_slr, crit_counter, crit_accept, or released-code crit_duplicate_time",
+      "expected": {
+        "type": "integer",
+        "value": 98307281
+      },
+      "tolerance": {
+        "type": "exact",
+        "absolute": 0
+      },
+      "known_differences": [
+        "NBER dataset page rounds this as 98 million listings.",
+        "Paper text also describes over 90 million before exclusions and 88.4 million after exclusions; Table A1 is the exact published count."
+      ]
+    },
+    {
+      "id": "struct_main_sample_listings_after_restrictions",
+      "level": "structural_invariant",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "paper_sample_do"
+      ],
+      "source_detail": "Appendix A, Table A1; paper_sample.do sample == 1",
+      "population_filters": [
+        "Listings after paper sample restrictions L1, L2, T1, T2 buyer, T2 seller, T3, and T4"
+      ],
+      "formula": "count distinct anon_item_id where sample == 1 after listing-level exclusion flags sum to zero",
+      "expected": {
+        "type": "integer",
+        "value": 88388220
+      },
+      "tolerance": {
+        "type": "exact",
+        "absolute": 0
+      },
+      "known_differences": [
+        "Released 2019 paper_sample.do adds T5 duplicate timestamp exclusion, but Appendix A Table A1 reports only L1-L2 and T1-T4.",
+        "If released-code T5 excludes any listing, report both the Appendix A-compatible count and the released-code count before treating the gate as failed."
+      ]
+    },
+    {
+      "id": "struct_l1_price_over_1000_exclusions",
+      "level": "structural_invariant",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "paper_sample_do"
+      ],
+      "source_detail": "Appendix A, Table A1 row L1",
+      "population_filters": [
+        "All listings before paper restrictions"
+      ],
+      "formula": "sum(start_price_usd > 1000)",
+      "expected": {
+        "type": "integer_and_fraction",
+        "count": 9547987,
+        "fraction": 0.0971
+      },
+      "tolerance": {
+        "type": "mixed",
+        "count_absolute": 0,
+        "fraction_absolute": 0.00005
+      },
+      "known_differences": [
+        "L1 is the largest exclusion and is intentionally arbitrary to simplify graphics; it removes about 10 percent of listings."
+      ]
+    },
+    {
+      "id": "struct_l2_sale_price_above_listing_exclusions",
+      "level": "structural_invariant",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "paper_sample_do"
+      ],
+      "source_detail": "Appendix A, Table A1 row L2",
+      "population_filters": [
+        "All listings before paper restrictions"
+      ],
+      "formula": "sum(item_price > start_price_usd and item_price is not missing)",
+      "expected": {
+        "type": "integer_and_fraction",
+        "count": 42524,
+        "fraction": 0.000433
+      },
+      "tolerance": {
+        "type": "mixed",
+        "count_absolute": 0,
+        "fraction_absolute": 0.0000005
+      },
+      "known_differences": [
+        "The paper notes these are abnormal listings, potentially bundled sales, and inconsistent with eBay communication guidelines."
+      ]
+    },
+    {
+      "id": "struct_t1_offer_above_listing_exclusions",
+      "level": "structural_invariant",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "paper_sample_do"
+      ],
+      "source_detail": "Appendix A, Table A1 row T1",
+      "population_filters": [
+        "All listings after merging offers to listings for listing-level exclusion"
+      ],
+      "formula": "at listing level, max(offr_price > start_price_usd and offr_price is not missing)",
+      "expected": {
+        "type": "integer_and_fraction",
+        "count": 386096,
+        "fraction": 0.00393
+      },
+      "tolerance": {
+        "type": "mixed",
+        "count_absolute": 0,
+        "fraction_absolute": 0.000005
+      },
+      "known_differences": [
+        "The paper attributes many T1 cases to sellers revising listing prices downward after an offer; only the final listing price is observed.",
+        "This exclusion interacts with the 26.3 percent Table 1 list-price-revised rate."
+      ]
+    },
+    {
+      "id": "struct_t2_offer_limit_exclusions",
+      "level": "structural_invariant",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "paper_sample_do",
+        "nber_codebook"
+      ],
+      "source_detail": "Appendix A, Table A1 rows T2 - buyer and T2 - seller",
+      "population_filters": [
+        "All listing-buyer threads before paper restrictions"
+      ],
+      "formula": "buyer violations: max(sum(offr_type_id in {0,1}) by anon_item_id, anon_byr_id > 3) at listing level; seller violations: max(sum(offr_type_id == 2) by anon_item_id, anon_byr_id > 3) at listing level",
+      "expected": {
+        "type": "object",
+        "buyer_count": 3529,
+        "buyer_fraction": 0.0000359,
+        "seller_count": 0,
+        "seller_fraction": 0
+      },
+      "tolerance": {
+        "type": "mixed",
+        "count_absolute": 0,
+        "fraction_absolute": 0.00000005
+      },
+      "known_differences": [
+        "The platform limit during the sample was three offers by each party; the paper notes eBay later changed the limit to five in 2017.",
+        "The current dataset period does not support evaluating the later five-offer policy."
+      ]
+    },
+    {
+      "id": "struct_t3_t4_sequence_integrity_exclusions",
+      "level": "structural_invariant",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "paper_sample_do",
+        "nber_codebook"
+      ],
+      "source_detail": "Appendix A, Table A1 rows T3 and T4",
+      "population_filters": [
+        "All listing-buyer threads before paper restrictions"
+      ],
+      "formula": "T3 count: listing-level max(status_id == 7 but next observed offer type is not the required counterparty type); T4 count: listing-level max(status_id in {1,9} and accepted offer is not final in thread)",
+      "expected": {
+        "type": "object",
+        "missing_counter_count": 1453,
+        "missing_counter_fraction": 0.0000148,
+        "accepted_not_last_count": 1111,
+        "accepted_not_last_fraction": 0.0000113
+      },
+      "tolerance": {
+        "type": "mixed",
+        "count_absolute": 0,
+        "fraction_absolute": 0.00000005
+      },
+      "known_differences": [
+        "The paper treats these as rare data-processing errors.",
+        "Released-code T5 duplicate timestamp policy is additional to the published T3-T4 rows."
+      ]
+    },
+    {
+      "id": "pub_table1_listing_price_mean",
+      "level": "published_descriptive_moment",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_main_do"
+      ],
+      "source_detail": "Table 1, Listing-Level Data, Listing Price mean",
+      "population_filters": [
+        "Main sample listings in sample_id_list.dta"
+      ],
+      "formula": "mean(start_price_usd)",
+      "expected": {
+        "type": "float",
+        "value": 94.6
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.05
+      },
+      "known_differences": [
+        "Computed after sample restrictions; raw listing file includes prices above 1000 excluded by L1."
+      ]
+    },
+    {
+      "id": "pub_table1_listing_used_rate",
+      "level": "published_descriptive_moment",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_main_do",
+        "nber_codebook"
+      ],
+      "source_detail": "Table 1, Listing-Level Data, Used mean and note",
+      "population_filters": [
+        "Main sample listings with item_cndtn_id not missing"
+      ],
+      "formula": "mean(item_cndtn_id >= 3000) over nonmissing item_cndtn_id",
+      "expected": {
+        "type": "float_with_denominator",
+        "value": 0.548,
+        "nonmissing_denominator": 60709655
+      },
+      "tolerance": {
+        "type": "mixed",
+        "value_absolute": 0.0005,
+        "denominator_absolute": 0
+      },
+      "known_differences": [
+        "Used/new status is available for only 60,709,655 main-sample listings, not all 88,388,220 listings."
+      ]
+    },
+    {
+      "id": "pub_table1_listing_revised_rate",
+      "level": "published_descriptive_moment",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_main_do",
+        "nber_codebook"
+      ],
+      "source_detail": "Table 1, Listing-Level Data, List Price Ever Revised mean",
+      "population_filters": [
+        "Main sample listings"
+      ],
+      "formula": "mean(bin_rev)",
+      "expected": {
+        "type": "float",
+        "value": 0.263
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.0005
+      },
+      "known_differences": [
+        "Relevant to T1 because final listing price, not standing price at offer time, is observed after seller revisions."
+      ]
+    },
+    {
+      "id": "pub_table1_listing_sold_rate",
+      "level": "published_descriptive_moment",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_main_do",
+        "nber_codebook"
+      ],
+      "source_detail": "Table 1, Listing-Level Data, Sold mean",
+      "population_filters": [
+        "Main sample listings"
+      ],
+      "formula": "mean(item_price is not missing)",
+      "expected": {
+        "type": "float",
+        "value": 0.215
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.0005
+      },
+      "known_differences": [
+        "Includes sales through Buy-It-Now and through Best Offer; do not compare to bargained-sale-only outcomes."
+      ]
+    },
+    {
+      "id": "pub_table1_listing_sold_best_offer_rate",
+      "level": "published_descriptive_moment",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_main_do",
+        "nber_codebook"
+      ],
+      "source_detail": "Table 1, Listing-Level Data, Sold by Best Offer mean",
+      "population_filters": [
+        "Main sample listings"
+      ],
+      "formula": "mean(bo_ck_yn == 1)",
+      "expected": {
+        "type": "float",
+        "value": 0.132
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.0005
+      },
+      "known_differences": [
+        "This is a listing-level rate; the conditional share of sold listings sold by Best Offer is approximately 0.132 / 0.215 and is not separately rounded in Table 1."
+      ]
+    },
+    {
+      "id": "pub_table1_listing_received_offer_rate",
+      "level": "published_descriptive_moment",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_main_do"
+      ],
+      "source_detail": "Table 1, Listing-Level Data, Received an Offer mean",
+      "population_filters": [
+        "Main sample listings after one-row-per-listing merge to any thread presence"
+      ],
+      "formula": "mean(thread_merge == 3) after merging distinct anon_item_id from anon_bo_threads to main sample listings",
+      "expected": {
+        "type": "float",
+        "value": 0.206
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.0005
+      },
+      "known_differences": [
+        "Narrative rounds this as 25.4 million listings with offers; exact rate is Table 1 rounded output."
+      ]
+    },
+    {
+      "id": "pub_table1_listing_sale_price_to_list",
+      "level": "published_descriptive_moment",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_main_do"
+      ],
+      "source_detail": "Table 1, Listing-Level Data, Sale Price / List Price mean",
+      "population_filters": [
+        "Main sample sold listings with item_price not missing"
+      ],
+      "formula": "mean(item_price / start_price_usd)",
+      "expected": {
+        "type": "float",
+        "value": 0.832
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.0005
+      },
+      "known_differences": [
+        "Includes Buy-It-Now sales and bargained sales; it is not conditional on Best Offer sale."
+      ]
+    },
+    {
+      "id": "pub_table1_listing_bargained_price_to_list",
+      "level": "published_descriptive_moment",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_main_do"
+      ],
+      "source_detail": "Table 1, Listing-Level Data, Bargained Price / List Price mean",
+      "population_filters": [
+        "Main sample listings sold by Best Offer"
+      ],
+      "formula": "mean(item_price / start_price_usd) where bo_ck_yn == 1",
+      "expected": {
+        "type": "float",
+        "value": 0.727
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.0005
+      },
+      "known_differences": [
+        "The paper narrative rounds this as 73 percent; the table value is 0.727."
+      ]
+    },
+    {
+      "id": "pub_table1_seller_count_and_feedback_denominator",
+      "level": "published_descriptive_moment",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_main_do"
+      ],
+      "source_detail": "Table 1, Seller-Level Data and notes",
+      "population_filters": [
+        "Main sample collapsed by anon_slr_id"
+      ],
+      "formula": "count distinct anon_slr_id after main-sample listing restrictions; feedback denominator is count nonmissing fdbk_pstv_start",
+      "expected": {
+        "type": "object",
+        "seller_count": 1197419,
+        "feedback_nonmissing_sellers": 1145426,
+        "feedback_positive_percent_mean": 99.4
+      },
+      "tolerance": {
+        "type": "mixed",
+        "count_absolute": 0,
+        "mean_absolute": 0.05
+      },
+      "known_differences": [
+        "The paper narrative appears to swap buyer and seller counts; the Table 1 row and code identify 1,197,419 sellers.",
+        "Feedback is missing for some sellers and is not averaged over all sellers."
+      ]
+    },
+    {
+      "id": "pub_table1_buyer_count",
+      "level": "published_descriptive_moment",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_main_do"
+      ],
+      "source_detail": "Table 1, Buyer-Level Data, No. Buyers",
+      "population_filters": [
+        "Main sample buyers from listings merged to collapsed thread activity"
+      ],
+      "formula": "count distinct anon_buyer_id after summary_stats_main.do buyer panel merge and main sample restriction",
+      "expected": {
+        "type": "integer",
+        "value": 4701455
+      },
+      "tolerance": {
+        "type": "exact",
+        "absolute": 0
+      },
+      "known_differences": [
+        "The paper narrative appears to swap buyer and seller counts; the Table 1 row and code identify 4,701,455 buyers."
+      ]
+    },
+    {
+      "id": "pub_table1_thread_count",
+      "level": "published_descriptive_moment",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_main_do"
+      ],
+      "source_detail": "Table 1, Thread-Level Data, No. Threads",
+      "population_filters": [
+        "Main sample listing-buyer threads",
+        "First offer per anon_item_id, anon_byr_id",
+        "Drop first-offer ratios greater than one"
+      ],
+      "formula": "after sorting by src_cre_date, keep order == 1; compute orat = offr_price / start_price_usd; drop if orat > 1; count rows",
+      "expected": {
+        "type": "integer",
+        "value": 25458516
+      },
+      "tolerance": {
+        "type": "exact",
+        "absolute": 0
+      },
+      "known_differences": [
+        "Figure 4 reports a smaller root-node count of 25,117,275 because game_tree.do constructs valid game-tree paths and does not match the Table 1 thread-panel filter exactly.",
+        "The NBER page summary rounds bargaining occurrences as over 25 million."
+      ]
+    },
+    {
+      "id": "pub_table1_thread_offer_count_mean",
+      "level": "published_descriptive_moment",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_main_do"
+      ],
+      "source_detail": "Table 1, Thread-Level Data, No. Offers mean",
+      "population_filters": [
+        "Same as pub_table1_thread_count"
+      ],
+      "formula": "mean(rounds), where rounds is count of offers within anon_item_id, anon_byr_id thread",
+      "expected": {
+        "type": "float",
+        "value": 1.66
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.005
+      },
+      "known_differences": [
+        "Excludes listing price as an offer; code counts rows in anon_bo_threads for the thread."
+      ]
+    },
+    {
+      "id": "pub_table1_thread_agreement_rate",
+      "level": "published_descriptive_moment",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_main_do",
+        "nber_codebook"
+      ],
+      "source_detail": "Table 1, Thread-Level Data, Agreement Reached mean",
+      "population_filters": [
+        "Same as pub_table1_thread_count"
+      ],
+      "formula": "mean(max(status_id in {1,9}) by anon_item_id, anon_byr_id)",
+      "expected": {
+        "type": "float",
+        "value": 0.454
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.0005
+      },
+      "known_differences": [
+        "Agreement uses accepted and auto-accepted statuses only; Buy-It-Now choices outside the thread are not accepted offers."
+      ]
+    },
+    {
+      "id": "pub_table1_thread_first_offer_to_list",
+      "level": "published_descriptive_moment",
+      "status": "fatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_main_do"
+      ],
+      "source_detail": "Table 1, Thread-Level Data, First Buyer Offer / List Price mean",
+      "population_filters": [
+        "Same as pub_table1_thread_count"
+      ],
+      "formula": "mean(first thread offr_price / start_price_usd) after dropping orat > 1",
+      "expected": {
+        "type": "float",
+        "value": 0.608
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.0005
+      },
+      "known_differences": [
+        "First buyer offer amount has a Table 1 mean of 86.6 USD; ratio check is more stable for normalization."
+      ]
+    },
+    {
+      "id": "diag_ref_sample_listing_count",
+      "level": "nonfatal_diagnostic_moment",
+      "status": "nonfatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_ref_do"
+      ],
+      "source_detail": "Appendix B, Table B1, No. Listings",
+      "population_filters": [
+        "Reference-price sample with count4 not missing, count4 >= 20, item_cndtn_id not missing, and main sample restrictions"
+      ],
+      "formula": "count distinct anon_item_id after summary_stats_ref.do listing-panel filters",
+      "expected": {
+        "type": "integer",
+        "value": 2047079
+      },
+      "tolerance": {
+        "type": "exact",
+        "absolute": 0
+      },
+      "known_differences": [
+        "Reference-price sample excludes one-of-a-kind listings and is intentionally not representative of the main sample.",
+        "Failure should block reference-price analyses, but not the main ingestion if Table 1 targets pass."
+      ]
+    },
+    {
+      "id": "diag_ref_sample_sold_rate",
+      "level": "nonfatal_diagnostic_moment",
+      "status": "nonfatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_ref_do"
+      ],
+      "source_detail": "Appendix B, Table B1, Sold mean",
+      "population_filters": [
+        "Same as diag_ref_sample_listing_count"
+      ],
+      "formula": "mean(item_price is not missing)",
+      "expected": {
+        "type": "float",
+        "value": 0.467
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.0005
+      },
+      "known_differences": [
+        "Appendix B notes the reference sample is more likely to sell than the main sample: 47 percent versus 22 percent."
+      ]
+    },
+    {
+      "id": "diag_ref_sample_received_offer_rate",
+      "level": "nonfatal_diagnostic_moment",
+      "status": "nonfatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_ref_do"
+      ],
+      "source_detail": "Appendix B, Table B1, Received an Offer mean",
+      "population_filters": [
+        "Same as diag_ref_sample_listing_count"
+      ],
+      "formula": "mean(thread_merge == 3)",
+      "expected": {
+        "type": "float",
+        "value": 0.427
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.0005
+      },
+      "known_differences": [
+        "Reference sample overrepresents cataloged goods with a comparison set, so offer incidence is not expected to match the main sample 0.206."
+      ]
+    },
+    {
+      "id": "diag_ref_sample_bargained_price_to_list",
+      "level": "nonfatal_diagnostic_moment",
+      "status": "nonfatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_ref_do"
+      ],
+      "source_detail": "Appendix B, Table B1, Bargained Price / List Price mean",
+      "population_filters": [
+        "Reference-price sample listings sold by Best Offer"
+      ],
+      "formula": "mean(item_price / start_price_usd) where bo_ck_yn == 1",
+      "expected": {
+        "type": "float",
+        "value": 0.813
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.0005
+      },
+      "known_differences": [
+        "Appendix B notes less room to bargain in the reference sample; this is materially higher than the main-sample 0.727."
+      ]
+    },
+    {
+      "id": "diag_ref_sample_thread_agreement_rate",
+      "level": "nonfatal_diagnostic_moment",
+      "status": "nonfatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "summary_stats_ref_do",
+        "nber_codebook"
+      ],
+      "source_detail": "Appendix B, Table B1, Agreement Reached mean",
+      "population_filters": [
+        "Reference-price sample listing-buyer threads",
+        "First offer per anon_item_id, anon_byr_id",
+        "Drop first-offer ratios greater than one"
+      ],
+      "formula": "mean(max(status_id in {1,9}) by anon_item_id, anon_byr_id)",
+      "expected": {
+        "type": "float",
+        "value": 0.25
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.0005
+      },
+      "known_differences": [
+        "Appendix B highlights this as much lower than the main-sample agreement rate of 0.454."
+      ]
+    },
+    {
+      "id": "diag_figure4_root_game_tree_count",
+      "level": "nonfatal_diagnostic_moment",
+      "status": "nonfatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "game_tree_do"
+      ],
+      "source_detail": "Figure 4, Bargaining Sequence Patterns, root offer count",
+      "population_filters": [
+        "Main sample threads as represented by game_tree.do path construction"
+      ],
+      "formula": "tab seq, matcell(off); root node is off[1,1] for first buyer offer",
+      "expected": {
+        "type": "integer",
+        "value": 25117275
+      },
+      "tolerance": {
+        "type": "exact",
+        "absolute": 0
+      },
+      "known_differences": [
+        "This is not the Table 1 No. Threads value; keep it nonfatal unless the ingestion is explicitly reproducing Figure 4."
+      ]
+    },
+    {
+      "id": "diag_figure4_first_seller_response_shares",
+      "level": "nonfatal_diagnostic_moment",
+      "status": "nonfatal",
+      "source_refs": [
+        "nber_working_paper_pdf",
+        "game_tree_do",
+        "nber_codebook"
+      ],
+      "source_detail": "Figure 4, first seller response after buyer offer",
+      "population_filters": [
+        "Root game-tree node from diag_figure4_root_game_tree_count"
+      ],
+      "formula": "accept share = count(first status_id in {1,9}) / root; counter share = count(first status_id == 7) / root; decline share = count(first status_id not in {1,7,9}) / root",
+      "expected": {
+        "type": "object",
+        "accept_share": 0.33,
+        "counter_share": 0.27,
+        "decline_share": 0.40
+      },
+      "tolerance": {
+        "type": "absolute",
+        "absolute": 0.005
+      },
+      "known_differences": [
+        "Figure 4 percentages are rendered as integer percentages, so tolerance reflects visual rounding.",
+        "Decline includes expired, declined, auto-declined, and declined-because-other-buyer-accepted statuses."
+      ]
+    }
+  ],
+  "gate": {
+    "pass_condition": "All fatal structural_invariant and published_descriptive_moment targets must reproduce within tolerance before model training. Nonfatal diagnostic moments must be reported and triaged but do not alone block main-sample normalization.",
+    "leakage_note": "Targets are aggregate pre-training checks only. They must not be used as labels or tuning objectives for predictive models."
+  }
+}
