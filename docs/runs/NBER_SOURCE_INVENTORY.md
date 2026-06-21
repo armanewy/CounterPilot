@@ -23,7 +23,7 @@ By default the inventory command reads files already present in `OFFERLAB_DATA_R
 python -m behavior_lab nber-best-offer source-inventory --download --write-report
 ```
 
-When `--download` is supplied, the command uses atomic temporary files, byte-range resume where supported, SHA-256 hashes, gzip integrity checks, streaming row counts, redacted row summaries, and deterministic redacted samples outside the repository.
+When `--download` is supplied, the command uses atomic temporary files, byte-range resume where supported, SHA-256 hashes, gzip integrity checks, streaming row counts, external raw CSV samples, and separate redacted JSONL summaries. All sample files stay outside the repository.
 
 ## Privacy And Release Boundaries
 

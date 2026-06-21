@@ -10,7 +10,7 @@ import tempfile
 import unittest
 import zipfile
 
-from behavior_lab.datasets.nber_best_offer.source_inventory import OFFICIAL_SOURCES, SourceInventoryError, public_summary, run_source_inventory
+from behavior_lab.datasets.nber_best_offer.source_inventory import OFFICIAL_SOURCES, SourceInventoryError, inventory_official_sources, public_summary, run_source_inventory
 from behavior_lab.datasets.nber_best_offer.source_schema import read_codebook_sheets
 
 
@@ -173,6 +173,14 @@ class NberSourceInventoryTests(unittest.TestCase):
                 doc_path=repo_root / "_tmp_inventory.md",
                 official_sources=[OFFICIAL_SOURCES[0]],
                 write_outputs=False,
+            )
+
+    def test_non_report_inventory_refuses_repo_local_official_raw_dir(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        with self.assertRaises(SourceInventoryError):
+            inventory_official_sources(
+                raw_dir=repo_root / "_tmp_nber_repo_raw",
+                sample_dir=Path(tempfile.gettempdir()) / "nber_external_samples",
             )
 
     def _write_gzip_csv(self, path: Path, rows: list[list[str]]) -> None:

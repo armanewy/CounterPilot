@@ -195,7 +195,7 @@ def normalize_real_dataset(
             shutil.rmtree(table_dir)
         table_dir.mkdir(parents=True)
 
-    turn_rows = _write_turn_partitions(bucket_dir, turn_table, partition_rows=partition_rows, quarantine=quarantine)
+    turn_rows = _write_turn_partitions(bucket_dir, turn_table, bucket_count=bucket_count, partition_rows=partition_rows, quarantine=quarantine)
     listing_rows = _write_listing_partitions(lists_path, id_index_path, listing_table, partition_rows=partition_rows, quarantine=quarantine)
     quarantine_path = output / "quarantine.json"
     quarantine_payload = quarantine.to_payload()
@@ -331,12 +331,12 @@ def _bucket_thread_rows(
     }
 
 
-def _write_turn_partitions(bucket_dir: Path, table_dir: Path, *, partition_rows: int, quarantine: Quarantine) -> dict[str, Any]:
+def _write_turn_partitions(bucket_dir: Path, table_dir: Path, *, bucket_count: int, partition_rows: int, quarantine: Quarantine) -> dict[str, Any]:
     rows_out = []
     partitions = []
     total = 0
     part_index = 0
-    for bucket in sorted(bucket_dir.glob("bucket_*.jsonl")):
+    for bucket in (bucket_dir / f"bucket_{index:04d}.jsonl" for index in range(bucket_count)):
         staging_path = bucket.with_suffix(".sqlite")
         if staging_path.exists():
             staging_path.unlink()
@@ -577,6 +577,10 @@ def _thread_checkpoint_signature(
 
 
 def _bucket_manifest(bucket_dir: Path, bucket_count: int, *, row_counts: list[int] | None = None) -> dict[str, Any]:
+    expected_names = {f"bucket_{index:04d}.jsonl" for index in range(bucket_count)}
+    actual_names = {path.name for path in bucket_dir.glob("bucket_*.jsonl")}
+    if actual_names != expected_names:
+        return {"valid": False, "bucket_count": bucket_count, "buckets": [], "unexpected_buckets": sorted(actual_names - expected_names), "missing_buckets": sorted(expected_names - actual_names)}
     buckets = []
     total_rows = 0
     for index in range(bucket_count):
@@ -678,12 +682,24 @@ def _id_index_is_valid(path: Path) -> bool:
         return False
 
 
-def _id_index_checkpoint_stats(conn: sqlite3.Connection) -> dict[str, int]:
+def _id_index_checkpoint_stats(conn: sqlite3.Connection) -> dict[str, int | str]:
     return {
         "seen_threads": int(conn.execute("SELECT COUNT(*) FROM seen_threads").fetchone()[0]),
         "row_hashes": int(conn.execute("SELECT COUNT(*) FROM row_hashes").fetchone()[0]),
         "listing_ids": int(conn.execute("SELECT COUNT(*) FROM listing_ids").fetchone()[0]),
+        "seen_threads_hash": _sqlite_column_hash(conn, "seen_threads", "thread_id"),
+        "row_hashes_hash": _sqlite_column_hash(conn, "row_hashes", "row_hash"),
+        "listing_ids_hash": _sqlite_column_hash(conn, "listing_ids", "listing_id"),
     }
+
+
+def _sqlite_column_hash(conn: sqlite3.Connection, table: str, column: str) -> str:
+    _validate_index_table_column(table, column)
+    digest = hashlib.sha256()
+    for (value,) in conn.execute(f"SELECT {column} FROM {table} ORDER BY {column}"):
+        digest.update(str(value).encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest().upper()
 
 
 def _id_index_contains(conn: sqlite3.Connection, table: str, column: str, value: str) -> bool:

@@ -161,6 +161,48 @@ class RealNberPipelineTests(unittest.TestCase):
             self.assertEqual(manifest["source_thread_pass"]["id_index_stats"]["row_hashes"], 4)
             self.assertEqual(manifest["tables"]["negotiation_turns"]["rows"], 4)
 
+    def test_same_count_thread_index_content_corruption_rebuilds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw"
+            output = Path(tmp) / "normalized"
+            raw.mkdir()
+            (raw / "anon_bo_lists.csv").write_text((FIXTURES / "anon_bo_lists.csv").read_text(encoding="utf-8"), encoding="utf-8")
+            (raw / "anon_bo_threads.csv").write_text((FIXTURES / "anon_bo_threads.csv").read_text(encoding="utf-8"), encoding="utf-8")
+
+            normalize_real_dataset(raw, output, limit_threads=10, bucket_count=4, partition_rows=2, stop_after_thread_pass=True)
+            index_path = output / "_tmp" / "thread_listing_ids.sqlite"
+            conn = sqlite3.connect(index_path)
+            try:
+                conn.execute("DELETE FROM listing_ids")
+                conn.executemany(
+                    "INSERT INTO listing_ids (listing_id, matched) VALUES (?, 0)",
+                    [("missing-a",), ("missing-b",), ("missing-c",)],
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            manifest = normalize_real_dataset(raw, output, limit_threads=10, bucket_count=4, partition_rows=2)
+            self.assertEqual(manifest["tables"]["listings"]["rows"], 3)
+            self.assertEqual(manifest["thread_linked_listing_extraction"]["matched_listings"], 3)
+
+    def test_extra_thread_bucket_checkpoint_rebuilds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw"
+            output = Path(tmp) / "normalized"
+            raw.mkdir()
+            (raw / "anon_bo_lists.csv").write_text((FIXTURES / "anon_bo_lists.csv").read_text(encoding="utf-8"), encoding="utf-8")
+            (raw / "anon_bo_threads.csv").write_text((FIXTURES / "anon_bo_threads.csv").read_text(encoding="utf-8"), encoding="utf-8")
+
+            normalize_real_dataset(raw, output, limit_threads=10, bucket_count=4, partition_rows=2, stop_after_thread_pass=True)
+            bucket_dir = output / "_tmp" / "thread_buckets"
+            source_bucket = next(path for path in bucket_dir.glob("bucket_*.jsonl") if path.stat().st_size > 0)
+            (bucket_dir / "bucket_9999.jsonl").write_text(source_bucket.read_text(encoding="utf-8"), encoding="utf-8")
+
+            manifest = normalize_real_dataset(raw, output, limit_threads=10, bucket_count=4, partition_rows=2)
+            self.assertEqual(manifest["source_thread_pass"]["accepted_rows"], 4)
+            self.assertEqual(manifest["tables"]["negotiation_turns"]["rows"], 4)
+
     def test_real_task_status_semantics_and_reference_price_exclusion(self) -> None:
         listing = {
             "listing_id": "l1",
@@ -209,7 +251,22 @@ class RealNberPipelineTests(unittest.TestCase):
     def test_real_leakage_guards_reject_forbidden_feature_aliases(self) -> None:
         row = {
             "row_id": "r1",
-            "features": {"status_id": 1, "response_time": "2020-01-01T00:00:00", "excluded_reference_price_ref_price4": 95.0},
+            "features": {
+                "status_id": 1,
+                "response_time": "2020-01-01T00:00:00",
+                "ref_price4": 95.0,
+                "excluded_reference_price_ref_price4": 95.0,
+                "item_price": 88.0,
+                "bo_ck_yn": 1,
+                "final_sale_price": 88.0,
+                "buyer_id_if_sold": "b1",
+                "sold_by_best_offer": True,
+                "auto_accept_price": 99.0,
+                "auto_decline_price": 50.0,
+                "accept_price": 99.0,
+                "decline_price": 50.0,
+                "buyer_us_if_sold": True,
+            },
             "observed_history": [],
         }
         self.assertFalse(assert_no_future_leakage([row]))

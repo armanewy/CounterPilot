@@ -34,7 +34,7 @@ source_csv_headers:
 canonical_contract:
   listings_required_fields: [listing_id, seller_id, category, condition, listing_price, reference_price, start_time, end_time]
   negotiation_turns_required_fields: [thread_id, listing_id, buyer_id, seller_id, turn_index, actor, action, amount, status, event_time]
-  forbidden_future_fields: [final_price, agreement, future_rounds, final_status, status, later_response_time, total_rounds]
+  forbidden_future_fields: [final_price, agreement, future_rounds, final_status, status, status_id, response_time, later_response_time, total_rounds, item_price, bo_ck_yn, final_sale_price, sold_by_best_offer, buyer_id_if_sold, buyer_us_if_sold, auto_accept_price, auto_decline_price, accept_price, decline_price, ref_price4, excluded_reference_price_ref_price4]
   task_targets:
     seller_next_action: "response by seller after buyer offer"
     buyer_response_to_counter: "response by buyer after seller counter"

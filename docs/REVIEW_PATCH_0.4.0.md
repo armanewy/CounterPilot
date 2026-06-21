@@ -9,7 +9,7 @@ This release hardens the research harness without claiming that the public-data 
 - Hidden submissions bind to the exact proposal artifact, training snapshot, and hidden case set.
 - Campaign metadata changes and overlapping hidden-case reuse under renamed campaigns are rejected.
 - Research-store writes are hash-chained and protected by a local interprocess lock.
-- NBER chronological benchmark paths keep complete negotiation threads together and purge boundary-crossing threads.
+- NBER chronological benchmark paths are listing-purged, keeping all negotiation threads for a listing together and purging boundary-crossing listings.
 - Censored negotiations are excluded from negative agreement labels.
 - Transfer-ablation reports no longer contain invented default metrics; an unrun ablation is marked `not_run`.
 - The eBay API probe reports unrelated-listing visibility as an observation rather than assuming denial.

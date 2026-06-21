@@ -163,14 +163,14 @@ These estimates are for planning only. They combine the synthetic benchmark slop
 Leakage risks:
 - Final status or final price can leak into seller-next-action features.
 - Future negotiation turns can leak into earlier-turn tasks.
-- Thread boundaries can cross chronological split boundaries if split after row-level normalization.
+- Listing and thread boundaries can cross chronological split boundaries if split after row-level normalization.
 - Seller and buyer identifiers can support memorization if used before identifier controls.
 - Listing rows can include variables constructed after the decision point unless the codebook mapping tags timing explicitly.
 
 Controls:
 - Normalize immutable turns first, then build task-specific feature views that exclude forbidden future fields from `src/behavior_lab/datasets/nber_best_offer/schema.py`.
-- Split complete negotiation threads, not individual rows.
-- Purge boundary-crossing threads and report them.
+- Split complete listings for the real NBER benchmark, not individual rows, so all negotiation threads attached to a listing remain in one split region.
+- Purge boundary-crossing listings and report them.
 - Run chronological, seller-disjoint, category breakdown, random-label, future-round, final-status, and identifier-memorization audits before accepting benchmark claims.
 
 ## Gate

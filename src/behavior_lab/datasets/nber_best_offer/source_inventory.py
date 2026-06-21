@@ -509,6 +509,7 @@ def inventory_official_sources(
 ) -> dict[str, Any]:
     start = time.perf_counter()
     root = Path(raw_dir) if raw_dir is not None else default_raw_dir()
+    _assert_outside_repo(root, "raw_dir")
     downloads = [asdict(record) for record in download_official_sources(root)] if download else []
     files: dict[str, Any] = {}
     for source in OFFICIAL_SOURCES:

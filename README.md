@@ -36,7 +36,7 @@ This repository is an infrastructure MVP, not a validated human-behavior oracle.
 - Development diagnostics, residuals, counterexamples, paired comparison, and complexity frontiers.
 - Persistent hidden/prospective evaluation budgets, reserved before evaluation so crashes cannot create free retries.
 - Exact artifact, training-snapshot, and hidden-case-set binding for OfferLab research lockboxes.
-- Conservative negotiation-thread temporal splits that purge threads crossing split boundaries.
+- Conservative NBER listing-purged temporal splits that keep all negotiation threads for a listing in one split region.
 - Explicit censoring: incomplete negotiation threads are not converted into failed-agreement labels.
 - Immutable authorization-evidence gates for production artifacts derived from current seller data.
 - Cross-campaign protection against reusing previously queried hidden cases.
