@@ -49,6 +49,7 @@ from behavior_lab.offerlab import (
     write_campaign_002_template,
     load_offerlab_snapshots,
 )
+from behavior_lab.offerlab_models import run_sample_research_suite
 from behavior_lab.research_api import ResearchAPI
 from behavior_lab.runner import BatchConfig, SyntheticBatchRunner
 from behavior_lab.stress import LabStressTester
@@ -254,6 +255,10 @@ def command_offerlab_recommend(args: argparse.Namespace) -> None:
     if args.config:
         config = json.loads(Path(args.config).read_text(encoding="utf-8"))
     _print_json(recommend_offer_action(snapshots[0], data_dir=args.data_dir, config=config))
+
+
+def command_offerlab_models_sample(args: argparse.Namespace) -> None:
+    _print_json(run_sample_research_suite())
 
 
 def command_data_source_list(args: argparse.Namespace) -> None:
@@ -551,6 +556,11 @@ def build_parser() -> argparse.ArgumentParser:
     offer_recommend.add_argument("--data-dir", default=None)
     offer_recommend.add_argument("--config", help="Optional JSON economics config with fee, holding cost, and return risk")
     offer_recommend.set_defaults(func=command_offerlab_recommend)
+
+    offer_models = subparsers.add_parser("offerlab-models", help="Run research-only OfferLab model leaderboards")
+    offer_models_subparsers = offer_models.add_subparsers(dest="offerlab_models_command", required=True)
+    offer_models_sample = offer_models_subparsers.add_parser("sample", help="Run the deterministic NBER-format sample model suite")
+    offer_models_sample.set_defaults(func=command_offerlab_models_sample)
 
     demo = subparsers.add_parser("demo", help="Run all waves end-to-end with campaign-safe lockboxes")
     demo.add_argument("--data-dir", default=".demo")
