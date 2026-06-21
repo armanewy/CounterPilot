@@ -12,6 +12,14 @@ authors = [{ name = "Behavior Discovery Lab" }]
 license = { text = "MIT" }
 dependencies = []
 
+[project.optional-dependencies]
+nber = [
+    "duckdb>=1.0",
+    "polars>=1.0",
+    "pyarrow>=15",
+    "psutil>=5.9",
+]
+
 [project.scripts]
 behavior-lab = "behavior_lab.cli:main"
 

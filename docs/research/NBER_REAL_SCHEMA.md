@@ -16,7 +16,7 @@ Downloaded source documents were stored outside the repository at
 | `sequential_bargaining_QJE_code.zip` | `https://www.nber.org/bargaining/sequential_bargaining_QJE_code.zip` | `94790B8638A0BE5D96807A1D09E970BBE7C2A8282FC91B95838F1220CA6D882E` |
 | `best-offer-sequential-bargaining.html` | `https://www.nber.org/research/data/best-offer-sequential-bargaining` | `8A84006852B81266809817A4E07B08CFEAC772CD657FF5D948C9D4D4D3AF7A5A` |
 
-Key extracted-code hashes:
+Key extracted-code hashes and source probes:
 
 | Extracted file | SHA-256 |
 | --- | --- |
@@ -25,6 +25,8 @@ Key extracted-code hashes:
 | `summary_stats_main.do` | `56FD56F3F0D5DB82970BEBF2AF6C698C43D345CB63A357BF172DFF75F8C81184` |
 | `competition_facts.do` | `6EEF2395D01889B7AA79BFD1EA1879BFEDE79A64FC091E61DDF1E8D58C4574DB` |
 | `price_conv.do` | `1C0FA2FEF82049D3369ABD2AF12574ED583E4D8BB9F1D6E83CF901B8424D71DB` |
+| `anon_bo_lists.csv.gz` ranged header probe | full file not downloaded; compressed-size total observed as 4,451,661,738 bytes |
+| `anon_bo_threads.csv.gz` ranged header probe | full file not downloaded; compressed-size total observed as 1,374,076,192 bytes |
 
 ## Codebook Sheets
 
@@ -41,24 +43,24 @@ offers and counteroffers corresponding to those listings.
 
 ## Extracted Headers
 
-Codebook order for `anon_bo_lists.csv`:
+Verified raw order for `anon_bo_lists.csv`:
 
 ```text
-anon_item_id,anon_title_code,anon_product_id,anon_leaf_categ_id,anon_slr_id,anon_buyer_id,auct_start_dt,auct_end_dt,slr_us,buyer_us,start_price_usd,photo_count,to_lst_cnt,bo_lst_cnt,item_cndtn_id,view_item_count,wtchr_count,item_price,bo_ck_yn,decline_price,accept_price,bin_rev,store,count1,ref_price1,count2,ref_price2,count3,ref_price3,count4,ref_price4,ship_time_slowest,ship_time_fastest,ship_time_chosen,lstg_gen_type_id,fdbk_pstv_start,fdbk_score_start,meta_categ_id
+anon_item_id,anon_title_code,anon_product_id,anon_leaf_categ_id,anon_slr_id,anon_buyer_id,auct_start_dt,fdbk_score_start,fdbk_pstv_start,auct_end_dt,start_price_usd,photo_count,to_lst_cnt,bo_lst_cnt,count1,ref_price1,count2,ref_price2,count3,ref_price3,item_cndtn_id,view_item_count,wtchr_count,meta_categ_id,item_price,bo_ck_yn,ship_time_slowest,ship_time_fastest,ship_time_chosen,decline_price,accept_price,bin_rev,lstg_gen_type_id,store,ref_price4,count4,slr_us,buyer_us
 ```
 
-Codebook order for `anon_bo_threads.csv`:
+Verified raw order for `anon_bo_threads.csv`:
 
 ```text
-anon_item_id,anon_thread_id,anon_byr_id,anon_slr_id,offr_type_id,status_id,offr_price,src_cre_date,response_time,slr_hist,byr_hist,any_mssg,fdbk_pstv_src,fdbk_score_src,buyer_us
+anon_item_id,anon_thread_id,anon_byr_id,anon_slr_id,src_cre_dt,fdbk_score_src,fdbk_pstv_src,offr_type_id,status_id,offr_price,src_cre_date,response_time,slr_hist,byr_hist,any_mssg,byr_us
 ```
 
-Official-source discrepancy: `load_csv_files.do` imports
-`anon_bo_threads.csv` and converts `src_cre_dt`, `src_cre_date`, and
-`response_time` to Stata dates/times. `src_cre_dt` is also used by
-`photos_analysis.do`, but it is not listed on the codebook sheet. Raw data were
-not downloaded for this prompt, so the exact raw header order for `src_cre_dt`
-is unresolved and marked that way in the YAML.
+Official-source discrepancy: `load_csv_files.do` imports `anon_bo_threads.csv`
+and converts `src_cre_dt`, `src_cre_date`, and `response_time` to Stata
+dates/times. `src_cre_dt` is used by authors' code but omitted from the
+codebook sheet. A ranged gzip probe of the official thread file confirms its
+raw header position. The raw thread file also spells buyer location as `byr_us`,
+while the codebook prose uses `buyer_us`.
 
 ## Identifier Mapping
 
@@ -159,7 +161,6 @@ and missing `slr_hist`/`byr_hist` patterns. They contain no raw NBER rows.
 ## Gate Status
 
 Prompt 1A gate: passed for codebook inspection, source-doc hashing,
-machine-readable mapping, identifier/event/outcome resolution, leakage notes,
-and synthetic fixtures. Remaining limitation: exact raw CSV header order for
-authors-code-only `src_cre_dt` is unresolved because raw datasets were not
-downloaded or committed.
+machine-readable mapping, ranged raw-header verification,
+identifier/event/outcome resolution, leakage notes, and synthetic fixtures.
+The full raw datasets were not downloaded or committed.

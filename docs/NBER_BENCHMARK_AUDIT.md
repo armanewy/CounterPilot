@@ -21,7 +21,29 @@ The repository implements a fixture-sized NBER path:
 - `nber-best-offer benchmark`
 - `nber-best-offer audit`
 
-The current normalizer supports the repository fixture schema (`listings.csv` and `turns.csv`) and emits JSONL partition tables as a standard-library fallback. It does **not** yet map the official full NBER release schema. Full-release normalization requires a codebook-driven adapter and should use an optional streaming/Parquet dependency group.
+The original normalizer supports the repository fixture schema (`listings.csv`
+and `turns.csv`) and emits JSONL partition tables as a standard-library
+fallback. The official full NBER release now has a separate Wave 1 real-source
+adapter and contract; it should remain separate from the fixture normalizer.
+
+Wave 1 adds the first real-release contract and bounded adapter path:
+
+- `docs/research/NBER_REAL_SCHEMA.md`
+- `datasets/manifests/nber_best_offer_real_mapping.yaml`
+- `docs/research/NBER_REPLICATION_CONTRACT.md`
+- `datasets/manifests/nber_replication_targets.yaml`
+- `docs/research/NBER_SCALE_PLAN.md`
+- `nber-best-offer inspect-schema`
+- `nber-best-offer source-inventory`
+- `nber-best-offer normalize-real`
+- `nber-best-offer replication-check`
+
+The real-release path is separate from the fixture normalizer. A bounded fixture
+run accepts the verified real headers, writes partitioned Parquet when PyArrow
+is installed, records raw hashes and mapping lineage, keeps thread rows grouped
+before partition output, extracts only thread-linked listings for the first
+benchmark, and supports resume after the thread pass. The full official release
+has not been normalized yet.
 
 ## Interpretation
 

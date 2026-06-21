@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict
 import json
+import os
 from pathlib import Path
 import shutil
 from typing import Any
@@ -39,6 +40,10 @@ from behavior_lab.datasets.nber_best_offer.audit import audit as nber_audit
 from behavior_lab.datasets.nber_best_offer.audit import benchmark as nber_benchmark
 from behavior_lab.datasets.nber_best_offer.inventory import inventory_path
 from behavior_lab.datasets.nber_best_offer.normalize import build_sample_dataset, normalize_dataset
+from behavior_lab.datasets.nber_best_offer.real_normalize import inspect_real_source_schema, normalize_real_dataset
+from behavior_lab.datasets.nber_best_offer.replication import replication_check, validate_replication_targets
+from behavior_lab.datasets.nber_best_offer.source_inventory import inventory_official_sources, public_summary, run_source_inventory
+from behavior_lab.datasets.nber_best_offer.source_schema import inspect_schema
 from behavior_lab.datasets.open_bandit.ope import evaluate_policy
 from behavior_lab.offerlab import (
     ingest_offerlab_snapshots,
@@ -292,12 +297,65 @@ def command_nber_inventory(args: argparse.Namespace) -> None:
     _print_json(inventory_path(args.input))
 
 
+def command_nber_source_inventory(args: argparse.Namespace) -> None:
+    raw_dir = args.raw_dir or str(Path(os.environ.get("OFFERLAB_DATA_ROOT", r"C:\OfferLabData")) / "raw" / "nber_best_offer")
+    if args.write_report:
+        manifest = run_source_inventory(
+            raw_dir=raw_dir,
+            manifest_path=args.manifest,
+            doc_path=args.doc,
+            first_sample_rows=args.first_sample_rows,
+            reservoir_rows=args.reservoir_rows,
+            chronological_rows_per_slice=args.chronological_rows_per_slice,
+            timeout_seconds=args.timeout_seconds,
+        )
+        _print_json(public_summary(manifest))
+    else:
+        _print_json(
+            inventory_official_sources(
+                raw_dir=raw_dir,
+                download=args.download,
+                sample_dir=args.sample_dir,
+                reservoir_size=args.reservoir_rows,
+            )
+        )
+
+
 def command_nber_build_sample(args: argparse.Namespace) -> None:
     _print_json(build_sample_dataset(args.output_dir))
 
 
 def command_nber_normalize(args: argparse.Namespace) -> None:
     _print_json(normalize_dataset(args.input_dir, args.output_dir))
+
+
+def command_nber_inspect_schema(args: argparse.Namespace) -> None:
+    if args.raw_dir:
+        _print_json(inspect_real_source_schema(args.raw_dir))
+    else:
+        _print_json(inspect_schema(codebook_path=args.codebook))
+
+
+def command_nber_normalize_real(args: argparse.Namespace) -> None:
+    _print_json(
+        normalize_real_dataset(
+            args.raw_dir,
+            args.output_dir,
+            limit_threads=args.limit_threads,
+            full=args.full,
+            bucket_count=args.bucket_count,
+            partition_rows=args.partition_rows,
+            seed=args.seed,
+            stop_after_thread_pass=args.stop_after_thread_pass,
+        )
+    )
+
+
+def command_nber_replication_check(args: argparse.Namespace) -> None:
+    if args.normalized_dir:
+        _print_json(replication_check(args.normalized_dir, targets_path=args.targets))
+    else:
+        _print_json(validate_replication_targets(args.targets))
 
 
 def command_nber_benchmark(args: argparse.Namespace) -> None:
@@ -441,6 +499,19 @@ def build_parser() -> argparse.ArgumentParser:
     nber_inventory.add_argument("--input", required=True)
     nber_inventory.set_defaults(func=command_nber_inventory)
 
+    nber_source_inventory = nber_subparsers.add_parser("source-inventory", help="Inventory official NBER source files without normalization")
+    nber_source_inventory.add_argument("--raw-dir", default=None, help="Defaults to OFFERLAB_DATA_ROOT/raw/nber_best_offer")
+    nber_source_inventory.add_argument("--download", action="store_true", help="Download missing official files before inventory")
+    nber_source_inventory.add_argument("--sample-dir", help="Optional external directory for redacted samples")
+    nber_source_inventory.add_argument("--reservoir-rows", type=_nonnegative, default=10_000)
+    nber_source_inventory.add_argument("--write-report", action="store_true", help="Write committed metadata report paths")
+    nber_source_inventory.add_argument("--manifest", default="datasets/manifests/nber_best_offer_downloads.yaml")
+    nber_source_inventory.add_argument("--doc", default="docs/runs/NBER_SOURCE_INVENTORY.md")
+    nber_source_inventory.add_argument("--first-sample-rows", type=_positive, default=100)
+    nber_source_inventory.add_argument("--chronological-rows-per-slice", type=_positive, default=100)
+    nber_source_inventory.add_argument("--timeout-seconds", type=_positive, default=120)
+    nber_source_inventory.set_defaults(func=command_nber_source_inventory)
+
     nber_sample = nber_subparsers.add_parser("build-sample", help="Build a tiny deterministic NBER-format sample")
     nber_sample.add_argument("--output-dir", default="runs/nber_sample/raw")
     nber_sample.set_defaults(func=command_nber_build_sample)
@@ -449,6 +520,27 @@ def build_parser() -> argparse.ArgumentParser:
     nber_normalize.add_argument("--input-dir", required=True)
     nber_normalize.add_argument("--output-dir", required=True)
     nber_normalize.set_defaults(func=command_nber_normalize)
+
+    nber_inspect_schema = nber_subparsers.add_parser("inspect-schema", help="Inspect official NBER real-source schema")
+    nber_inspect_schema.add_argument("--codebook", help="Optional path to Codebook.xlsx")
+    nber_inspect_schema.add_argument("--raw-dir", help="Optional raw directory to validate actual CSV headers")
+    nber_inspect_schema.set_defaults(func=command_nber_inspect_schema)
+
+    nber_normalize_real = nber_subparsers.add_parser("normalize-real", help="Normalize official NBER real source with thread-linked listing extraction")
+    nber_normalize_real.add_argument("--raw-dir", required=True)
+    nber_normalize_real.add_argument("--output-dir", required=True)
+    nber_normalize_real.add_argument("--limit-threads", type=_positive)
+    nber_normalize_real.add_argument("--full", action="store_true")
+    nber_normalize_real.add_argument("--bucket-count", type=_positive, default=32)
+    nber_normalize_real.add_argument("--partition-rows", type=_positive, default=50_000)
+    nber_normalize_real.add_argument("--seed", type=int, default=20240621)
+    nber_normalize_real.add_argument("--stop-after-thread-pass", action="store_true", help=argparse.SUPPRESS)
+    nber_normalize_real.set_defaults(func=command_nber_normalize_real)
+
+    nber_replication = nber_subparsers.add_parser("replication-check", help="Validate or run the frozen NBER replication contract")
+    nber_replication.add_argument("--normalized-dir", help="Run checks against a normalized real-source manifest")
+    nber_replication.add_argument("--targets", help="Optional replication target manifest")
+    nber_replication.set_defaults(func=command_nber_replication_check)
 
     nber_bench = nber_subparsers.add_parser("benchmark", help="Run leakage-safe baseline leaderboards")
     nber_bench.add_argument("--normalized-dir", required=True)

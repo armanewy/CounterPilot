@@ -1,0 +1,84 @@
+{
+  "schema_version": "nber_best_offer_downloads.v1",
+  "data_root": "C:/OfferLabData/raw/nber_best_offer",
+  "research_only": true,
+  "files": {
+    "anon_bo_lists.csv.gz": {
+      "url": "https://www.nber.org/bargaining/anon_bo_lists.csv.gz",
+      "etag_observed_2026_06_21": "10956f7aa-56cf7323af5c0",
+      "compressed_size_from_etag_prefix": 4451661738,
+      "expected_header": [
+        "anon_item_id",
+        "anon_title_code",
+        "anon_product_id",
+        "anon_leaf_categ_id",
+        "anon_slr_id",
+        "anon_buyer_id",
+        "auct_start_dt",
+        "fdbk_score_start",
+        "fdbk_pstv_start",
+        "auct_end_dt",
+        "start_price_usd",
+        "photo_count",
+        "to_lst_cnt",
+        "bo_lst_cnt",
+        "count1",
+        "ref_price1",
+        "count2",
+        "ref_price2",
+        "count3",
+        "ref_price3",
+        "item_cndtn_id",
+        "view_item_count",
+        "wtchr_count",
+        "meta_categ_id",
+        "item_price",
+        "bo_ck_yn",
+        "ship_time_slowest",
+        "ship_time_fastest",
+        "ship_time_chosen",
+        "decline_price",
+        "accept_price",
+        "bin_rev",
+        "lstg_gen_type_id",
+        "store",
+        "ref_price4",
+        "count4",
+        "slr_us",
+        "buyer_us"
+      ]
+    },
+    "anon_bo_threads.csv.gz": {
+      "url": "https://www.nber.org/bargaining/anon_bo_threads.csv.gz",
+      "etag_observed_2026_06_21": "51e6bd20-56cf74cb1dcc0",
+      "compressed_size_from_etag_prefix": 1374076192,
+      "expected_header": [
+        "anon_item_id",
+        "anon_thread_id",
+        "anon_byr_id",
+        "anon_slr_id",
+        "src_cre_dt",
+        "fdbk_score_src",
+        "fdbk_pstv_src",
+        "offr_type_id",
+        "status_id",
+        "offr_price",
+        "src_cre_date",
+        "response_time",
+        "slr_hist",
+        "byr_hist",
+        "any_mssg",
+        "byr_us"
+      ]
+    },
+    "Codebook.xlsx": {
+      "url": "https://www.nber.org/bargaining/Codebook.xlsx",
+      "sha256": "3FA5E83046AC29E610CF2BCF02FD85682F93F3608C689C5A434D794C65BB6516"
+    }
+  },
+  "notes": [
+    "This manifest records official download targets and expected source headers. It does not contain raw source records.",
+    "Full source hashes are filled by nber-best-offer source-inventory after local download.",
+    "NBER-derived artifacts are research-only and non-exportable."
+  ]
+}
