@@ -17,3 +17,5 @@ Campaign 002 / OfferLab is the commercial direction.
 - Keep eBay API code behind adapter boundaries so the experiment ledger remains marketplace-independent.
 - Recommendations must abstain when cost basis, actual fee data, traffic freshness, or comparable mature outcomes are insufficient.
 - Keep `seller_accepted`, `buyer_paid`, provisional margin, and mature margin semantically separate.
+- Keep research benchmarks federated by source and claim. Do not pool NBER, Open Bandit, Criteo, AuctionNet, CraigslistBargain, or authorized seller data into one undifferentiated training set.
+- Production model export is allowed only when every ancestor source passes the data-source permission firewall for `production_export`.

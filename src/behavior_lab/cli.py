@@ -14,6 +14,7 @@ from behavior_lab.bridge import (
     validate_snapshot_file,
     write_campaign_001_template,
 )
+from behavior_lab.benchmarks.contracts import validate_manifest_file
 from behavior_lab.campaign001_collector import (
     DEFAULT_DATA_DIR,
     amend_capture,
@@ -29,6 +30,14 @@ from behavior_lab.discovery import DiscoveryLoop
 from behavior_lab.evaluation import evaluate_model, paired_compare, pareto_frontier
 from behavior_lab.gym import TARGET, WorldGym
 from behavior_lab.ledger import ImmutableLedger
+from behavior_lab.data_sources.registry import default_registry
+from behavior_lab.datasets.criteo_uplift.uplift import simple_uplift_report
+from behavior_lab.datasets.nber_best_offer.acquire import fetch_codebook, fetch_full
+from behavior_lab.datasets.nber_best_offer.audit import audit as nber_audit
+from behavior_lab.datasets.nber_best_offer.audit import benchmark as nber_benchmark
+from behavior_lab.datasets.nber_best_offer.inventory import inventory_path
+from behavior_lab.datasets.nber_best_offer.normalize import build_sample_dataset, normalize_dataset
+from behavior_lab.datasets.open_bandit.ope import evaluate_policy
 from behavior_lab.offerlab import (
     ingest_offerlab_snapshots,
     profit_audit,
@@ -245,6 +254,85 @@ def command_offerlab_recommend(args: argparse.Namespace) -> None:
     _print_json(recommend_offer_action(snapshots[0], data_dir=args.data_dir, config=config))
 
 
+def command_data_source_list(args: argparse.Namespace) -> None:
+    _print_json({"sources": default_registry().list()})
+
+
+def command_data_source_inspect(args: argparse.Namespace) -> None:
+    _print_json(default_registry().inspect(args.source_id))
+
+
+def command_data_source_verify(args: argparse.Namespace) -> None:
+    _print_json(default_registry().verify_lineage(args.source_id, args.use))
+
+
+def command_data_source_permissions(args: argparse.Namespace) -> None:
+    _print_json(default_registry().permissions(args.source_id))
+
+
+def command_benchmark_validate_manifest(args: argparse.Namespace) -> None:
+    _print_json(validate_manifest_file(args.input))
+
+
+def command_nber_fetch(args: argparse.Namespace) -> None:
+    if args.full:
+        _print_json(fetch_full(cache_dir=args.cache_dir, url=args.url, explicit=True).to_dict())
+    else:
+        _print_json(fetch_codebook(cache_dir=args.cache_dir).to_dict())
+
+
+def command_nber_inventory(args: argparse.Namespace) -> None:
+    _print_json(inventory_path(args.input))
+
+
+def command_nber_build_sample(args: argparse.Namespace) -> None:
+    _print_json(build_sample_dataset(args.output_dir))
+
+
+def command_nber_normalize(args: argparse.Namespace) -> None:
+    _print_json(normalize_dataset(args.input_dir, args.output_dir))
+
+
+def command_nber_benchmark(args: argparse.Namespace) -> None:
+    _print_json(nber_benchmark(args.normalized_dir))
+
+
+def command_nber_audit(args: argparse.Namespace) -> None:
+    _print_json(nber_audit(args.normalized_dir, output_path=args.output))
+
+
+def command_benchmark_suite_permissions(args: argparse.Namespace) -> None:
+    registry = default_registry()
+    sources = ["nber_ebay_best_offer", "open_bandit_dataset", "criteo_uplift"]
+    _print_json({source: registry.permissions(source) for source in sources})
+
+
+def command_benchmark_suite_run(args: argparse.Namespace) -> None:
+    open_bandit_logs = [
+        {"action": "a", "propensity": 0.5, "reward": 1.0},
+        {"action": "b", "propensity": 0.5, "reward": 0.0},
+        {"action": "a", "propensity": 0.5, "reward": 1.0},
+        {"action": "b", "propensity": 0.5, "reward": 1.0},
+    ]
+    open_bandit = evaluate_policy(open_bandit_logs, lambda _row: {"a": 0.5, "b": 0.5})
+    criteo = simple_uplift_report(
+        [
+            {"treatment": 0, "conversion": 0},
+            {"treatment": 0, "conversion": 0},
+            {"treatment": 1, "conversion": 1},
+            {"treatment": 1, "conversion": 0},
+        ]
+    )
+    _print_json(
+        {
+            "direct_evidence": "run nber-best-offer benchmark on normalized NBER data",
+            "evaluator_validation": open_bandit,
+            "causal_validation": criteo,
+            "production_export_allowed": False,
+        }
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Behavior Discovery Lab")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -287,6 +375,72 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--seeds", default="11,23,47,89,131")
     batch.add_argument("--episode-counts", default="100,300,1000")
     batch.set_defaults(func=command_batch_stress)
+
+    data_source = subparsers.add_parser("data-source", help="Inspect registered external dataset permissions")
+    data_source_subparsers = data_source.add_subparsers(dest="data_source_command", required=True)
+
+    data_source_list = data_source_subparsers.add_parser("list", help="List registered data sources")
+    data_source_list.set_defaults(func=command_data_source_list)
+
+    data_source_inspect = data_source_subparsers.add_parser("inspect", help="Inspect one registered data source")
+    data_source_inspect.add_argument("source_id")
+    data_source_inspect.set_defaults(func=command_data_source_inspect)
+
+    data_source_verify = data_source_subparsers.add_parser("verify", help="Verify source lineage for a requested use")
+    data_source_verify.add_argument("source_id", nargs="+")
+    data_source_verify.add_argument("--use", default="production_export")
+    data_source_verify.set_defaults(func=command_data_source_verify)
+
+    data_source_permissions = data_source_subparsers.add_parser("permissions", help="Show allowed uses for one source")
+    data_source_permissions.add_argument("source_id")
+    data_source_permissions.set_defaults(func=command_data_source_permissions)
+
+    benchmark_parser = subparsers.add_parser("benchmark", help="Federated benchmark utilities")
+    benchmark_subparsers = benchmark_parser.add_subparsers(dest="benchmark_command", required=True)
+    benchmark_manifest = benchmark_subparsers.add_parser("validate-manifest", help="Validate a benchmark manifest JSON file")
+    benchmark_manifest.add_argument("--input", required=True)
+    benchmark_manifest.set_defaults(func=command_benchmark_validate_manifest)
+
+    nber = subparsers.add_parser("nber-best-offer", help="NBER eBay Best Offer benchmark tools")
+    nber_subparsers = nber.add_subparsers(dest="nber_command", required=True)
+
+    nber_fetch = nber_subparsers.add_parser("fetch", help="Record or explicitly download NBER Best Offer data")
+    nber_fetch.add_argument("--cache-dir", default=".dataset_cache")
+    nber_fetch.add_argument("--codebook", action="store_true", help="Record codebook/source discovery without full download")
+    nber_fetch.add_argument("--full", action="store_true", help="Explicitly download a full official source file")
+    nber_fetch.add_argument("--url", help="Official NBER file URL for --full")
+    nber_fetch.set_defaults(func=command_nber_fetch)
+
+    nber_inventory = nber_subparsers.add_parser("inventory", help="Inventory a CSV or CSV.GZ file")
+    nber_inventory.add_argument("--input", required=True)
+    nber_inventory.set_defaults(func=command_nber_inventory)
+
+    nber_sample = nber_subparsers.add_parser("build-sample", help="Build a tiny deterministic NBER-format sample")
+    nber_sample.add_argument("--output-dir", default="runs/nber_sample/raw")
+    nber_sample.set_defaults(func=command_nber_build_sample)
+
+    nber_normalize = nber_subparsers.add_parser("normalize", help="Normalize NBER CSV/CSV.GZ files into partitioned JSONL")
+    nber_normalize.add_argument("--input-dir", required=True)
+    nber_normalize.add_argument("--output-dir", required=True)
+    nber_normalize.set_defaults(func=command_nber_normalize)
+
+    nber_bench = nber_subparsers.add_parser("benchmark", help="Run leakage-safe baseline leaderboards")
+    nber_bench.add_argument("--normalized-dir", required=True)
+    nber_bench.set_defaults(func=command_nber_benchmark)
+
+    nber_audit_parser = nber_subparsers.add_parser("audit", help="Run NBER adversarial audit checks")
+    nber_audit_parser.add_argument("--normalized-dir", required=True)
+    nber_audit_parser.add_argument("--output")
+    nber_audit_parser.set_defaults(func=command_nber_audit)
+
+    suite = subparsers.add_parser("benchmark-suite", help="Run wider-net validation suite smoke checks")
+    suite_subparsers = suite.add_subparsers(dest="suite_command", required=True)
+    suite_run = suite_subparsers.add_parser("run", help="Run Open Bandit and Criteo smoke benchmarks")
+    suite_run.set_defaults(func=command_benchmark_suite_run)
+    suite_report = suite_subparsers.add_parser("report", help="Alias for run")
+    suite_report.set_defaults(func=command_benchmark_suite_run)
+    suite_permissions = suite_subparsers.add_parser("permissions", help="Show cross-dataset production-export permissions")
+    suite_permissions.set_defaults(func=command_benchmark_suite_permissions)
 
     template = subparsers.add_parser("campaign-001-template", help="Write a raw manual-entry template for Campaign 001")
     template.add_argument("--output", default="campaigns/campaign_001_task_initiation/manual_entry_template.json")

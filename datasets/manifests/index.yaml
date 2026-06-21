@@ -1,0 +1,49 @@
+sources:
+  - source_id: nber_ebay_best_offer
+    role: direct_evidence
+    license_status: uncertain
+    research: true
+    internal_benchmarking: true
+    commercial_training: false
+    production_export: false
+    source_url: https://www.nber.org/research/data/best-offer-sequential-bargaining
+  - source_id: open_bandit_dataset
+    role: evaluator_validation
+    license_status: confirmed
+    research: true
+    internal_benchmarking: true
+    commercial_training: false
+    production_export: false
+    source_url: https://zr-obp.readthedocs.io/en/latest/about.html
+  - source_id: criteo_uplift
+    role: causal_validation
+    license_status: confirmed
+    research: true
+    internal_benchmarking: true
+    commercial_training: false
+    production_export: false
+    source_url: https://ailab.criteo.com/criteo-uplift-prediction-dataset/
+  - source_id: auctionnet
+    role: simulation
+    license_status: confirmed
+    research: true
+    internal_benchmarking: true
+    commercial_training: false
+    production_export: false
+    source_url: https://github.com/alimama-tech/AuctionNet
+  - source_id: craigslist_bargain
+    role: language_extraction
+    license_status: uncertain
+    research: true
+    internal_benchmarking: true
+    commercial_training: false
+    production_export: false
+    source_url: https://huggingface.co/datasets/stanfordnlp/craigslist_bargains
+  - source_id: current_ebay_authorized_data
+    role: commercial_calibration
+    license_status: confirmed
+    research: true
+    internal_benchmarking: true
+    commercial_training: true
+    production_export: true
+    source_url: https://developer.ebay.com/develop/guides-v2/authorization

@@ -42,6 +42,7 @@ This repository is an infrastructure MVP, not a validated human-behavior oracle.
 - A provider-neutral, validated LLM hypothesis-generator seam.
 - Locked, idempotent synthetic batch stress runs.
 - Campaign 002 OfferLab scaffolding: normalized eBay offer snapshots, append-only read-only ingest, mature-margin audit, five-section profit-audit report, and abstaining decision-support arithmetic.
+- OfferLab evidence-wave scaffolding: external data-source registry, commercial-use firewall, reproducible cache, federated benchmark contracts, NBER Best Offer benchmark path, Open Bandit OPE checks, and Criteo uplift research-only checks.
 
 The core runtime uses only Python's standard library.
 
@@ -216,6 +217,27 @@ python -m behavior_lab offerlab-recommend --input campaigns/campaign_002_ebay_se
 
 OfferLab does not call eBay or execute seller actions yet. It records normalized snapshots, produces a read-only profit audit, and abstains from recommendation when seller cost basis, fee data, traffic freshness, or comparable mature outcomes are insufficient. See [`docs/OFFERLAB.md`](docs/OFFERLAB.md).
 
+## OfferLab Evidence Waves
+
+The public-data validation path is separate from the production OfferLab product:
+
+```bash
+python -m behavior_lab data-source list
+python -m behavior_lab data-source verify nber_ebay_best_offer criteo_uplift --use production_export
+
+python -m behavior_lab nber-best-offer build-sample --output-dir runs/nber_sample/raw
+python -m behavior_lab nber-best-offer normalize \
+  --input-dir runs/nber_sample/raw \
+  --output-dir runs/nber_sample/normalized
+python -m behavior_lab nber-best-offer benchmark --normalized-dir runs/nber_sample/normalized
+python -m behavior_lab nber-best-offer audit --normalized-dir runs/nber_sample/normalized
+
+python -m behavior_lab benchmark-suite run
+python -m behavior_lab benchmark-suite permissions
+```
+
+The NBER, Open Bandit, Criteo, AuctionNet, and CraigslistBargain lanes are research benchmarks unless a source is explicitly cleared for commercial training and production export. See [`docs/DATASET_ROADMAP.md`](docs/DATASET_ROADMAP.md).
+
 ## CLI
 
 ```bash
@@ -225,6 +247,7 @@ python -m behavior_lab verify-ledger --data-dir runs/world
 python -m behavior_lab bridge-import --input export_hashed.jsonl --data-dir data/campaign_001_task_initiation
 python -m behavior_lab offerlab-report --output reports/offerlab_profit_audit.md
 python -m behavior_lab offerlab-recommend --input campaigns/campaign_002_ebay_seller_offers/examples/pending_offer_snapshot.json
+python -m behavior_lab nber-best-offer benchmark --normalized-dir runs/nber_sample/normalized
 python -m behavior_lab stress-test --data-dir runs/matrix --episodes 120 --matrix
 python -m behavior_lab batch-stress \
   --data-dir runs/batch \
