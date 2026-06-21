@@ -200,15 +200,19 @@ def run_source_inventory(
         chronological_rows_per_slice=chronological_rows_per_slice,
         timeout_seconds=timeout_seconds,
     )
+    sources = list(official_sources)
     started = time.perf_counter()
     tracemalloc.start()
+    for source in sources:
+        if _is_official_source(source):
+            _assert_outside_repo(config.raw_dir, "raw_dir")
     config.raw_dir.mkdir(parents=True, exist_ok=True)
     external_inventory_path = config.raw_dir / "source_inventory_raw_previews.json"
 
     downloads: list[dict[str, Any]] = []
     private_files: list[dict[str, Any]] = []
     public_files: list[dict[str, Any]] = []
-    for source in official_sources:
+    for source in sources:
         destination = config.raw_dir / source["filename"]
         if download:
             download_record = download_once(source["url"], destination, timeout=config.timeout_seconds)
@@ -318,6 +322,7 @@ def public_summary(manifest: dict[str, Any]) -> dict[str, Any]:
 
 def download_official_sources(raw_dir: str | Path | None = None, *, timeout: int = 120) -> list[DownloadRecord]:
     destination = Path(raw_dir) if raw_dir is not None else default_raw_dir()
+    _assert_outside_repo(destination, "raw_dir")
     destination.mkdir(parents=True, exist_ok=True)
     records = []
     for source in OFFICIAL_SOURCES:
@@ -339,6 +344,8 @@ def download_official_sources(raw_dir: str | Path | None = None, *, timeout: int
 
 def download_with_resume(url: str, destination: str | Path, *, timeout: int = 120) -> DownloadRecord:
     output = Path(destination)
+    if url in OFFICIAL_SOURCE_FILES.values():
+        _assert_outside_repo(output.parent, "destination")
     result = download_once(url, output, timeout=timeout)
     return DownloadRecord(
         output.name,
@@ -577,6 +584,8 @@ def inventory_csv_source(
     text_meta = detect_text_metadata(path)
     footer_size = gzip_isize(path) if path.suffix.lower() == ".gz" else None
     samples_dir = Path(sample_dir) if sample_dir is not None else config.raw_dir / "samples" / source["logical_name"]
+    if _is_official_source(source):
+        _assert_outside_repo(samples_dir, "sample_dir")
     samples_dir.mkdir(parents=True, exist_ok=True)
     quarantine_path = samples_dir / "quarantine_metadata.jsonl"
     first_sample_path = samples_dir / f"{source['logical_name']}_first_{config.first_sample_rows}.csv"
@@ -710,9 +719,7 @@ def inventory_csv_source(
         "header_valid": header_valid,
         "header_sha256": hash_json(header),
         "first_10_valid_row_sha256": first_hashes,
-        "first_10_valid_rows_redacted": first_10_redacted,
         "last_complete_readable_row_sha256": last_row_hash,
-        "last_complete_readable_row_redacted": redact_row(last_row),
         "last_complete_readable_row_number": last_row_number,
         "rows": {
             "accepted": valid_count,
@@ -724,8 +731,8 @@ def inventory_csv_source(
             "chosen_column": date_column_candidates[0] if date_column_candidates else None,
             "candidates": date_column_candidates,
             "parseable_rows": parseable_dates,
-            "min_utc": min_date.isoformat() if min_date else None,
-            "max_utc": max_date.isoformat() if max_date else None,
+            "min_utc_sha256": hash_json(min_date.isoformat()) if min_date else None,
+            "max_utc_sha256": hash_json(max_date.isoformat()) if max_date else None,
             "chronological_samples_created": bool(chronological),
         },
         "gzip_integrity": gzip_status,
@@ -736,6 +743,8 @@ def inventory_csv_source(
         "raw_row_values_committed": False,
     }
     private = dict(public)
+    private["first_10_valid_rows_redacted"] = first_10_redacted
+    private["last_complete_readable_row_redacted"] = redact_row(last_row)
     private["first_10_valid_rows"] = first_10_rows
     private["last_complete_readable_row"] = last_row
     return private, public
@@ -797,8 +806,8 @@ def build_chronological_samples(
 
     outputs: dict[str, Any] = {
         "method": "streaming_date_extrema_and_midpoint_distance",
-        "min_utc": min_date.isoformat(),
-        "max_utc": max_date.isoformat(),
+        "min_utc_sha256": hash_json(min_date.isoformat()),
+        "max_utc_sha256": hash_json(max_date.isoformat()),
         "files": {},
     }
     for label, rows in {
@@ -1112,6 +1121,21 @@ def _redact_row(row: dict[str, str] | None) -> dict[str, str]:
     return redact_row(row)
 
 
+def _is_official_source(source: dict[str, str]) -> bool:
+    return source.get("url") in OFFICIAL_SOURCE_FILES.values() or source.get("filename") in OFFICIAL_SOURCE_FILES
+
+
+def _assert_outside_repo(path: Path, label: str) -> None:
+    resolved = path.resolve()
+    root = repo_root()
+    if resolved == root or root in resolved.parents:
+        raise SourceInventoryError(f"NBER {label} must be outside the repository: {resolved}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
 def header_is_valid(name: str, header: list[str]) -> bool | None:
     if name.startswith("anon_bo_lists"):
         return header == REAL_LISTING_COLUMNS
@@ -1164,6 +1188,12 @@ def yaml_scalar(value: Any) -> str:
 
 
 def render_markdown(manifest: dict[str, Any]) -> str:
+    downloaded = any(str(item.get("status")) == "downloaded" for item in manifest.get("downloads", []))
+    inventory_action = (
+        "downloaded and inventoried explicitly requested official NBER Best Offer source files"
+        if downloaded
+        else "inventoried already-present local official NBER Best Offer source files"
+    )
     lines = [
         "# NBER Best Offer Source Inventory",
         "",
@@ -1171,7 +1201,7 @@ def render_markdown(manifest: dict[str, Any]) -> str:
         "",
         "## Scope",
         "",
-        "Wave 1 Prompt 1B acquired and inventoried the official NBER Best Offer source files only. No normalization, modeling, benchmark training, or production export was performed.",
+        f"Wave 1 Prompt 1B {inventory_action}. No normalization, modeling, benchmark training, or production export was performed.",
         "",
         f"- Source id: `{manifest['source_id']}`",
         f"- Official dataset page: {manifest['official_dataset_page']}",
@@ -1210,7 +1240,7 @@ def render_markdown(manifest: dict[str, Any]) -> str:
             "",
             "## Non-Sensitive Metadata",
             "",
-            "Committed metadata includes headers, row counts, hashes of raw previews, integrity status, and paths to external samples. It intentionally does not include raw buyer identifiers, seller identifiers, or source record values.",
+            "Committed metadata includes headers, row counts, row hashes, integrity status, and paths to external samples. It intentionally does not include raw buyer identifiers, seller identifiers, or source record values.",
             "",
         ]
     )

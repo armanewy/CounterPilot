@@ -17,6 +17,7 @@ class NberTaskError(ValueError):
 def build_tasks(normalized_dir: str | Path) -> dict[str, list[dict[str, Any]]]:
     root = Path(normalized_dir)
     if (root / "manifest.json").exists() and (root / "tables").exists():
+        _assert_real_task_execution_bounded(root)
         return build_real_tasks_from_records(
             _read_partitioned_table(root, "listings"),
             _read_partitioned_table(root, "negotiation_turns"),
@@ -45,8 +46,8 @@ def build_real_tasks_from_records(listing_rows: list[dict[str, Any]], turn_rows:
         "seller_next_action": seller_next_action_real(listings, threads),
         "buyer_response_to_counter": buyer_response_to_counter_real(listings, threads),
         "agreement": agreement_task(listings, threads),
-        "final_price_ratio": final_price_ratio_task(listings, threads),
-        "response_latency": response_latency_task(listings, threads),
+        "final_price_ratio": final_price_ratio_task_real(listings, threads),
+        "response_latency": response_latency_task_real(listings, threads),
     }
 
 
@@ -213,6 +214,34 @@ def final_price_ratio_task(listings: dict[str, dict[str, Any]], threads: dict[st
     return rows
 
 
+def final_price_ratio_task_real(listings: dict[str, dict[str, Any]], threads: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    rows = []
+    for thread_id, turns in threads.items():
+        if not turns:
+            continue
+        first = turns[0]
+        listing = listings[str(first["listing_id"])]
+        if listing.get("sold_by_best_offer") is not True:
+            continue
+        if agreement_label(turns) != "1":
+            continue
+        final_sale_price = listing.get("final_sale_price")
+        listing_price = listing.get("listing_price")
+        if final_sale_price in {None, ""} or listing_price in {None, "", 0}:
+            continue
+        rows.append(
+            _snapshot(
+                task="final_price_ratio",
+                label=round(float(final_sale_price) / float(listing_price), 6),
+                listing=listing,
+                turn=first,
+                history=[first],
+                row_id=f"{thread_id}:final_price_ratio",
+            )
+        )
+    return rows
+
+
 def response_latency_task(listings: dict[str, dict[str, Any]], threads: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     rows = []
     for thread_id, turns in threads.items():
@@ -220,6 +249,31 @@ def response_latency_task(listings: dict[str, dict[str, Any]], threads: dict[str
             next_turn = turns[index + 1]
             listing = listings[str(turn["listing_id"])]
             latency = (_parse_time(str(next_turn["event_time"])) - _parse_time(str(turn["event_time"]))).total_seconds()
+            rows.append(
+                _snapshot(
+                    task="response_latency",
+                    label=latency,
+                    listing=listing,
+                    turn=turn,
+                    history=turns[: index + 1],
+                    row_id=f"{thread_id}:{turn['turn_index']}:response_latency",
+                )
+            )
+    return rows
+
+
+def response_latency_task_real(listings: dict[str, dict[str, Any]], threads: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    rows = []
+    for thread_id, turns in threads.items():
+        for index, turn in enumerate(turns):
+            event_time = turn.get("event_time")
+            response_time = turn.get("response_time")
+            if not event_time or not response_time:
+                continue
+            latency = (_parse_time(str(response_time)) - _parse_time(str(event_time))).total_seconds()
+            if latency < 0:
+                continue
+            listing = listings[str(turn["listing_id"])]
             rows.append(
                 _snapshot(
                     task="response_latency",
@@ -360,3 +414,10 @@ def _read_partitioned_table(root: Path, table_name: str) -> list[dict[str, Any]]
                     if line.strip():
                         rows.append(json.loads(line))
     return rows
+
+
+def _assert_real_task_execution_bounded(root: Path) -> None:
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    command_args = manifest.get("command_args", {})
+    if command_args.get("full") is True or command_args.get("limit_threads") is None:
+        raise NberTaskError("Real NBER task generation is currently bounded-only; streaming full-release evaluation is not implemented")

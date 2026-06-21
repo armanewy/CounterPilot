@@ -4,7 +4,7 @@ The NBER lane is the primary public evidence campaign for OfferLab. It must answ
 
 ## Required Controls
 
-- Chronological split with complete negotiation threads confined to one region; threads crossing a boundary are purged and reported.
+- Chronological split with complete listings confined to one region; boundary-crossing listings are purged and reported. This is stricter than thread-only purging because all negotiation threads attached to one listing stay in the same region.
 - Seller-disjoint split where seller identifiers are available.
 - Category breakdown.
 - Future-round leakage check.
@@ -43,10 +43,9 @@ run accepts the verified real headers, writes partitioned Parquet when PyArrow
 is installed, records raw hashes and mapping lineage, keeps thread rows grouped
 before partition output, extracts only thread-linked listings for the first
 benchmark, and supports resume after the thread pass. The full official release
-has not been normalized yet. The `--full` mode is intentionally blocked until
-the real-source path replaces its bounded-sample in-memory state with
-disk-backed listing and thread indexes, full-run checkpoints, and disk preflight
-evidence.
+has not been normalized yet. The `--full` mode is intentionally blocked until a
+full-release preflight proves source, checkpoint, and estimator execution can
+run without unbounded in-memory task materialization.
 
 ## Interpretation
 

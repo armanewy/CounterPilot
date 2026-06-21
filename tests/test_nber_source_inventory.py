@@ -10,7 +10,7 @@ import tempfile
 import unittest
 import zipfile
 
-from behavior_lab.datasets.nber_best_offer.source_inventory import SourceInventoryError, public_summary, run_source_inventory
+from behavior_lab.datasets.nber_best_offer.source_inventory import OFFICIAL_SOURCES, SourceInventoryError, public_summary, run_source_inventory
 from behavior_lab.datasets.nber_best_offer.source_schema import read_codebook_sheets
 
 
@@ -88,11 +88,20 @@ class NberSourceInventoryTests(unittest.TestCase):
             committed_text = manifest_path.read_text(encoding="utf-8") + "\n" + doc_path.read_text(encoding="utf-8")
             self.assertNotIn("seller-secret-1", committed_text)
             self.assertNotIn("buyer-secret-1", committed_text)
+            self.assertNotIn("2012-05-01T00:00:00", committed_text)
+            self.assertNotIn("2012-05-01T01:00:00", committed_text)
             self.assertIn("seller_id", committed_text)
+            self.assertIn("downloaded and inventoried explicitly requested", doc_path.read_text(encoding="utf-8"))
+            self.assertNotIn("acquired and inventoried", doc_path.read_text(encoding="utf-8"))
+            self.assertNotIn("first_10_valid_rows_redacted", manifest_path.read_text(encoding="utf-8"))
+            self.assertNotIn("last_complete_readable_row_redacted", manifest_path.read_text(encoding="utf-8"))
+            self.assertNotIn("first_10_valid_rows_redacted", json.dumps(manifest, sort_keys=True))
+            self.assertNotIn("last_complete_readable_row_redacted", json.dumps(manifest, sort_keys=True))
 
             external_inventory = json.loads(Path(manifest["external_inventory_path"]).read_text(encoding="utf-8"))
             private_lists = next(item for item in external_inventory["files"] if item["logical_name"] == "anon_bo_lists")
             self.assertEqual(private_lists["first_10_valid_rows"][0]["seller_id"], "seller-secret-1")
+            self.assertEqual(private_lists["first_10_valid_rows_redacted"][0]["price"], "100")
 
             summary = json.dumps(public_summary(manifest), sort_keys=True)
             self.assertNotIn("seller-secret-1", summary)
@@ -100,6 +109,35 @@ class NberSourceInventoryTests(unittest.TestCase):
             self.assertFalse(json.loads(summary)["raw_rows_printed"])
             sheets = read_codebook_sheets(official / "Codebook.xlsx")
             self.assertEqual(sheets["Codebook"][0][:2], ["variable", "description"])
+
+    def test_no_download_report_wording_for_already_present_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            official = root / "official"
+            raw = root / "raw"
+            official.mkdir()
+            raw.mkdir()
+            self._write_gzip_csv(official / "anon_bo_lists.csv.gz", [["listing_id", "seller_id"], ["listing-1", "seller-secret-1"]])
+            (raw / "anon_bo_lists.csv.gz").write_bytes((official / "anon_bo_lists.csv.gz").read_bytes())
+            sources = [
+                {
+                    "logical_name": "anon_bo_lists",
+                    "filename": "anon_bo_lists.csv.gz",
+                    "url": (official / "anon_bo_lists.csv.gz").as_uri(),
+                    "kind": "csv_gzip",
+                }
+            ]
+            doc_path = root / "repo" / "inventory.md"
+            run_source_inventory(
+                raw_dir=raw,
+                manifest_path=root / "repo" / "manifest.yaml",
+                doc_path=doc_path,
+                official_sources=sources,
+                write_outputs=True,
+            )
+            text = doc_path.read_text(encoding="utf-8")
+            self.assertIn("inventoried already-present local official", text)
+            self.assertNotIn("acquired and inventoried", text)
 
     def test_report_inventory_requires_explicit_download_when_files_are_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -125,6 +163,17 @@ class NberSourceInventoryTests(unittest.TestCase):
                     write_outputs=False,
                 )
             self.assertFalse((raw / "anon_bo_lists.csv.gz").exists())
+
+    def test_official_inventory_refuses_repo_local_raw_dir(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        with self.assertRaises(SourceInventoryError):
+            run_source_inventory(
+                raw_dir=repo_root / "_tmp_nber_repo_raw",
+                manifest_path=repo_root / "_tmp_manifest.yaml",
+                doc_path=repo_root / "_tmp_inventory.md",
+                official_sources=[OFFICIAL_SOURCES[0]],
+                write_outputs=False,
+            )
 
     def _write_gzip_csv(self, path: Path, rows: list[list[str]]) -> None:
         with gzip.open(path, "wt", encoding="utf-8", newline="") as handle:

@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -18,7 +19,8 @@ from behavior_lab.datasets.nber_best_offer.source_schema import (
     load_real_mapping,
     validate_real_headers,
 )
-from behavior_lab.datasets.nber_best_offer.tasks import build_real_tasks_from_records
+from behavior_lab.datasets.nber_best_offer.tasks import NberTaskError, assert_no_future_leakage, build_real_tasks_from_records, build_tasks
+from behavior_lab.offerlab_models.common import validate_feature_contract
 
 
 FIXTURES = ROOT / "tests" / "fixtures" / "nber_real_schema"
@@ -73,6 +75,24 @@ class RealNberPipelineTests(unittest.TestCase):
             self.assertFalse(check["passed"])
             self.assertTrue(check["fatal_unevaluated"])
 
+    def test_complete_manifest_rerun_revalidates_raw_source_hashes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw"
+            output = Path(tmp) / "normalized"
+            raw.mkdir()
+            (raw / "anon_bo_lists.csv").write_text((FIXTURES / "anon_bo_lists.csv").read_text(encoding="utf-8"), encoding="utf-8")
+            threads_path = raw / "anon_bo_threads.csv"
+            threads_path.write_text((FIXTURES / "anon_bo_threads.csv").read_text(encoding="utf-8"), encoding="utf-8")
+
+            first = normalize_real_dataset(raw, output, limit_threads=10, bucket_count=4, partition_rows=2)
+            with threads_path.open("a", encoding="utf-8", newline="") as handle:
+                handle.write("1002,9999,2009,502,03may2012,35,98.5,0,0,75.00,03may2012 10:00:00,,0,0,0,1\n")
+
+            rebuilt = normalize_real_dataset(raw, output, limit_threads=10, bucket_count=4, partition_rows=2)
+            self.assertNotIn("idempotent_rerun", rebuilt)
+            self.assertNotEqual(first["source_files"]["anon_bo_threads"]["sha256"], rebuilt["source_files"]["anon_bo_threads"]["sha256"])
+            self.assertEqual(rebuilt["tables"]["negotiation_turns"]["rows"], 5)
+
     def test_full_normalization_is_blocked_until_full_run_proof_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             raw = Path(tmp) / "raw"
@@ -103,6 +123,44 @@ class RealNberPipelineTests(unittest.TestCase):
             self.assertEqual(second_checkpoint["signature"]["command_args"]["bucket_count"], 3)
             self.assertEqual(manifest["tables"]["negotiation_turns"]["rows"], 4)
 
+    def test_corrupted_thread_bucket_checkpoint_rebuilds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw"
+            output = Path(tmp) / "normalized"
+            raw.mkdir()
+            (raw / "anon_bo_lists.csv").write_text((FIXTURES / "anon_bo_lists.csv").read_text(encoding="utf-8"), encoding="utf-8")
+            (raw / "anon_bo_threads.csv").write_text((FIXTURES / "anon_bo_threads.csv").read_text(encoding="utf-8"), encoding="utf-8")
+
+            normalize_real_dataset(raw, output, limit_threads=10, bucket_count=4, partition_rows=2, stop_after_thread_pass=True)
+            checkpoint = json.loads((output / "checkpoints" / "thread_pass.complete.json").read_text(encoding="utf-8"))
+            bucket = next(item for item in checkpoint["thread_counts"]["bucket_manifest"]["buckets"] if item["rows"] > 0)
+            (output / "_tmp" / "thread_buckets" / bucket["name"]).write_text("", encoding="utf-8")
+
+            manifest = normalize_real_dataset(raw, output, limit_threads=10, bucket_count=4, partition_rows=2)
+            self.assertEqual(manifest["source_thread_pass"]["accepted_rows"], 4)
+            self.assertEqual(manifest["tables"]["negotiation_turns"]["rows"], 4)
+
+    def test_corrupted_thread_index_checkpoint_rebuilds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw"
+            output = Path(tmp) / "normalized"
+            raw.mkdir()
+            (raw / "anon_bo_lists.csv").write_text((FIXTURES / "anon_bo_lists.csv").read_text(encoding="utf-8"), encoding="utf-8")
+            (raw / "anon_bo_threads.csv").write_text((FIXTURES / "anon_bo_threads.csv").read_text(encoding="utf-8"), encoding="utf-8")
+
+            normalize_real_dataset(raw, output, limit_threads=10, bucket_count=4, partition_rows=2, stop_after_thread_pass=True)
+            index_path = output / "_tmp" / "thread_listing_ids.sqlite"
+            conn = sqlite3.connect(index_path)
+            try:
+                conn.execute("DELETE FROM row_hashes")
+                conn.commit()
+            finally:
+                conn.close()
+
+            manifest = normalize_real_dataset(raw, output, limit_threads=10, bucket_count=4, partition_rows=2)
+            self.assertEqual(manifest["source_thread_pass"]["id_index_stats"]["row_hashes"], 4)
+            self.assertEqual(manifest["tables"]["negotiation_turns"]["rows"], 4)
+
     def test_real_task_status_semantics_and_reference_price_exclusion(self) -> None:
         listing = {
             "listing_id": "l1",
@@ -113,6 +171,8 @@ class RealNberPipelineTests(unittest.TestCase):
             "reference_price": None,
             "reference_price_unavailable_reason": "excluded",
             "excluded_reference_price_ref_price4": 95.0,
+            "final_sale_price": 88.0,
+            "sold_by_best_offer": True,
         }
         base_turn = {
             "listing_id": "l1",
@@ -139,9 +199,38 @@ class RealNberPipelineTests(unittest.TestCase):
         self.assertIn("counter", seller_labels)
         self.assertEqual(len(seller_labels), 5)
         self.assertEqual(tasks["buyer_response_to_counter"][0]["label"], "accept")
+        self.assertTrue(tasks["final_price_ratio"])
+        self.assertTrue(all(row["label"] == 0.88 for row in tasks["final_price_ratio"]))
+        self.assertTrue(any(row["label"] == 86400.0 for row in tasks["response_latency"]))
         self.assertIsNone(tasks["seller_next_action"][0]["features"]["reference_price"])
         self.assertNotIn("status_id", tasks["seller_next_action"][0]["observed_history"][0])
         self.assertNotIn("response_time", tasks["seller_next_action"][0]["observed_history"][0])
+
+    def test_real_leakage_guards_reject_forbidden_feature_aliases(self) -> None:
+        row = {
+            "row_id": "r1",
+            "features": {"status_id": 1, "response_time": "2020-01-01T00:00:00", "excluded_reference_price_ref_price4": 95.0},
+            "observed_history": [],
+        }
+        self.assertFalse(assert_no_future_leakage([row]))
+        self.assertFalse(validate_feature_contract([row]))
+
+    def test_build_tasks_refuses_unbounded_real_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "tables").mkdir()
+            (root / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "status": "complete",
+                        "command_args": {"full": True, "limit_threads": None},
+                        "tables": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(NberTaskError):
+                build_tasks(root)
 
     def test_ref_price4_is_excluded_from_predictor_reference_price(self) -> None:
         row = dict(zip(REAL_LISTING_COLUMNS, ["" for _ in REAL_LISTING_COLUMNS], strict=True))

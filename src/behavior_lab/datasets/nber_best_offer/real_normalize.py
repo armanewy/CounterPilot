@@ -101,8 +101,8 @@ def normalize_real_dataset(
     if full:
         raise NberRealNormalizeError(
             "Full NBER normalization is intentionally blocked: the current real-source "
-            "normalizer is validated only for bounded --limit-threads runs. Implement "
-            "disk-backed listing/thread indexes and full-run checkpointing before using --full."
+            "normalizer is validated only for bounded --limit-threads runs. Run a full-release "
+            "preflight and implement streaming estimator execution before using --full."
         )
     start = time.perf_counter()
     raw = Path(raw_dir)
@@ -125,19 +125,24 @@ def normalize_real_dataset(
         "transformation_version": REAL_TRANSFORMATION_VERSION,
         "normalizer_schema_revision": "wave1_audit_gate.v2",
     }
-    if manifest_path.exists():
-        current = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if current.get("command_args") == args_signature and current.get("status") == "complete":
-            current["idempotent_rerun"] = True
-            return current
-
     lists_path = _find_source(raw, "anon_bo_lists.csv")
     threads_path = _find_source(raw, "anon_bo_threads.csv")
-    quarantine = Quarantine(counts={}, examples=[])
     source_hashes = {"anon_bo_lists": sha256_file(lists_path), "anon_bo_threads": sha256_file(threads_path)}
     header_report = _validate_source_headers(lists_path, threads_path)
     if not header_report["valid"]:
         raise NberRealNormalizeError(json.dumps(header_report, sort_keys=True))
+    if manifest_path.exists():
+        current = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if _manifest_matches_current(
+            current,
+            args_signature=args_signature,
+            source_hashes=source_hashes,
+            header_report=header_report,
+        ):
+            current["idempotent_rerun"] = True
+            return current
+
+    quarantine = Quarantine(counts={}, examples=[])
 
     bucket_dir = temp_dir / "thread_buckets"
     id_index_path = temp_dir / "thread_listing_ids.sqlite"
@@ -271,6 +276,7 @@ def _bucket_thread_rows(
     offer_type_counts: Counter[str] = Counter()
     index = _open_id_index(id_index_path, reset=True)
     distinct_threads = 0
+    bucket_row_counts = [0 for _ in range(bucket_count)]
     bucket_handles = [(bucket_dir / f"bucket_{index:04d}.jsonl").open("w", encoding="utf-8", newline="\n") for index in range(bucket_count)]
     try:
         with _open_text(threads_path) as handle:
@@ -301,6 +307,7 @@ def _bucket_thread_rows(
                     continue
                 bucket = int(hashlib.sha256(thread_id.encode("utf-8")).hexdigest(), 16) % bucket_count
                 bucket_handles[bucket].write(json.dumps(row, sort_keys=True) + "\n")
+                bucket_row_counts[bucket] += 1
                 _id_index_insert(index, "listing_ids", "listing_id", listing_id)
                 accepted_rows += 1
                 if accepted_rows % 10_000 == 0:
@@ -309,6 +316,7 @@ def _bucket_thread_rows(
         for handle in bucket_handles:
             handle.close()
         index.commit()
+        id_index_stats = _id_index_checkpoint_stats(index)
         index.close()
     return {
         "source": str(threads_path.resolve()),
@@ -318,6 +326,8 @@ def _bucket_thread_rows(
         "status_counts": dict(status_counts),
         "offer_type_counts": dict(offer_type_counts),
         "limit_threads": limit_threads,
+        "bucket_manifest": _bucket_manifest(bucket_dir, bucket_count, row_counts=bucket_row_counts),
+        "id_index_stats": id_index_stats,
     }
 
 
@@ -525,6 +535,32 @@ def _find_source(root: Path, name: str) -> Path:
     raise NberRealNormalizeError(f"Missing {name} or {name}.gz in {root}")
 
 
+def _manifest_matches_current(
+    manifest: dict[str, Any],
+    *,
+    args_signature: dict[str, Any],
+    source_hashes: dict[str, str],
+    header_report: dict[str, Any],
+) -> bool:
+    if manifest.get("status") != "complete":
+        return False
+    if manifest.get("command_args") != args_signature:
+        return False
+    if manifest.get("transformation_version") != REAL_TRANSFORMATION_VERSION:
+        return False
+    if manifest.get("mapping_manifest_hash") != mapping_hash():
+        return False
+    if manifest.get("header_validation") != header_report:
+        return False
+    source_files = manifest.get("source_files", {})
+    for logical_name, current_hash in source_hashes.items():
+        if source_files.get(logical_name, {}).get("sha256") != current_hash:
+            return False
+    if manifest.get("lineage", {}).get("raw_source_hashes") != source_hashes:
+        return False
+    return True
+
+
 def _thread_checkpoint_signature(
     *,
     args_signature: dict[str, Any],
@@ -538,6 +574,35 @@ def _thread_checkpoint_signature(
         "header_validation": header_report,
         "mapping_manifest_hash": mapping_hash(),
     }
+
+
+def _bucket_manifest(bucket_dir: Path, bucket_count: int, *, row_counts: list[int] | None = None) -> dict[str, Any]:
+    buckets = []
+    total_rows = 0
+    for index in range(bucket_count):
+        path = bucket_dir / f"bucket_{index:04d}.jsonl"
+        if not path.exists():
+            return {"valid": False, "bucket_count": bucket_count, "buckets": []}
+        rows = row_counts[index] if row_counts is not None else _line_count(path)
+        total_rows += rows
+        buckets.append(
+            {
+                "name": path.name,
+                "rows": rows,
+                "bytes": path.stat().st_size,
+                "sha256": sha256_file(path),
+            }
+        )
+    return {"valid": True, "bucket_count": bucket_count, "total_rows": total_rows, "buckets": buckets}
+
+
+def _line_count(path: Path) -> int:
+    count = 0
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                count += 1
+    return count
 
 
 def _load_valid_thread_checkpoint(
@@ -561,6 +626,24 @@ def _load_valid_thread_checkpoint(
         return None
     if "thread_counts" not in payload:
         return None
+    thread_counts = payload["thread_counts"]
+    expected_bucket_manifest = thread_counts.get("bucket_manifest")
+    if not expected_bucket_manifest:
+        return None
+    expected_bucket_count = payload.get("signature", {}).get("command_args", {}).get("bucket_count")
+    if not isinstance(expected_bucket_count, int):
+        return None
+    if _bucket_manifest(bucket_dir, expected_bucket_count) != expected_bucket_manifest:
+        return None
+    expected_index_stats = thread_counts.get("id_index_stats")
+    if not expected_index_stats:
+        return None
+    conn = _open_id_index(id_index_path, reset=False)
+    try:
+        if _id_index_checkpoint_stats(conn) != expected_index_stats:
+            return None
+    finally:
+        conn.close()
     return payload
 
 
@@ -593,6 +676,14 @@ def _id_index_is_valid(path: Path) -> bool:
             conn.close()
     except sqlite3.DatabaseError:
         return False
+
+
+def _id_index_checkpoint_stats(conn: sqlite3.Connection) -> dict[str, int]:
+    return {
+        "seen_threads": int(conn.execute("SELECT COUNT(*) FROM seen_threads").fetchone()[0]),
+        "row_hashes": int(conn.execute("SELECT COUNT(*) FROM row_hashes").fetchone()[0]),
+        "listing_ids": int(conn.execute("SELECT COUNT(*) FROM listing_ids").fetchone()[0]),
+    }
 
 
 def _id_index_contains(conn: sqlite3.Connection, table: str, column: str, value: str) -> bool:

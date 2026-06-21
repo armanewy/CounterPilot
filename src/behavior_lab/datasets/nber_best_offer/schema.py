@@ -30,6 +30,10 @@ FORBIDDEN_FUTURE_FIELDS = {
     "future_rounds",
     "final_status",
     "status",
+    "status_id",
+    "response_time",
+    "ref_price4",
+    "excluded_reference_price_ref_price4",
     "later_response_time",
     "total_rounds",
 }
