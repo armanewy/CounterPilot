@@ -232,11 +232,11 @@ python -m behavior_lab nber-best-offer normalize \
 python -m behavior_lab nber-best-offer benchmark --normalized-dir runs/nber_sample/normalized
 python -m behavior_lab nber-best-offer audit --normalized-dir runs/nber_sample/normalized
 
-python -m behavior_lab benchmark-suite run
+python -m behavior_lab benchmark-suite run   # smoke fixtures only
 python -m behavior_lab benchmark-suite permissions
 ```
 
-The NBER, Open Bandit, Criteo, AuctionNet, and CraigslistBargain lanes are research benchmarks unless a source is explicitly cleared for commercial training and production export. See [`docs/DATASET_ROADMAP.md`](docs/DATASET_ROADMAP.md).
+The NBER sample commands and `benchmark-suite run` use tiny fixtures to verify plumbing. They are not evidence until run against real source files. The NBER, Open Bandit, Criteo, AuctionNet, and CraigslistBargain lanes are research benchmarks unless a source is explicitly cleared for commercial training and production export. See [`docs/DATASET_ROADMAP.md`](docs/DATASET_ROADMAP.md).
 
 ## CLI
 

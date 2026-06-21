@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Iterable
 
 
@@ -15,7 +16,7 @@ class SplitAssignment:
 
 
 def chronological_split(rows: Iterable[dict[str, Any]], *, time_key: str, train_fraction: float = 0.6, development_fraction: float = 0.2) -> SplitAssignment:
-    ordered = sorted(rows, key=lambda row: str(row.get(time_key, "")))
+    ordered = sorted(rows, key=lambda row: _chronological_key(row.get(time_key)))
     if not ordered:
         return SplitAssignment([], [], [])
     if train_fraction <= 0 or development_fraction < 0 or train_fraction + development_fraction >= 1:
@@ -53,3 +54,18 @@ def assert_disjoint_groups(split: SplitAssignment, *, group_key: str) -> bool:
     for rows in [split.train, split.development, split.hidden]:
         sets.append({str(row.get(group_key, "")) for row in rows})
     return not (sets[0] & sets[1] or sets[0] & sets[2] or sets[1] & sets[2])
+
+
+def _chronological_key(value: Any) -> tuple[int, float | str]:
+    if isinstance(value, (int, float)):
+        return (0, float(value))
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return (1, text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return (0, parsed.timestamp())
+    return (1, str(value))

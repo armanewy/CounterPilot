@@ -71,13 +71,21 @@ class SourceRegistry:
     def check(self, source_id: str, use: str) -> PermissionCheck:
         source = self.get(source_id)
         allowed = bool(source.allowed_uses.get(use, False))
-        if allowed and source.license_status == "confirmed":
+        commercial_uses = {"commercial_training", "production_inference", "production_export"}
+        if allowed and (use not in commercial_uses or source.license_status == "confirmed"):
             return PermissionCheck(source_id, use, True, "use allowed by registered source policy")
         if allowed:
             return PermissionCheck(source_id, use, False, f"license status is {source.license_status!r}, not confirmed")
         return PermissionCheck(source_id, use, False, f"use {use!r} is not allowed for {source_id!r}")
 
     def verify_lineage(self, source_ids: list[str], requested_use: str) -> dict[str, Any]:
+        if not source_ids:
+            return {
+                "requested_use": requested_use,
+                "allowed": False,
+                "checks": [],
+                "reason": "lineage must contain at least one source dataset",
+            }
         checks = [self.check(source_id, requested_use) for source_id in source_ids]
         return {
             "requested_use": requested_use,
@@ -90,6 +98,8 @@ class SourceRegistry:
         source_ids = payload.get("source_dataset_ids")
         if not isinstance(source_ids, list) or not all(isinstance(item, str) for item in source_ids):
             raise DataSourceError("manifest must contain source_dataset_ids as a list of strings")
+        if not source_ids:
+            raise DataSourceError("manifest source_dataset_ids may not be empty")
         requested_use = str(payload.get("requested_use", "internal_benchmarking"))
         return self.verify_lineage(source_ids, requested_use)
 

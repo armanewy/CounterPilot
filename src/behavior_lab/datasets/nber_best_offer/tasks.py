@@ -138,14 +138,13 @@ def assert_no_future_leakage(rows: list[dict[str, Any]]) -> bool:
         history = row.get("observed_history", [])
         if any("future_" in str(key) or str(key) in FORBIDDEN_FUTURE_FIELDS for item in history for key in item):
             return False
+        if any(str(item.get("status", "")).lower() in {"accepted", "declined", "expired", "finalized"} for item in history):
+            return False
     return True
 
 
 def _snapshot(*, task: str, label: Any, listing: dict[str, Any], turn: dict[str, Any], history: list[dict[str, Any]], row_id: str) -> dict[str, Any]:
     features = {
-        "listing_id": listing["listing_id"],
-        "seller_id": listing["seller_id"],
-        "buyer_id": turn.get("buyer_id"),
         "category": listing["category"],
         "condition": listing["condition"],
         "listing_price": listing["listing_price"],
@@ -164,7 +163,7 @@ def _snapshot(*, task: str, label: Any, listing: dict[str, Any], turn: dict[str,
         "task": task,
         "label": label,
         "features": features,
-        "observed_history": [dict(item) for item in history],
+        "observed_history": [_sanitize_history_turn(item) for item in history],
         "thread_id": turn["thread_id"],
         "listing_id": listing["listing_id"],
         "seller_id": listing["seller_id"],
@@ -195,3 +194,13 @@ def _buyer_label(turn: dict[str, Any]) -> str:
 
 def _parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def _sanitize_history_turn(turn: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "turn_index": turn["turn_index"],
+        "actor": turn["actor"],
+        "action": turn["action"],
+        "amount": turn["amount"],
+        "event_time": turn["event_time"],
+    }

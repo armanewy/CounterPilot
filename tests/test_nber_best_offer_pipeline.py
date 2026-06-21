@@ -26,10 +26,20 @@ class NberBestOfferPipelineTests(unittest.TestCase):
             tasks = build_tasks(normalized)
             self.assertGreaterEqual(len(tasks["seller_next_action"]), 3)
             self.assertTrue(assert_no_future_leakage(tasks["seller_next_action"]))
+            first = tasks["seller_next_action"][0]
+            self.assertNotIn("seller_id", first["features"])
+            self.assertNotIn("buyer_id", first["features"])
+            self.assertNotIn("status", first["observed_history"][0])
             board = benchmark(normalized)
             self.assertIn("seller_next_action", board["leaderboards"])
+            self.assertIn("chronological", board["leaderboards"]["seller_next_action"])
+            self.assertIn("seller_disjoint", board["leaderboards"]["seller_next_action"])
             report = audit(normalized)
             self.assertTrue(all(report["leakage_checks"].values()))
+            self.assertIn("splits", report["tasks"]["seller_next_action"])
+
+    def test_leakage_audit_rejects_status_in_observed_history(self) -> None:
+        self.assertFalse(assert_no_future_leakage([{"features": {}, "observed_history": [{"status": "accepted"}]}]))
 
     def test_cli_nber_smoke(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

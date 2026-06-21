@@ -15,6 +15,16 @@ class BenchmarkFoundationTests(unittest.TestCase):
         self.assertEqual(split.train[0]["id"], "a")
         self.assertEqual(split.hidden[-1]["id"], "c")
 
+    def test_chronological_split_handles_timezone_offsets(self) -> None:
+        rows = [
+            {"id": "late", "time": "2026-01-01T10:00:00+00:00"},
+            {"id": "early", "time": "2026-01-01T04:00:00-05:00"},
+            {"id": "middle", "time": "2026-01-01T09:30:00Z"},
+        ]
+        split = chronological_split(rows, time_key="time")
+        ordered = split.train + split.development + split.hidden
+        self.assertEqual([row["id"] for row in ordered], ["early", "middle", "late"])
+
     def test_group_disjoint_split_keeps_sellers_apart(self) -> None:
         rows = [{"row": index, "seller": f"s{index}"} for index in range(6)]
         split = group_disjoint_split(rows, group_key="seller")

@@ -34,7 +34,7 @@ Run Wave 1, Wave 2, and Wave 3A/3B before flexible model training. Stop if:
 - NBER ingestion fails leakage or data-quality audit.
 - Strong simple baselines do not beat naive base rates on chronological and seller-disjoint splits.
 - Open Bandit off-policy estimates fail support or effective-sample-size checks.
-- Criteo negative controls invent uplift.
+- Criteo permutation negative controls invent uplift or confidence intervals are too wide to interpret.
 - Artifact lineage allows restricted research datasets to export production models.
 
 ## Sources Checked

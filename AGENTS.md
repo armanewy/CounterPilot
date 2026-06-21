@@ -19,3 +19,4 @@ Campaign 002 / OfferLab is the commercial direction.
 - Keep `seller_accepted`, `buyer_paid`, provisional margin, and mature margin semantically separate.
 - Keep research benchmarks federated by source and claim. Do not pool NBER, Open Bandit, Criteo, AuctionNet, CraigslistBargain, or authorized seller data into one undifferentiated training set.
 - Production model export is allowed only when every ancestor source passes the data-source permission firewall for `production_export`.
+- After each OfferLab evidence wave, run independent read-only correctness audits before starting the next wave. Use `docs/WAVE_AUDIT_PROTOCOL.md` as the required audit gate.

@@ -25,12 +25,16 @@ Policy = Callable[[dict[str, object]], dict[str, float]]
 def ips(logs: list[dict[str, object]], policy: Policy) -> OpeEstimate:
     weighted_rewards = []
     weights = []
-    support_violations = 0
+    support_violations = _target_actions_without_logged_support(logs, policy)
     for row in logs:
         action = str(row["action"])
         propensity = float(row["propensity"])
         target_probability = policy(row).get(action, 0.0)
-        if propensity <= 0 or target_probability <= 0:
+        if target_probability <= 0:
+            weights.append(0.0)
+            weighted_rewards.append(0.0)
+            continue
+        if propensity <= 0:
             support_violations += 1
             weights.append(0.0)
             weighted_rewards.append(0.0)
@@ -45,12 +49,16 @@ def ips(logs: list[dict[str, object]], policy: Policy) -> OpeEstimate:
 def self_normalized_ips(logs: list[dict[str, object]], policy: Policy) -> OpeEstimate:
     weighted_rewards = []
     weights = []
-    support_violations = 0
+    support_violations = _target_actions_without_logged_support(logs, policy)
     for row in logs:
         action = str(row["action"])
         propensity = float(row["propensity"])
         target_probability = policy(row).get(action, 0.0)
-        if propensity <= 0 or target_probability <= 0:
+        if target_probability <= 0:
+            weights.append(0.0)
+            weighted_rewards.append(0.0)
+            continue
+        if propensity <= 0:
             support_violations += 1
             weights.append(0.0)
             weighted_rewards.append(0.0)
@@ -60,7 +68,9 @@ def self_normalized_ips(logs: list[dict[str, object]], policy: Policy) -> OpeEst
         weighted_rewards.append(weight * float(row["reward"]))
     total_weight = sum(weights)
     value = sum(weighted_rewards) / total_weight if total_weight else 0.0
-    return OpeEstimate("self_normalized_ips", value, _effective_sample_size(weights), support_violations, _normal_ci(weighted_rewards))
+    mean_weight = total_weight / len(logs) if logs else 0.0
+    pseudo_values = [reward / mean_weight if mean_weight else 0.0 for reward in weighted_rewards]
+    return OpeEstimate("self_normalized_ips", value, _effective_sample_size(weights), support_violations, _normal_ci(pseudo_values))
 
 
 def direct_method(logs: list[dict[str, object]], policy: Policy) -> OpeEstimate:
@@ -69,13 +79,12 @@ def direct_method(logs: list[dict[str, object]], policy: Policy) -> OpeEstimate:
         reward_by_action.setdefault(str(row["action"]), []).append(float(row["reward"]))
     mean_by_action = {action: sum(values) / len(values) for action, values in reward_by_action.items()}
     values = []
-    support_violations = 0
+    support_violations = _target_actions_without_logged_support(logs, policy)
     for row in logs:
         probabilities = policy(row)
         estimate = 0.0
         for action, probability in probabilities.items():
             if action not in mean_by_action:
-                support_violations += 1
                 continue
             estimate += probability * mean_by_action[action]
         values.append(estimate)
@@ -90,12 +99,16 @@ def doubly_robust(logs: list[dict[str, object]], policy: Policy) -> OpeEstimate:
     mean_by_action = {action: sum(values) / len(values) for action, values in reward_by_action.items()}
     values = []
     weights = []
-    support_violations = 0
+    support_violations = _target_actions_without_logged_support(logs, policy)
     for row in logs:
         action = str(row["action"])
         propensity = float(row["propensity"])
         probabilities = policy(row)
         target_probability = probabilities.get(action, 0.0)
+        if target_probability <= 0:
+            weights.append(0.0)
+            values.append(sum(probability * mean_by_action.get(candidate, 0.0) for candidate, probability in probabilities.items()))
+            continue
         if propensity <= 0:
             support_violations += 1
             continue
@@ -116,6 +129,14 @@ def _effective_sample_size(weights: list[float]) -> float:
     total = sum(weights)
     squared = sum(weight * weight for weight in weights)
     return (total * total / squared) if squared else 0.0
+
+
+def _target_actions_without_logged_support(logs: list[dict[str, object]], policy: Policy) -> int:
+    logged_actions = {str(row["action"]) for row in logs}
+    target_actions = set()
+    for row in logs:
+        target_actions.update(action for action, probability in policy(row).items() if probability > 0)
+    return len(target_actions - logged_actions)
 
 
 def _normal_ci(values: list[float]) -> tuple[float, float]:

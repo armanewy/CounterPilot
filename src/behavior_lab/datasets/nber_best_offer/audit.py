@@ -24,36 +24,15 @@ class NberAuditReport:
 
 def benchmark(normalized_dir: str | Path) -> dict[str, Any]:
     tasks = build_tasks(normalized_dir)
-    leaderboards: dict[str, list[dict[str, Any]]] = {}
+    leaderboards: dict[str, dict[str, list[dict[str, Any]]]] = {}
     for task_name, rows in tasks.items():
         if not rows:
-            leaderboards[task_name] = []
+            leaderboards[task_name] = {"chronological": [], "seller_disjoint": []}
             continue
-        split = chronological_split(rows, time_key="timestamp")
-        for split_name, split_rows in [("train", split.train), ("development", split.development), ("hidden", split.hidden)]:
-            for row in split_rows:
-                row["split"] = split_name
-        if task_name in {"final_price_ratio", "response_latency"}:
-            model = MedianRegressor().fit(split.train)
-            predictions = model.predict(split.hidden or split.development).predictions
-            leaderboards[task_name] = [{"model_id": model.model_id, "split": "hidden", "rmse": regression_rmse(predictions), "features_used": []}]
-        else:
-            models = [MajorityClassifier().fit(split.train), CategoryMajorityClassifier().fit(split.train)]
-            if task_name == "seller_next_action":
-                models.append(OfferRatioThresholdClassifier().fit(split.train))
-            rows_out = []
-            for model in models:
-                result = model.predict(split.hidden or split.development)
-                rows_out.append(
-                    {
-                        "model_id": result.model_id,
-                        "split": "hidden",
-                        "accuracy": classification_accuracy(result.predictions),
-                        "log_loss": multiclass_log_loss(result.predictions),
-                        "features_used": result.features_used,
-                    }
-                )
-            leaderboards[task_name] = rows_out
+        leaderboards[task_name] = {
+            "chronological": _evaluate_split(task_name, chronological_split(rows, time_key="timestamp"), split_type="chronological"),
+            "seller_disjoint": _evaluate_split(task_name, group_disjoint_split(rows, group_key="seller_id"), split_type="seller_disjoint"),
+        }
     return {"leaderboards": leaderboards}
 
 
@@ -61,12 +40,18 @@ def audit(normalized_dir: str | Path, *, output_path: str | Path | None = None) 
     tasks = build_tasks(normalized_dir)
     leakage_checks = {task_name: assert_no_future_leakage(rows) for task_name, rows in tasks.items()}
     split_checks = {}
+    split_details = {}
     for task_name, rows in tasks.items():
         group_split = group_disjoint_split(rows, group_key="seller_id") if rows else None
         split_checks[f"{task_name}_seller_disjoint"] = assert_disjoint_groups(group_split, group_key="seller_id") if group_split else True
+        chrono_split = chronological_split(rows, time_key="timestamp") if rows else None
+        split_details[task_name] = {
+            "chronological": chrono_split.sizes() if chrono_split else {"train": 0, "development": 0, "hidden": 0},
+            "seller_disjoint": group_split.sizes() if group_split else {"train": 0, "development": 0, "hidden": 0},
+        }
     report = NberAuditReport(
         dataset_dir=str(Path(normalized_dir).resolve()),
-        tasks={task_name: {"rows": len(rows)} for task_name, rows in tasks.items()},
+        tasks={task_name: {"rows": len(rows), "splits": split_details[task_name]} for task_name, rows in tasks.items()},
         leakage_checks=leakage_checks,
         split_checks=split_checks,
     ).to_dict()
@@ -74,3 +59,39 @@ def audit(normalized_dir: str | Path, *, output_path: str | Path | None = None) 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         Path(output_path).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return report
+
+
+def _evaluate_split(task_name: str, split: Any, *, split_type: str) -> list[dict[str, Any]]:
+    for split_name, split_rows in [("train", split.train), ("development", split.development), ("hidden", split.hidden)]:
+        for row in split_rows:
+            row["split"] = split_name
+    evaluation_rows = split.hidden or split.development
+    if task_name in {"final_price_ratio", "response_latency"}:
+        model = MedianRegressor().fit(split.train)
+        predictions = model.predict(evaluation_rows).predictions
+        return [
+            {
+                "model_id": model.model_id,
+                "split_type": split_type,
+                "split": "hidden" if split.hidden else "development",
+                "rmse": regression_rmse(predictions),
+                "features_used": [],
+            }
+        ]
+    models = [MajorityClassifier().fit(split.train), CategoryMajorityClassifier().fit(split.train)]
+    if task_name == "seller_next_action":
+        models.append(OfferRatioThresholdClassifier().fit(split.train))
+    rows_out = []
+    for model in models:
+        result = model.predict(evaluation_rows)
+        rows_out.append(
+            {
+                "model_id": result.model_id,
+                "split_type": split_type,
+                "split": "hidden" if split.hidden else "development",
+                "accuracy": classification_accuracy(result.predictions),
+                "log_loss": multiclass_log_loss(result.predictions),
+                "features_used": result.features_used,
+            }
+        )
+    return rows_out

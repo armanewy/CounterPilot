@@ -29,6 +29,7 @@ FORBIDDEN_FUTURE_FIELDS = {
     "agreement",
     "future_rounds",
     "final_status",
+    "status",
     "later_response_time",
     "total_rounds",
 }

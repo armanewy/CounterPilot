@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 from behavior_lab.benchmarks.contracts import ArtifactLineage, BenchmarkManifest, validate_manifest
+from behavior_lab.benchmarks.contracts import BenchmarkContractError
 from behavior_lab.data_sources.cache import ContentAddressedCache
 from behavior_lab.data_sources.registry import default_registry
 
@@ -23,6 +24,11 @@ class DataSourceRegistryTests(unittest.TestCase):
         result = default_registry().verify_lineage(["nber_ebay_best_offer", "current_ebay_authorized_data"], "production_export")
         self.assertFalse(result["allowed"])
         self.assertEqual(len(result["checks"]), 2)
+
+    def test_empty_lineage_is_not_allowed(self) -> None:
+        result = default_registry().verify_lineage([], "production_export")
+        self.assertFalse(result["allowed"])
+        self.assertIn("at least one", result["reason"])
 
     def test_content_addressed_cache_deduplicates_by_hash(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -55,6 +61,48 @@ class DataSourceRegistryTests(unittest.TestCase):
         result = validate_manifest(manifest)
         self.assertTrue(result["valid"])
         self.assertFalse(result["production_export_permission"]["allowed"])
+
+    def test_manifest_rejects_lineage_that_hides_restricted_sources(self) -> None:
+        lineage = ArtifactLineage(
+            artifact_id="artifact_001",
+            source_dataset_ids=["nber_ebay_best_offer"],
+            transformation_ids=["sample"],
+            allowed_uses={"research": True, "production_export": False},
+            license_status="uncertain",
+        )
+        manifest = BenchmarkManifest(
+            benchmark_id="bad_manifest",
+            source_dataset_ids=["current_ebay_authorized_data"],
+            task_type="classification",
+            target_name="seller_next_action",
+            feature_contract=["offer_to_asking_ratio"],
+            forbidden_features=["final_price"],
+            split_contract={"type": "chronological"},
+            lineage=lineage,
+        )
+        with self.assertRaises(BenchmarkContractError):
+            validate_manifest(manifest)
+
+    def test_manifest_rejects_disallowed_lineage_use_claims(self) -> None:
+        lineage = ArtifactLineage(
+            artifact_id="artifact_001",
+            source_dataset_ids=["nber_ebay_best_offer"],
+            transformation_ids=["sample"],
+            allowed_uses={"production_export": True},
+            license_status="uncertain",
+        )
+        manifest = BenchmarkManifest(
+            benchmark_id="bad_manifest",
+            source_dataset_ids=["nber_ebay_best_offer"],
+            task_type="classification",
+            target_name="seller_next_action",
+            feature_contract=["offer_to_asking_ratio"],
+            forbidden_features=["final_price"],
+            split_contract={"type": "chronological"},
+            lineage=lineage,
+        )
+        with self.assertRaises(BenchmarkContractError):
+            validate_manifest(manifest)
 
 
 if __name__ == "__main__":

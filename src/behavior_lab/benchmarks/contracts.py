@@ -76,10 +76,26 @@ def validate_manifest(manifest: BenchmarkManifest | dict[str, Any]) -> dict[str,
     overlap = set(payload["feature_contract"]) & set(payload["forbidden_features"])
     if overlap:
         raise BenchmarkContractError(f"Feature contract includes forbidden features: {sorted(overlap)}")
-    permissions = default_registry().verify_lineage(list(payload["source_dataset_ids"]), "production_export")
+    if not payload["source_dataset_ids"]:
+        raise BenchmarkContractError("source_dataset_ids may not be empty")
     lineage = payload["lineage"]
     if not isinstance(lineage, dict):
         raise BenchmarkContractError("lineage must be an object")
+    lineage_sources = lineage.get("source_dataset_ids")
+    if not isinstance(lineage_sources, list) or not all(isinstance(item, str) for item in lineage_sources):
+        raise BenchmarkContractError("lineage.source_dataset_ids must be a list of strings")
+    if not lineage_sources:
+        raise BenchmarkContractError("lineage.source_dataset_ids may not be empty")
+    if set(lineage_sources) != set(payload["source_dataset_ids"]):
+        raise BenchmarkContractError("lineage.source_dataset_ids must match top-level source_dataset_ids")
+    lineage_allowed_uses = lineage.get("allowed_uses")
+    if not isinstance(lineage_allowed_uses, dict):
+        raise BenchmarkContractError("lineage.allowed_uses must be an object")
+    registry = default_registry()
+    for use, claimed_allowed in lineage_allowed_uses.items():
+        if claimed_allowed and not registry.verify_lineage(lineage_sources, str(use))["allowed"]:
+            raise BenchmarkContractError(f"lineage.allowed_uses claims disallowed use {use!r}")
+    permissions = registry.verify_lineage(list(payload["source_dataset_ids"]), "production_export")
     return {
         "valid": True,
         "benchmark_id": payload["benchmark_id"],

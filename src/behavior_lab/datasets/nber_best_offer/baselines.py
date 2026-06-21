@@ -18,21 +18,23 @@ class MajorityClassifier:
         self.model_id = model_id
         self.label = ""
         self.labels: list[str] = []
+        self.probabilities: dict[str, float] = {}
 
     def fit(self, rows: list[dict[str, Any]]) -> "MajorityClassifier":
         counts = Counter(str(row["label"]) for row in rows)
         self.labels = sorted(counts)
         self.label = counts.most_common(1)[0][0] if counts else ""
+        total = sum(counts.values())
+        self.probabilities = {label: counts[label] / total for label in self.labels} if total else {}
         return self
 
     def predict(self, rows: list[dict[str, Any]]) -> BaselineResult:
-        probability = 1.0 / max(len(self.labels), 1)
         predictions = [
             {
                 "row_id": row["row_id"],
                 "label": row["label"],
                 "prediction": self.label,
-                "probabilities": {label: probability for label in self.labels},
+                "probabilities": dict(self.probabilities),
                 "split": row.get("split", "unknown"),
             }
             for row in rows
@@ -44,6 +46,7 @@ class CategoryMajorityClassifier:
     def __init__(self) -> None:
         self.global_model = MajorityClassifier(model_id="category_majority_global")
         self.by_category: dict[str, str] = {}
+        self.probabilities_by_category: dict[str, dict[str, float]] = {}
         self.labels: list[str] = []
 
     def fit(self, rows: list[dict[str, Any]]) -> "CategoryMajorityClassifier":
@@ -53,19 +56,24 @@ class CategoryMajorityClassifier:
         for row in rows:
             grouped[str(row["features"].get("category"))][str(row["label"])] += 1
         self.by_category = {category: counts.most_common(1)[0][0] for category, counts in grouped.items()}
+        self.probabilities_by_category = {
+            category: {label: counts[label] / sum(counts.values()) for label in self.labels}
+            for category, counts in grouped.items()
+        }
         return self
 
     def predict(self, rows: list[dict[str, Any]]) -> BaselineResult:
-        probability = 1.0 / max(len(self.labels), 1)
         predictions = []
         for row in rows:
-            label = self.by_category.get(str(row["features"].get("category")), self.global_model.label)
+            category = str(row["features"].get("category"))
+            label = self.by_category.get(category, self.global_model.label)
+            probabilities = self.probabilities_by_category.get(category, self.global_model.probabilities)
             predictions.append(
                 {
                     "row_id": row["row_id"],
                     "label": row["label"],
                     "prediction": label,
-                    "probabilities": {item: probability for item in self.labels},
+                    "probabilities": dict(probabilities),
                     "split": row.get("split", "unknown"),
                 }
             )
@@ -91,12 +99,14 @@ class OfferRatioThresholdClassifier:
                 label = "counter"
             else:
                 label = "decline"
+            probabilities = {"accept": 0.05, "counter": 0.05, "decline": 0.05, "expire": 0.05}
+            probabilities[label] = 0.85
             predictions.append(
                 {
                     "row_id": row["row_id"],
                     "label": row["label"],
                     "prediction": label,
-                    "probabilities": {"accept": 0.34, "counter": 0.33, "decline": 0.33},
+                    "probabilities": probabilities,
                     "split": row.get("split", "unknown"),
                 }
             )
