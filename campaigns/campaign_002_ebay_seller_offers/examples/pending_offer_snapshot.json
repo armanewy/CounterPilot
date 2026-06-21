@@ -1,0 +1,56 @@
+{
+  "action_taken": null,
+  "available_actions": [
+    {
+      "action": "accept",
+      "amount": 720.0
+    },
+    {
+      "action": "counter_at_amount",
+      "amount": 760.0
+    },
+    {
+      "action": "counter_at_amount",
+      "amount": 790.0
+    },
+    {
+      "action": "wait"
+    }
+  ],
+  "campaign_id": "campaign_002_ebay_seller_offers",
+  "decision_id": "pending_offer_001",
+  "decision_time": "2026-06-21T10:00:00-04:00",
+  "listing_id": "1234567890",
+  "observation_cutoff": "2026-06-21T10:00:00-04:00",
+  "pre_decision_context": {
+    "asking_price": 900.0,
+    "buyer_offer_amount": 720.0,
+    "category": "refurbished electronics",
+    "comparable_price_band": {
+      "high": 860.0,
+      "low": 735.0,
+      "median": 795.0
+    },
+    "condition": "used",
+    "days_active": 26,
+    "eligible_interested_buyers": 3,
+    "impressions_7d": 910,
+    "inventory_quantity": 1,
+    "listing_id": "1234567890",
+    "minimum_net_proceeds": 580.0,
+    "offer_to_asking_ratio": 0.8,
+    "prior_offer_count": 2,
+    "promotion_cost": 9.0,
+    "seller_cost_basis": 520.0,
+    "seller_urgency": 1,
+    "shipping_cost": 34.0,
+    "traffic_trend": "declining",
+    "views_7d": 81
+  },
+  "protected_outcome": null,
+  "provenance": {
+    "source": "manual_example"
+  },
+  "schema_version": "offerlab_decision_snapshot.v1",
+  "seller_id": "example_seller"
+}

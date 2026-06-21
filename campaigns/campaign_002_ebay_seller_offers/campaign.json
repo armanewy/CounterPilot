@@ -1,0 +1,51 @@
+{
+  "campaign_id": "campaign_002_ebay_seller_offers",
+  "campaign_schema_version": "0.1",
+  "commercial_goal": "Optimize seller-side offer and pricing decisions for realized contribution margin.",
+  "guardrails": [
+    "read-only until prospective evidence exists",
+    "never optimize acceptance rate without margin",
+    "never automate below seller floor",
+    "do not use post-decision outcomes in recommendations"
+  ],
+  "pre_decision_context": {
+    "asking_price": "positive number",
+    "buyer_offer_amount": "positive number or null",
+    "category": "string",
+    "comparable_price_band": "object with optional low, median, high non-negative numbers",
+    "condition": "string",
+    "days_active": "non-negative integer",
+    "eligible_interested_buyers": "non-negative integer",
+    "impressions_7d": "non-negative integer",
+    "inventory_quantity": "non-negative integer",
+    "listing_id": "string",
+    "minimum_net_proceeds": "non-negative number",
+    "offer_to_asking_ratio": "number in [0, 1] or null",
+    "prior_offer_count": "non-negative integer",
+    "promotion_cost": "non-negative number",
+    "seller_cost_basis": "non-negative number",
+    "seller_urgency": "integer 0..3",
+    "shipping_cost": "non-negative number",
+    "traffic_trend": "declining | flat | increasing | unknown",
+    "views_7d": "non-negative integer"
+  },
+  "primary_metric": "net_contribution_margin_per_listing_day",
+  "protected_outcomes": [
+    "countered",
+    "days_to_sale",
+    "final_sale_price",
+    "ignored",
+    "net_contribution_margin",
+    "offer_accepted",
+    "returned",
+    "sold_within_48_hours",
+    "sold_within_7_days",
+    "unpaid_order"
+  ],
+  "stage": "read_only_profit_audit",
+  "title": "Campaign 002 - eBay seller offers",
+  "working_names": [
+    "OfferLab",
+    "MarginPilot"
+  ]
+}

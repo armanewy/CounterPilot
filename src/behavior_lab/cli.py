@@ -29,6 +29,13 @@ from behavior_lab.discovery import DiscoveryLoop
 from behavior_lab.evaluation import evaluate_model, paired_compare, pareto_frontier
 from behavior_lab.gym import TARGET, WorldGym
 from behavior_lab.ledger import ImmutableLedger
+from behavior_lab.offerlab import (
+    ingest_offerlab_snapshots,
+    profit_audit,
+    recommend_offer_action,
+    write_campaign_002_template,
+    load_offerlab_snapshots,
+)
 from behavior_lab.research_api import ResearchAPI
 from behavior_lab.runner import BatchConfig, SyntheticBatchRunner
 from behavior_lab.stress import LabStressTester
@@ -206,6 +213,29 @@ def command_campaign_001_capture_invalidate(args: argparse.Namespace) -> None:
     _print_json(invalidate_capture(args.episode_id, args.reason, args.data_dir))
 
 
+def command_offerlab_template(args: argparse.Namespace) -> None:
+    template = write_campaign_002_template(args.output)
+    _print_json({"output": str(Path(args.output).resolve()), "campaign_id": template["campaign_id"]})
+
+
+def command_offerlab_ingest(args: argparse.Namespace) -> None:
+    _print_json(asdict(ingest_offerlab_snapshots(args.input, data_dir=args.data_dir)))
+
+
+def command_offerlab_audit(args: argparse.Namespace) -> None:
+    _print_json(profit_audit(args.data_dir))
+
+
+def command_offerlab_recommend(args: argparse.Namespace) -> None:
+    snapshots = load_offerlab_snapshots(args.input)
+    if len(snapshots) != 1:
+        raise SystemExit("offerlab-recommend requires exactly one snapshot")
+    config = None
+    if args.config:
+        config = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    _print_json(recommend_offer_action(snapshots[0], data_dir=args.data_dir, config=config))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Behavior Discovery Lab")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -313,6 +343,25 @@ def build_parser() -> argparse.ArgumentParser:
     capture_invalidate.add_argument("--episode-id", required=True)
     capture_invalidate.add_argument("--reason", required=True)
     capture_invalidate.set_defaults(func=command_campaign_001_capture_invalidate)
+
+    offer_template = subparsers.add_parser("offerlab-template", help="Write a Campaign 002 eBay offer snapshot template")
+    offer_template.add_argument("--output", default="campaigns/campaign_002_ebay_seller_offers/examples/offer_snapshot_template.json")
+    offer_template.set_defaults(func=command_offerlab_template)
+
+    offer_ingest = subparsers.add_parser("offerlab-ingest", help="Ingest normalized read-only eBay offer snapshots")
+    offer_ingest.add_argument("--input", required=True)
+    offer_ingest.add_argument("--data-dir", default="data/campaign_002_ebay_seller_offers")
+    offer_ingest.set_defaults(func=command_offerlab_ingest)
+
+    offer_audit = subparsers.add_parser("offerlab-audit", help="Summarize realized margin from ingested OfferLab history")
+    offer_audit.add_argument("--data-dir", default="data/campaign_002_ebay_seller_offers")
+    offer_audit.set_defaults(func=command_offerlab_audit)
+
+    offer_recommend = subparsers.add_parser("offerlab-recommend", help="Read-only economic recommendation for one offer snapshot")
+    offer_recommend.add_argument("--input", required=True)
+    offer_recommend.add_argument("--data-dir", default=None)
+    offer_recommend.add_argument("--config", help="Optional JSON economics config with fee, holding cost, and return risk")
+    offer_recommend.set_defaults(func=command_offerlab_recommend)
 
     demo = subparsers.add_parser("demo", help="Run all waves end-to-end with campaign-safe lockboxes")
     demo.add_argument("--data-dir", default=".demo")
