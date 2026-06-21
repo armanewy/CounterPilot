@@ -32,7 +32,9 @@ from behavior_lab.ledger import ImmutableLedger
 from behavior_lab.offerlab import (
     ingest_offerlab_snapshots,
     profit_audit,
+    profit_audit_report,
     recommend_offer_action,
+    write_profit_audit_report,
     write_campaign_002_template,
     load_offerlab_snapshots,
 )
@@ -226,6 +228,13 @@ def command_offerlab_audit(args: argparse.Namespace) -> None:
     _print_json(profit_audit(args.data_dir))
 
 
+def command_offerlab_report(args: argparse.Namespace) -> None:
+    if args.output:
+        _print_json(write_profit_audit_report(args.data_dir, args.output))
+    else:
+        _print_json(profit_audit_report(args.data_dir))
+
+
 def command_offerlab_recommend(args: argparse.Namespace) -> None:
     snapshots = load_offerlab_snapshots(args.input)
     if len(snapshots) != 1:
@@ -356,6 +365,11 @@ def build_parser() -> argparse.ArgumentParser:
     offer_audit = subparsers.add_parser("offerlab-audit", help="Summarize realized margin from ingested OfferLab history")
     offer_audit.add_argument("--data-dir", default="data/campaign_002_ebay_seller_offers")
     offer_audit.set_defaults(func=command_offerlab_audit)
+
+    offer_report = subparsers.add_parser("offerlab-report", help="Write the read-only OfferLab profit-audit report")
+    offer_report.add_argument("--data-dir", default="data/campaign_002_ebay_seller_offers")
+    offer_report.add_argument("--output", help="Optional .md or .json report path")
+    offer_report.set_defaults(func=command_offerlab_report)
 
     offer_recommend = subparsers.add_parser("offerlab-recommend", help="Read-only economic recommendation for one offer snapshot")
     offer_recommend.add_argument("--input", required=True)

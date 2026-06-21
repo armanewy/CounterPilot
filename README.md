@@ -41,7 +41,7 @@ This repository is an infrastructure MVP, not a validated human-behavior oracle.
 - Difference-in-means and inverse-probability-weighted treatment comparisons.
 - A provider-neutral, validated LLM hypothesis-generator seam.
 - Locked, idempotent synthetic batch stress runs.
-- Campaign 002 OfferLab scaffolding: normalized eBay offer snapshots, append-only read-only ingest, realized margin audit, and deterministic decision-support arithmetic.
+- Campaign 002 OfferLab scaffolding: normalized eBay offer snapshots, append-only read-only ingest, mature-margin audit, five-section profit-audit report, and abstaining decision-support arithmetic.
 
 The core runtime uses only Python's standard library.
 
@@ -210,10 +210,11 @@ Current commands:
 python -m behavior_lab offerlab-template
 python -m behavior_lab offerlab-ingest --input campaigns/campaign_002_ebay_seller_offers/examples/historical_decisions.jsonl
 python -m behavior_lab offerlab-audit
+python -m behavior_lab offerlab-report --output reports/offerlab_profit_audit.md
 python -m behavior_lab offerlab-recommend --input campaigns/campaign_002_ebay_seller_offers/examples/pending_offer_snapshot.json
 ```
 
-OfferLab does not call eBay or execute seller actions yet. It records normalized snapshots and recommends actions with expected dollars so a seller can approve or reject manually. See [`docs/OFFERLAB.md`](docs/OFFERLAB.md).
+OfferLab does not call eBay or execute seller actions yet. It records normalized snapshots, produces a read-only profit audit, and abstains from recommendation when seller cost basis, fee data, traffic freshness, or comparable mature outcomes are insufficient. See [`docs/OFFERLAB.md`](docs/OFFERLAB.md).
 
 ## CLI
 
@@ -222,6 +223,7 @@ python -m behavior_lab seed-world --data-dir runs/world --world habit --episodes
 python -m behavior_lab run-loop --data-dir runs/world --world habit --iterations 4
 python -m behavior_lab verify-ledger --data-dir runs/world
 python -m behavior_lab bridge-import --input export_hashed.jsonl --data-dir data/campaign_001_task_initiation
+python -m behavior_lab offerlab-report --output reports/offerlab_profit_audit.md
 python -m behavior_lab offerlab-recommend --input campaigns/campaign_002_ebay_seller_offers/examples/pending_offer_snapshot.json
 python -m behavior_lab stress-test --data-dir runs/matrix --episodes 120 --matrix
 python -m behavior_lab batch-stress \

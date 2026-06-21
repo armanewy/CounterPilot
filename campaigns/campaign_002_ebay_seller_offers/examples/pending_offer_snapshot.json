@@ -33,6 +33,7 @@
     },
     "condition": "used",
     "days_active": 26,
+    "decision_channel": "buyer_initiated_best_offer",
     "eligible_interested_buyers": 3,
     "impressions_7d": 910,
     "inventory_quantity": 1,
@@ -44,6 +45,7 @@
     "seller_cost_basis": 520.0,
     "seller_urgency": 1,
     "shipping_cost": 34.0,
+    "traffic_data_age_hours": 6.0,
     "traffic_trend": "declining",
     "views_7d": 81
   },
@@ -51,6 +53,6 @@
   "provenance": {
     "source": "manual_example"
   },
-  "schema_version": "offerlab_decision_snapshot.v1",
+  "schema_version": "offerlab_decision_snapshot.v2",
   "seller_id": "example_seller"
 }
