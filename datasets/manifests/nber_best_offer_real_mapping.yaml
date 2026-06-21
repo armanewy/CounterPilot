@@ -1,0 +1,185 @@
+schema_id: nber_best_offer_real_mapping
+schema_version: 1
+source_dataset_id: nber_ebay_best_offer
+scope: wave_1_prompt_1a_codebook_and_source_schema_mapping
+research_only: true
+production_export_allowed: false
+
+official_sources:
+  - name: Codebook.xlsx
+    url: "https://www.nber.org/bargaining/Codebook.xlsx"
+    local_path: "C:\\OfferLabData\\source_docs\\Codebook.xlsx"
+    sha256: "3FA5E83046AC29E610CF2BCF02FD85682F93F3608C689C5A434D794C65BB6516"
+  - name: sequential_bargaining_QJE_code.zip
+    url: "https://www.nber.org/bargaining/sequential_bargaining_QJE_code.zip"
+    local_path: "C:\\OfferLabData\\source_docs\\sequential_bargaining_QJE_code.zip"
+    sha256: "94790B8638A0BE5D96807A1D09E970BBE7C2A8282FC91B95838F1220CA6D882E"
+  - name: best-offer-sequential-bargaining.html
+    url: "https://www.nber.org/research/data/best-offer-sequential-bargaining"
+    local_path: "C:\\OfferLabData\\source_docs\\best-offer-sequential-bargaining.html"
+    sha256: "8A84006852B81266809817A4E07B08CFEAC772CD657FF5D948C9D4D4D3AF7A5A"
+
+source_csv_headers:
+  anon_bo_lists.csv:
+    evidence: "Codebook.xlsx sheet bo_lists"
+    status: codebook_exact
+    columns: [anon_item_id, anon_title_code, anon_product_id, anon_leaf_categ_id, anon_slr_id, anon_buyer_id, auct_start_dt, auct_end_dt, slr_us, buyer_us, start_price_usd, photo_count, to_lst_cnt, bo_lst_cnt, item_cndtn_id, view_item_count, wtchr_count, item_price, bo_ck_yn, decline_price, accept_price, bin_rev, store, count1, ref_price1, count2, ref_price2, count3, ref_price3, count4, ref_price4, ship_time_slowest, ship_time_fastest, ship_time_chosen, lstg_gen_type_id, fdbk_pstv_start, fdbk_score_start, meta_categ_id]
+  anon_bo_threads.csv:
+    evidence: "Codebook.xlsx sheet bo_threads; load_csv_files.do lines 35-56"
+    status: codebook_exact_plus_authors_code_extra
+    codebook_columns: [anon_item_id, anon_thread_id, anon_byr_id, anon_slr_id, offr_type_id, status_id, offr_price, src_cre_date, response_time, slr_hist, byr_hist, any_mssg, fdbk_pstv_src, fdbk_score_src, buyer_us]
+    authors_code_extra_columns: [src_cre_dt]
+    fixture_columns: [anon_item_id, anon_thread_id, anon_byr_id, anon_slr_id, offr_type_id, status_id, offr_price, src_cre_dt, src_cre_date, response_time, slr_hist, byr_hist, any_mssg, fdbk_pstv_src, fdbk_score_src, buyer_us]
+    unresolved:
+      - "Raw data were not downloaded, so exact raw header order for src_cre_dt is not confirmed."
+      - "src_cre_dt is used by authors' code but omitted from the codebook sheet."
+
+canonical_contract:
+  listings_required_fields: [listing_id, seller_id, category, condition, listing_price, reference_price, start_time, end_time]
+  negotiation_turns_required_fields: [thread_id, listing_id, buyer_id, seller_id, turn_index, actor, action, amount, status, event_time]
+  forbidden_future_fields: [final_price, agreement, future_rounds, final_status, status, later_response_time, total_rounds]
+  task_targets:
+    seller_next_action: "response by seller after buyer offer"
+    buyer_response_to_counter: "response by buyer after seller counter"
+    agreement: "thread-level accepted or auto-accepted status"
+    final_price_ratio: "item_price / start_price_usd for Best Offer sales only"
+    response_latency: "response_time - src_cre_date when response_time is a timestamp"
+
+identifier_resolution:
+  listing_id:
+    source_fields: [anon_item_id]
+    canonical_field: listing_id
+  seller_id:
+    source_fields: [anon_slr_id]
+    canonical_field: seller_id
+    feature_use: split_only
+  bargaining_buyer_id:
+    source_fields: [anon_byr_id]
+    canonical_field: buyer_id
+  actual_purchaser_id:
+    source_fields: [anon_buyer_id]
+    canonical_field: none
+    leak_status: target_or_future
+  thread_id:
+    preferred_source_field: anon_thread_id
+    author_code_group_key: [anon_item_id, anon_byr_id]
+    canonical_field: thread_id
+    unresolved: "Authors' scripts frequently group by anon_item_id + anon_byr_id despite codebook-defined anon_thread_id."
+  turn_id:
+    source_fields: [anon_thread_id, src_cre_date]
+    tie_breaker: "stable CSV row ordinal within equal timestamps"
+    canonical_field: source_row_id
+
+row_semantics:
+  unit: offer_or_counteroffer_row
+  represents: both_event_and_response_state
+  event_fields: [offr_type_id, offr_price, src_cre_date]
+  response_state_fields: [status_id, response_time]
+  note: "status_id and response_time are future/outcome fields relative to src_cre_date."
+
+code_maps:
+  offr_type_id:
+    "0": {meaning: "Initial buyer offer", actor: buyer, action: offer}
+    "1": {meaning: "Buyer counteroffer", actor: buyer, action: counter}
+    "2": {meaning: "Seller counteroffer", actor: seller, action: counter}
+  status_id:
+    "0": {meaning: "offer expired (response took longer than 48 hours)", canonical_response: expire, terminal: true, agreement: false, ambiguous: false}
+    "1": {meaning: accepted, canonical_response: accept, terminal: true, agreement: true, ambiguous: false}
+    "2": {meaning: declined, canonical_response: decline, terminal: true, agreement: false, ambiguous: false}
+    "6": {meaning: "auto declined", canonical_response: decline, terminal: true, agreement: false, ambiguous: false}
+    "7": {meaning: countered, canonical_response: counter, terminal: false, agreement: null, ambiguous_if_last_observed: true}
+    "8": {meaning: "declined because another buyer's offer on this item was accepted", canonical_response: competing_buyer_accepted, terminal: true, agreement: null, ambiguous: true}
+    "9": {meaning: "auto accepted", canonical_response: accept, terminal: true, agreement: true, ambiguous: false}
+
+final_price_representation:
+  source_field: item_price
+  source_file: anon_bo_lists.csv
+  semantics: "Final price: Buy-It-Now price if sold through Buy-It-Now, final negotiated price if sold through Best Offer, missing if unsold."
+  best_offer_filter: "bo_ck_yn == 1"
+  canonical_label: final_price_ratio
+  leakage_rule: "Never use item_price or bo_ck_yn as pre-decision features."
+
+censoring_and_ambiguity:
+  censored_thread_rules:
+    - condition: "last observed row has status_id == 7"
+      reason: "countered row lacks the following offer/counteroffer response"
+    - condition: "status_id == 8"
+      reason: "other buyer's offer was accepted; this buyer-thread is a competing-outcome censoring case"
+    - condition: "accepted status_id in [1, 9] is not the last row in thread"
+      reason: "authors' paper_sample.do T4 flags accepted-not-last"
+    - condition: "status_id == 7 but next row is not expected opposing counter type"
+      reason: "authors' paper_sample.do T3 flags missing counter"
+    - condition: "duplicate anon_item_id + anon_byr_id + src_cre_date"
+      reason: "authors' paper_sample.do T5 flags duplicate offer timestamps"
+  ambiguous_listing_rules:
+    - condition: "item_price missing and no terminal negative offer status observed"
+      reason: "unsold listing is not automatically a failed bargaining thread label"
+    - condition: "auct_end_dt on sold listing"
+      reason: "codebook says sale date replaces chosen listing end date"
+
+participant_history:
+  offer_level_fields: [slr_hist, byr_hist]
+  listing_level_fields: [to_lst_cnt, bo_lst_cnt]
+  timing_caveat: "slr_hist/byr_hist are documented as previous BO-thread counts, but authors' summary code fills missing values from the first thread row and then with 1."
+  feature_rule: "Allowed only after timing and identifier-memorization audit."
+
+variable_mapping:
+  - {source_file: anon_bo_lists.csv, source_name: anon_item_id, source_type: long, units: "anonymized listing id", null_sentinel_values: [], time_semantics: "stable listing identifier", available_before_decision: true, leak_status: identifier_split_only, normalized_target_field: listings.listing_id}
+  - {source_file: anon_bo_lists.csv, source_name: anon_title_code, source_type: long, units: "anonymized title string id", null_sentinel_values: [], time_semantics: "listing title-derived attribute", available_before_decision: true, leak_status: allowed_feature_after_memorization_audit, normalized_target_field: extension.title_code}
+  - {source_file: anon_bo_lists.csv, source_name: anon_product_id, source_type: long, units: "anonymized product id", null_sentinel_values: [blank, stata_missing, 547957], time_semantics: "catalog linkage when available; authors replace 547957 with missing", available_before_decision: true_when_present, leak_status: allowed_feature_after_sentinel_cleanup, normalized_target_field: extension.product_id}
+  - {source_file: anon_bo_lists.csv, source_name: anon_leaf_categ_id, source_type: int, units: "anonymized leaf category id", null_sentinel_values: [], time_semantics: "listing category", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: listings.category_candidate}
+  - {source_file: anon_bo_lists.csv, source_name: anon_slr_id, source_type: long, units: "anonymized seller id", null_sentinel_values: [], time_semantics: "stable seller identifier", available_before_decision: true, leak_status: identifier_split_only, normalized_target_field: listings.seller_id}
+  - {source_file: anon_bo_lists.csv, source_name: anon_buyer_id, source_type: long, units: "anonymized actual purchaser id", null_sentinel_values: [blank, stata_missing], time_semantics: "post-sale purchaser", available_before_decision: false, leak_status: target_or_future, normalized_target_field: none}
+  - {source_file: anon_bo_lists.csv, source_name: auct_start_dt, source_type: str9, units: "DMY date", null_sentinel_values: [], time_semantics: "listing start date", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: listings.start_time}
+  - {source_file: anon_bo_lists.csv, source_name: auct_end_dt, source_type: str9, units: "DMY date", null_sentinel_values: [], time_semantics: "chosen listing end date; sale date if sold", available_before_decision: false_for_sold_listings, leak_status: target_or_future, normalized_target_field: listings.end_time_with_caveat}
+  - {source_file: anon_bo_lists.csv, source_name: slr_us, source_type: int, units: "binary 0 no 1 yes", null_sentinel_values: [], time_semantics: "seller location", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: extension.seller_us}
+  - {source_file: anon_bo_lists.csv, source_name: buyer_us, source_type: int, units: "binary 0 no 1 yes", null_sentinel_values: [blank, stata_missing], time_semantics: "actual purchaser location", available_before_decision: false, leak_status: target_or_future, normalized_target_field: none}
+  - {source_file: anon_bo_lists.csv, source_name: start_price_usd, source_type: double, units: USD, null_sentinel_values: [], time_semantics: "Buy-It-Now price", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: listings.listing_price}
+  - {source_file: anon_bo_lists.csv, source_name: photo_count, source_type: byte, units: count, null_sentinel_values: [], time_semantics: "listing photo count", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: extension.photo_count}
+  - {source_file: anon_bo_lists.csv, source_name: to_lst_cnt, source_type: long, units: count, null_sentinel_values: [], time_semantics: "seller listings dating back to 2008; cutoff unresolved", available_before_decision: unresolved, leak_status: temporal_leak_risk, normalized_target_field: extension.seller_listing_count_after_audit}
+  - {source_file: anon_bo_lists.csv, source_name: bo_lst_cnt, source_type: long, units: count, null_sentinel_values: [], time_semantics: "seller BO listings dating back to 2008; cutoff unresolved", available_before_decision: unresolved, leak_status: temporal_leak_risk, normalized_target_field: extension.seller_bo_listing_count_after_audit}
+  - {source_file: anon_bo_lists.csv, source_name: item_cndtn_id, source_type: int, units: "eBay condition code", null_sentinel_values: [blank, stata_missing], time_semantics: "listing condition", available_before_decision: true_when_present, leak_status: allowed_feature, normalized_target_field: listings.condition}
+  - {source_file: anon_bo_lists.csv, source_name: view_item_count, source_type: long, units: count, null_sentinel_values: [], time_semantics: "page-view aggregate; observation cutoff unresolved", available_before_decision: unresolved, leak_status: temporal_leak_risk, normalized_target_field: extension.view_count_after_audit}
+  - {source_file: anon_bo_lists.csv, source_name: wtchr_count, source_type: int, units: count, null_sentinel_values: [], time_semantics: "watch-list aggregate; observation cutoff unresolved", available_before_decision: unresolved, leak_status: temporal_leak_risk, normalized_target_field: extension.watcher_count_after_audit}
+  - {source_file: anon_bo_lists.csv, source_name: item_price, source_type: double, units: USD, null_sentinel_values: [blank, stata_missing], time_semantics: "final sale price; missing if unsold", available_before_decision: false, leak_status: target_or_future, normalized_target_field: labels.final_price}
+  - {source_file: anon_bo_lists.csv, source_name: bo_ck_yn, source_type: byte, units: "binary 0 no 1 yes", null_sentinel_values: [], time_semantics: "final sale through Best Offer indicator", available_before_decision: false, leak_status: target_or_future, normalized_target_field: labels.best_offer_sale_filter}
+  - {source_file: anon_bo_lists.csv, source_name: decline_price, source_type: double, units: USD, null_sentinel_values: [blank, stata_missing], time_semantics: "seller auto-decline threshold", available_before_decision: seller_private_policy, leak_status: policy_leak, normalized_target_field: excluded}
+  - {source_file: anon_bo_lists.csv, source_name: accept_price, source_type: double, units: USD, null_sentinel_values: [blank, stata_missing], time_semantics: "seller auto-accept threshold", available_before_decision: seller_private_policy, leak_status: policy_leak, normalized_target_field: excluded}
+  - {source_file: anon_bo_lists.csv, source_name: bin_rev, source_type: byte, units: "binary 0 no 1 yes", null_sentinel_values: [], time_semantics: "whether BIN price was ever modified during listing", available_before_decision: false, leak_status: target_or_future, normalized_target_field: excluded}
+  - {source_file: anon_bo_lists.csv, source_name: store, source_type: byte, units: "binary 0 no 1 yes", null_sentinel_values: [], time_semantics: "store listing indicator", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: extension.store_listing}
+  - {source_file: anon_bo_lists.csv, source_name: count1, source_type: int, units: count, null_sentinel_values: [blank, stata_missing], time_semantics: "support count for full-window reference price", available_before_decision: false_for_strict_chronology, leak_status: temporal_leak_risk, normalized_target_field: excluded_unless_recomputed}
+  - {source_file: anon_bo_lists.csv, source_name: ref_price1, source_type: double, units: USD, null_sentinel_values: [blank, stata_missing], time_semantics: "full-window constructed title reference price", available_before_decision: false_for_strict_chronology, leak_status: temporal_leak_risk, normalized_target_field: listings.reference_price_only_if_recomputed}
+  - {source_file: anon_bo_lists.csv, source_name: count2, source_type: int, units: count, null_sentinel_values: [blank, stata_missing], time_semantics: "support count for full-window reference price", available_before_decision: false_for_strict_chronology, leak_status: temporal_leak_risk, normalized_target_field: excluded_unless_recomputed}
+  - {source_file: anon_bo_lists.csv, source_name: ref_price2, source_type: double, units: USD, null_sentinel_values: [blank, stata_missing], time_semantics: "full-window constructed non-BO title reference price", available_before_decision: false_for_strict_chronology, leak_status: temporal_leak_risk, normalized_target_field: excluded_unless_recomputed}
+  - {source_file: anon_bo_lists.csv, source_name: count3, source_type: int, units: count, null_sentinel_values: [blank, stata_missing], time_semantics: "support count for full-window reference price", available_before_decision: false_for_strict_chronology, leak_status: temporal_leak_risk, normalized_target_field: excluded_unless_recomputed}
+  - {source_file: anon_bo_lists.csv, source_name: ref_price3, source_type: double, units: USD, null_sentinel_values: [blank, stata_missing], time_semantics: "full-window constructed non-BO title reference price", available_before_decision: false_for_strict_chronology, leak_status: temporal_leak_risk, normalized_target_field: excluded_unless_recomputed}
+  - {source_file: anon_bo_lists.csv, source_name: count4, source_type: int, units: count, null_sentinel_values: [blank, stata_missing], time_semantics: "support count for full-window reference price", available_before_decision: false_for_strict_chronology, leak_status: temporal_leak_risk, normalized_target_field: excluded_unless_recomputed}
+  - {source_file: anon_bo_lists.csv, source_name: ref_price4, source_type: double, units: USD, null_sentinel_values: [blank, stata_missing], time_semantics: "full-window constructed product-condition reference price", available_before_decision: false_for_strict_chronology, leak_status: temporal_leak_risk, normalized_target_field: listings.reference_price_only_if_recomputed}
+  - {source_file: anon_bo_lists.csv, source_name: ship_time_slowest, source_type: byte, units: hours, null_sentinel_values: [blank, stata_missing], time_semantics: "offered shipping option", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: extension.ship_time_slowest}
+  - {source_file: anon_bo_lists.csv, source_name: ship_time_fastest, source_type: byte, units: hours, null_sentinel_values: [blank, stata_missing], time_semantics: "offered shipping option", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: extension.ship_time_fastest}
+  - {source_file: anon_bo_lists.csv, source_name: ship_time_chosen, source_type: byte, units: hours, null_sentinel_values: [blank, stata_missing], time_semantics: "buyer chosen shipping option", available_before_decision: false, leak_status: target_or_future, normalized_target_field: excluded}
+  - {source_file: anon_bo_lists.csv, source_name: lstg_gen_type_id, source_type: byte, units: "binary 0 no 1 yes", null_sentinel_values: [], time_semantics: "relisting indicator", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: extension.relisting_indicator}
+  - {source_file: anon_bo_lists.csv, source_name: fdbk_pstv_start, source_type: double, units: percent, null_sentinel_values: [blank, stata_missing], time_semantics: "seller feedback at listing time", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: extension.seller_feedback_positive_start}
+  - {source_file: anon_bo_lists.csv, source_name: fdbk_score_start, source_type: long, units: count, null_sentinel_values: [blank, stata_missing], time_semantics: "seller feedback count at listing time", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: extension.seller_feedback_score_start}
+  - {source_file: anon_bo_lists.csv, source_name: meta_categ_id, source_type: long, units: "eBay meta category code", null_sentinel_values: [], time_semantics: "listing category", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: listings.category_candidate}
+  - {source_file: anon_bo_threads.csv, source_name: anon_item_id, source_type: long, units: "anonymized listing id", null_sentinel_values: [], time_semantics: "stable listing identifier", available_before_decision: true, leak_status: identifier_split_only, normalized_target_field: negotiation_turns.listing_id}
+  - {source_file: anon_bo_threads.csv, source_name: anon_thread_id, source_type: long, units: "anonymized thread id", null_sentinel_values: [], time_semantics: "stable bargaining-thread identifier", available_before_decision: true, leak_status: identifier_split_only, normalized_target_field: negotiation_turns.thread_id}
+  - {source_file: anon_bo_threads.csv, source_name: anon_byr_id, source_type: long, units: "anonymized bargaining buyer id", null_sentinel_values: [], time_semantics: "stable thread participant identifier", available_before_decision: true, leak_status: identifier_split_only, normalized_target_field: negotiation_turns.buyer_id}
+  - {source_file: anon_bo_threads.csv, source_name: anon_slr_id, source_type: long, units: "anonymized seller id", null_sentinel_values: [], time_semantics: "stable seller identifier", available_before_decision: true, leak_status: identifier_split_only, normalized_target_field: negotiation_turns.seller_id}
+  - {source_file: anon_bo_threads.csv, source_name: offr_type_id, source_type: byte, units: "coded offer type", null_sentinel_values: [], time_semantics: "current offer event", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: negotiation_turns.actor_and_action}
+  - {source_file: anon_bo_threads.csv, source_name: status_id, source_type: byte, units: "coded response state", null_sentinel_values: [], time_semantics: "opposing party response after current offer", available_before_decision: false, leak_status: target_or_future, normalized_target_field: labels.response_or_terminal_status}
+  - {source_file: anon_bo_threads.csv, source_name: offr_price, source_type: double, units: USD, null_sentinel_values: [blank, stata_missing], time_semantics: "current offer price", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: negotiation_turns.amount}
+  - {source_file: anon_bo_threads.csv, source_name: src_cre_dt, source_type: str9, units: "DMY date", null_sentinel_values: [], time_semantics: "offer creation date; authors-code-only column", available_before_decision: true_when_present, leak_status: unresolved_codebook_omission, normalized_target_field: optional_source_audit_field}
+  - {source_file: anon_bo_threads.csv, source_name: src_cre_date, source_type: str18, units: "DMYhms timestamp", null_sentinel_values: [], time_semantics: "offer creation timestamp", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: negotiation_turns.event_time}
+  - {source_file: anon_bo_threads.csv, source_name: response_time, source_type: str18, units: "DMYhms timestamp or duration unresolved", null_sentinel_values: [blank, stata_missing], time_semantics: "codebook says response length; authors parse/use as response timestamp", available_before_decision: false, leak_status: target_or_future, normalized_target_field: labels.response_latency_end_time}
+  - {source_file: anon_bo_threads.csv, source_name: slr_hist, source_type: long, units: count, null_sentinel_values: [blank, stata_missing], time_semantics: "previous seller BO-thread count; missing handling in authors code has timing caveat", available_before_decision: true_with_timing_caveat, leak_status: temporal_leak_risk, normalized_target_field: optional_feature_after_audit}
+  - {source_file: anon_bo_threads.csv, source_name: byr_hist, source_type: long, units: count, null_sentinel_values: [blank, stata_missing], time_semantics: "previous buyer BO-thread count; missing handling in authors code has timing caveat", available_before_decision: true_with_timing_caveat, leak_status: temporal_leak_risk, normalized_target_field: optional_feature_after_audit}
+  - {source_file: anon_bo_threads.csv, source_name: any_mssg, source_type: byte, units: "binary 0 no 1 yes", null_sentinel_values: [], time_semantics: "message attached to current offer", available_before_decision: true, leak_status: allowed_feature_if_message_text_not_collected, normalized_target_field: extension.has_message}
+  - {source_file: anon_bo_threads.csv, source_name: fdbk_pstv_src, source_type: double, units: percent, null_sentinel_values: [blank, stata_missing], time_semantics: "seller feedback at offer time", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: extension.seller_feedback_positive_at_offer}
+  - {source_file: anon_bo_threads.csv, source_name: fdbk_score_src, source_type: long, units: count, null_sentinel_values: [blank, stata_missing], time_semantics: "seller feedback count at offer time", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: extension.seller_feedback_score_at_offer}
+  - {source_file: anon_bo_threads.csv, source_name: buyer_us, source_type: int, units: "binary 0 no 1 yes", null_sentinel_values: [], time_semantics: "bargaining buyer location", available_before_decision: true, leak_status: allowed_feature, normalized_target_field: extension.buyer_us}
+
+fixtures:
+  directory: tests/fixtures/nber_real_schema
+  contains_raw_data: false
+  files: [README.md, anon_bo_lists.csv, anon_bo_threads.csv]

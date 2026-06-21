@@ -1,0 +1,5 @@
+anon_item_id,anon_thread_id,anon_byr_id,anon_slr_id,offr_type_id,status_id,offr_price,src_cre_dt,src_cre_date,response_time,slr_hist,byr_hist,any_mssg,fdbk_pstv_src,fdbk_score_src,buyer_us
+1001,9001,2001,501,0,7,70.00,01may2012,01may2012 11:00:00,01may2012 12:00:00,,1,1,99.8,1200,1
+1001,9001,2001,501,2,1,85.00,01may2012,01may2012 12:00:00,01may2012 13:00:00,,1,0,99.8,1200,1
+1002,9002,2002,502,0,0,80.00,03may2012,03may2012 09:00:00,,,,0,98.5,35,1
+1003,9003,2003,503,0,8,150.00,04may2012,04may2012 10:30:00,04may2012 11:00:00,4,,1,100.0,5000,0

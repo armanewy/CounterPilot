@@ -1,0 +1,4 @@
+anon_item_id,anon_title_code,anon_product_id,anon_leaf_categ_id,anon_slr_id,anon_buyer_id,auct_start_dt,auct_end_dt,slr_us,buyer_us,start_price_usd,photo_count,to_lst_cnt,bo_lst_cnt,item_cndtn_id,view_item_count,wtchr_count,item_price,bo_ck_yn,decline_price,accept_price,bin_rev,store,count1,ref_price1,count2,ref_price2,count3,ref_price3,count4,ref_price4,ship_time_slowest,ship_time_fastest,ship_time_chosen,lstg_gen_type_id,fdbk_pstv_start,fdbk_score_start,meta_categ_id
+1001,7001,3001,4001,501,2001,01may2012,02may2012,1,1,100.00,3,25,4,3000,120,8,85.00,1,60.00,95.00,0,1,12,98.50,9,96.00,8,94.00,20,92.00,168,24,48,0,99.8,1200,625
+1002,7002,547957,4002,502,,03may2012,10may2012,1,,150.00,1,10,1,7000,45,2,,0,,,0,0,,,,,,,,,120,48,,1,98.5,35,293
+1003,7003,,4003,503,2003,04may2012,05may2012,0,0,200.00,5,100,15,1000,300,25,200.00,0,,,1,1,30,205.00,25,203.00,22,202.00,21,201.00,72,24,24,0,100.0,5000,11700
