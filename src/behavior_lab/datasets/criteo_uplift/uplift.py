@@ -12,6 +12,7 @@ from behavior_lab.data_sources.registry import default_registry
 @dataclass(frozen=True)
 class UpliftReport:
     source_id: str
+    evidence_role: str
     production_export_allowed: bool
     rows: int
     treatment_count: int
@@ -58,6 +59,7 @@ def simple_uplift_report(rows: list[dict[str, Any]], *, outcome_key: str = "conv
     permission = default_registry().check("criteo_uplift", "production_export")
     return UpliftReport(
         source_id="criteo_uplift",
+        evidence_role="CAUSAL_VALIDATION",
         production_export_allowed=permission.allowed,
         rows=len(rows),
         treatment_count=len(treatment),

@@ -18,8 +18,10 @@ class WiderNetBenchmarkTests(unittest.TestCase):
         ]
         report = evaluate_policy(logs, lambda _row: {"a": 1.0, "b": 0.0})
         self.assertEqual(report["source_id"], "open_bandit_dataset")
-        self.assertEqual(len(report["estimates"]), 4)
+        self.assertEqual(len(report["estimates"]), 5)
+        self.assertIn("dimensions", report)
         self.assertGreater(report["estimates"][1]["effective_sample_size"], 0)
+        self.assertIn("relative_error_vs_on_policy", report["estimates"][0])
         snips = next(item for item in report["estimates"] if item["estimator"] == "self_normalized_ips")
         self.assertLessEqual(snips["confidence_interval"][0], snips["value"])
         self.assertGreaterEqual(snips["confidence_interval"][1], snips["value"])

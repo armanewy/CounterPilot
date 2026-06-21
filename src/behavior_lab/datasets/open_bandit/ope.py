@@ -73,6 +73,31 @@ def self_normalized_ips(logs: list[dict[str, object]], policy: Policy) -> OpeEst
     return OpeEstimate("self_normalized_ips", value, _effective_sample_size(weights), support_violations, _normal_ci(pseudo_values))
 
 
+def switch_estimator(logs: list[dict[str, object]], policy: Policy, *, weight_cap: float = 10.0) -> OpeEstimate:
+    """A stabilized IPS variant that clips large importance weights."""
+
+    weighted_rewards = []
+    weights = []
+    support_violations = _target_actions_without_logged_support(logs, policy)
+    for row in logs:
+        action = str(row["action"])
+        propensity = float(row["propensity"])
+        target_probability = policy(row).get(action, 0.0)
+        if target_probability <= 0:
+            weights.append(0.0)
+            weighted_rewards.append(0.0)
+            continue
+        if propensity <= 0:
+            support_violations += 1
+            weights.append(0.0)
+            weighted_rewards.append(0.0)
+            continue
+        weight = min(target_probability / propensity, weight_cap)
+        weights.append(weight)
+        weighted_rewards.append(weight * float(row["reward"]))
+    return OpeEstimate("switch_ips", sum(weighted_rewards) / len(logs) if logs else 0.0, _effective_sample_size(weights), support_violations, _normal_ci(weighted_rewards))
+
+
 def direct_method(logs: list[dict[str, object]], policy: Policy) -> OpeEstimate:
     reward_by_action: dict[str, list[float]] = {}
     for row in logs:
@@ -120,9 +145,25 @@ def doubly_robust(logs: list[dict[str, object]], policy: Policy) -> OpeEstimate:
 
 
 def evaluate_policy(logs: list[dict[str, object]], policy: Policy) -> dict[str, object]:
-    estimates = [direct_method(logs, policy), ips(logs, policy), self_normalized_ips(logs, policy), doubly_robust(logs, policy)]
+    estimates = [direct_method(logs, policy), ips(logs, policy), self_normalized_ips(logs, policy), doubly_robust(logs, policy), switch_estimator(logs, policy)]
     on_policy = sum(float(row["reward"]) for row in logs) / len(logs) if logs else 0.0
-    return {"source_id": "open_bandit_dataset", "on_policy_value": on_policy, "estimates": [estimate.to_dict() for estimate in estimates]}
+    output = []
+    for estimate in estimates:
+        payload = estimate.to_dict()
+        payload["relative_error_vs_on_policy"] = abs(float(payload["value"]) - on_policy) / max(abs(on_policy), 1e-12)
+        output.append(payload)
+    dimensions = {
+        "campaigns": sorted({str(row.get("campaign", "unknown")) for row in logs}),
+        "positions": sorted({str(row.get("position", "unknown")) for row in logs}),
+    }
+    return {
+        "source_id": "open_bandit_dataset",
+        "evidence_role": "EVALUATOR_VALIDATION",
+        "production_export_allowed": False,
+        "on_policy_value": on_policy,
+        "dimensions": dimensions,
+        "estimates": output,
+    }
 
 
 def _effective_sample_size(weights: list[float]) -> float:

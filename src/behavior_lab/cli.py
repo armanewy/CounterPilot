@@ -31,6 +31,8 @@ from behavior_lab.evaluation import evaluate_model, paired_compare, pareto_front
 from behavior_lab.gym import TARGET, WorldGym
 from behavior_lab.ledger import ImmutableLedger
 from behavior_lab.data_sources.registry import default_registry
+from behavior_lab.datasets.auctionnet.strategy import compare_strategies
+from behavior_lab.datasets.craigslist_bargain.parser import evaluate_parser
 from behavior_lab.datasets.criteo_uplift.uplift import simple_uplift_report
 from behavior_lab.datasets.nber_best_offer.acquire import fetch_codebook, fetch_full
 from behavior_lab.datasets.nber_best_offer.audit import audit as nber_audit
@@ -303,7 +305,7 @@ def command_nber_audit(args: argparse.Namespace) -> None:
 
 def command_benchmark_suite_permissions(args: argparse.Namespace) -> None:
     registry = default_registry()
-    sources = ["nber_ebay_best_offer", "open_bandit_dataset", "criteo_uplift"]
+    sources = ["nber_ebay_best_offer", "open_bandit_dataset", "criteo_uplift", "auctionnet", "craigslist_bargain"]
     _print_json({source: registry.permissions(source) for source in sources})
 
 
@@ -323,12 +325,31 @@ def command_benchmark_suite_run(args: argparse.Namespace) -> None:
             {"treatment": 1, "conversion": 0},
         ]
     )
+    craigslist = evaluate_parser(
+        [
+            {"text": "Would you take $80 if I pick up tonight?", "offer_amount": 80.0, "act": "propose"},
+            {"text": "I can meet you at $95, final offer.", "offer_amount": 95.0, "act": "counter"},
+            {"text": "Deal, I accept.", "offer_amount": None, "act": "accept"},
+        ]
+    )
+    registry = default_registry()
     _print_json(
         {
-            "direct_evidence": "run nber-best-offer benchmark on normalized NBER data",
-            "evaluator_validation": open_bandit,
-            "causal_validation": criteo,
-            "production_export_allowed": False,
+            "DIRECT_EVIDENCE": {
+                "source_id": "nber_ebay_best_offer",
+                "status": "run nber-best-offer benchmark on normalized NBER data",
+                "production_export_permission": registry.check("nber_ebay_best_offer", "production_export").to_dict(),
+            },
+            "EVALUATOR_VALIDATION": open_bandit,
+            "CAUSAL_VALIDATION": criteo,
+            "SIMULATION": compare_strategies(),
+            "LANGUAGE_EXTRACTION": craigslist,
+            "ARTIFACT_LINEAGE": {
+                "production_export": registry.verify_lineage(
+                    ["nber_ebay_best_offer", "open_bandit_dataset", "criteo_uplift", "auctionnet", "craigslist_bargain"],
+                    "production_export",
+                )
+            },
         }
     )
 
