@@ -4,26 +4,26 @@ Status: bounded real-source Wave 1 gate run completed on 2026-06-21.
 
 This is a committed transcript of local evidence. Raw source files, normalized
 tables, and private previews remained outside the repository under
-`C:\OfferLabData`; the repository contains only metadata, hashes, command
+`$OFFERLAB_DATA_ROOT`; the repository contains only metadata, hashes, command
 lines, and test code.
 
 ## Commands
 
 ```powershell
-$env:OFFERLAB_DATA_ROOT = "C:\OfferLabData"
-python -m behavior_lab nber-best-offer inspect-schema --raw-dir C:\OfferLabData\raw\nber_best_offer
-python -m behavior_lab nber-best-offer normalize-real --raw-dir C:\OfferLabData\raw\nber_best_offer --output-dir C:\OfferLabData\processed\nber_best_offer_100k --limit-threads 100000 --bucket-count 64 --partition-rows 50000
-python -m behavior_lab nber-best-offer normalize-real --raw-dir C:\OfferLabData\raw\nber_best_offer --output-dir C:\OfferLabData\processed\nber_best_offer_100k --limit-threads 100000 --bucket-count 64 --partition-rows 50000
-python -m behavior_lab nber-best-offer replication-check --normalized-dir C:\OfferLabData\processed\nber_best_offer_100k
-python -m behavior_lab nber-best-offer normalize-real --raw-dir C:\OfferLabData\raw\nber_best_offer --output-dir C:\OfferLabData\processed\nber_best_offer_100k_resume_probe --limit-threads 100000 --bucket-count 64 --partition-rows 50000 --stop-after-thread-pass
-python -m behavior_lab nber-best-offer normalize-real --raw-dir C:\OfferLabData\raw\nber_best_offer --output-dir C:\OfferLabData\processed\nber_best_offer_100k_resume_probe --limit-threads 100000 --bucket-count 64 --partition-rows 50000
+$env:OFFERLAB_DATA_ROOT = "$OFFERLAB_DATA_ROOT"
+python -m behavior_lab nber-best-offer inspect-schema --raw-dir $OFFERLAB_DATA_ROOT\raw\nber_best_offer
+python -m behavior_lab nber-best-offer normalize-real --raw-dir $OFFERLAB_DATA_ROOT\raw\nber_best_offer --output-dir $OFFERLAB_DATA_ROOT\processed\nber_best_offer_100k --limit-threads 100000 --bucket-count 64 --partition-rows 50000
+python -m behavior_lab nber-best-offer normalize-real --raw-dir $OFFERLAB_DATA_ROOT\raw\nber_best_offer --output-dir $OFFERLAB_DATA_ROOT\processed\nber_best_offer_100k --limit-threads 100000 --bucket-count 64 --partition-rows 50000
+python -m behavior_lab nber-best-offer replication-check --normalized-dir $OFFERLAB_DATA_ROOT\processed\nber_best_offer_100k
+python -m behavior_lab nber-best-offer normalize-real --raw-dir $OFFERLAB_DATA_ROOT\raw\nber_best_offer --output-dir $OFFERLAB_DATA_ROOT\processed\nber_best_offer_100k_resume_probe --limit-threads 100000 --bucket-count 64 --partition-rows 50000 --stop-after-thread-pass
+python -m behavior_lab nber-best-offer normalize-real --raw-dir $OFFERLAB_DATA_ROOT\raw\nber_best_offer --output-dir $OFFERLAB_DATA_ROOT\processed\nber_best_offer_100k_resume_probe --limit-threads 100000 --bucket-count 64 --partition-rows 50000
 ```
 
 The second `normalize-real` command was an idempotency rerun and returned the existing manifest without duplicating output.
 
 ## Data Used
 
-Raw data stayed outside the repository under `C:\OfferLabData\raw\nber_best_offer`.
+Raw data stayed outside the repository under `$OFFERLAB_DATA_ROOT\raw\nber_best_offer`.
 
 | File | Bytes | SHA-256 |
 | --- | ---: | --- |
@@ -40,7 +40,7 @@ Raw data stayed outside the repository under `C:\OfferLabData\raw\nber_best_offe
 - Replication target manifest hash: `2DC4CD2644E356B836F863B9C5C99ABB9FB06E5C4F51E0877039EDFB3B14676F`
 - Random seed: `20240621`
 - Split manifest hash: not applicable; this was normalization only.
-- Normalized manifest path: `C:\OfferLabData\processed\nber_best_offer_100k\manifest.json`
+- Normalized manifest path: `$OFFERLAB_DATA_ROOT\processed\nber_best_offer_100k\manifest.json`
 - Normalized manifest file hash from replication check: `6DE96D4DE6E1379D4D11E5B8E243697774345C737E007B066F3551EE0D43E288`
 
 ## Audit Follow-Up
@@ -94,8 +94,8 @@ Quarantine:
 
 - Normalization runtime: 700.141 seconds measured by wrapper; manifest runtime: 699.56 seconds.
 - Peak RSS during normalization: 262,041,600 bytes.
-- Output location: `C:\OfferLabData\processed\nber_best_offer_100k`
-- Resume probe: stopped after thread pass in 163.312 seconds, then resumed to completion in 474.079 seconds under `C:\OfferLabData\processed\nber_best_offer_100k_resume_probe`.
+- Output location: `$OFFERLAB_DATA_ROOT\processed\nber_best_offer_100k`
+- Resume probe: stopped after thread pass in 163.312 seconds, then resumed to completion in 474.079 seconds under `$OFFERLAB_DATA_ROOT\processed\nber_best_offer_100k_resume_probe`.
 
 ## Gate Checks
 

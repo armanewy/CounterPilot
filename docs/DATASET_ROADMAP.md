@@ -6,7 +6,7 @@ This roadmap separates evidence sources by the claim they are allowed to support
 
 | Source | Role | Allowed claim | Not allowed |
 | --- | --- | --- | --- |
-| NBER eBay Best Offer | Direct evidence | Real eBay bargaining behavior is predictable under leakage-safe splits | Causal seller profit lift |
+| NBER eBay Best Offer | Direct evidence | Test whether observable real eBay bargaining variables predict outcomes after leakage-safe benchmark gates pass | Causal seller profit lift |
 | Open Bandit Dataset | Evaluator validation | Off-policy estimators behave on logged randomized e-commerce data | eBay negotiation behavior |
 | Criteo Uplift | Causal validation | Treatment-effect machinery handles randomized uplift data | Production OfferLab weights |
 | AuctionNet | Simulation | Strategy code behaves in a strategic environment | Real buyer acceptance rates |

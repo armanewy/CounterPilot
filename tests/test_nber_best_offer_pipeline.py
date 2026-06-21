@@ -30,13 +30,61 @@ class NberBestOfferPipelineTests(unittest.TestCase):
             self.assertNotIn("seller_id", first["features"])
             self.assertNotIn("buyer_id", first["features"])
             self.assertNotIn("status", first["observed_history"][0])
+            self.assertNotIn("event_time", first["observed_history"][0])
             board = benchmark(normalized)
             self.assertIn("seller_next_action", board["leaderboards"])
             self.assertIn("chronological", board["leaderboards"]["seller_next_action"])
             self.assertIn("seller_disjoint", board["leaderboards"]["seller_next_action"])
+            self.assertFalse(board["scope"]["full_release_evidence"])
+            self.assertEqual(board["scope"]["evidence_scope"], "bounded_smoke_or_semantics")
             report = audit(normalized)
+            self.assertTrue(report["dataset_dir"].startswith("local_normalized_dir_hash:"))
             self.assertTrue(all(report["leakage_checks"].values()))
             self.assertIn("splits", report["tasks"]["seller_next_action"])
+
+    def test_full_release_scope_requires_structured_audited_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw"
+            normalized = Path(tmp) / "normalized"
+            build_sample_dataset(raw)
+            normalize_dataset(raw, normalized)
+            manifest_path = normalized / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["command_args"] = {"full": True, "limit_threads": None}
+            manifest["full_release_gate_passed"] = True
+            manifest["full_release_evidence_passed"] = True
+            manifest["audited_full_release_evidence"] = True
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            board = benchmark(normalized)
+
+            self.assertFalse(board["scope"]["full_release_evidence"])
+            self.assertFalse(board["scope"]["full_release_gate_passed"])
+            self.assertEqual(board["scope"]["evidence_scope"], "bounded_smoke_or_semantics")
+
+    def test_full_release_scope_accepts_only_complete_audited_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw"
+            normalized = Path(tmp) / "normalized"
+            build_sample_dataset(raw)
+            normalize_dataset(raw, normalized)
+            manifest_path = normalized / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["command_args"] = {"full": True, "limit_threads": None}
+            manifest["audited_full_release_evidence"] = {
+                "passed": True,
+                "replication_contract_passed": True,
+                "streaming_full_run_passed": True,
+                "full_run_checkpoint_validated": True,
+                "independent_audit_passed": True,
+            }
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            board = benchmark(normalized)
+
+            self.assertTrue(board["scope"]["full_release_evidence"])
+            self.assertTrue(board["scope"]["full_release_gate_passed"])
+            self.assertEqual(board["scope"]["evidence_scope"], "full_release")
 
     def test_leakage_audit_rejects_status_in_observed_history(self) -> None:
         self.assertFalse(assert_no_future_leakage([{"features": {}, "observed_history": [{"status": "accepted"}]}]))

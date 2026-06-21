@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import math
+from pathlib import Path
 from typing import Any
 
 from behavior_lab.benchmarks.metrics import multiclass_log_loss
+from behavior_lab.core import stable_hash
 from behavior_lab.offerlab_models.common import (
     EVIDENCE_ROLE,
     FEATURE_CONTRACT,
@@ -12,6 +14,8 @@ from behavior_lab.offerlab_models.common import (
     enriched_features,
     model_lineage,
     normalize_probabilities,
+    research_scope,
+    reserve_hidden_submission,
 )
 
 
@@ -66,22 +70,27 @@ class FormulaModel:
 
 
 class FormulaHiddenLockbox:
-    _used_ids: set[str] = set()
-
-    def __init__(self, hidden_rows: list[dict[str, Any]], *, lockbox_id: str) -> None:
+    def __init__(self, hidden_rows: list[dict[str, Any]], *, lockbox_id: str, store_path: str | Path, target: str = "formula") -> None:
         if not lockbox_id.strip():
             raise ValueError("lockbox_id is required")
         self._hidden_rows = list(hidden_rows)
         self.lockbox_id = lockbox_id
+        self.store_path = store_path
+        self.target = target
 
     def submit_once(self, model: FormulaModel) -> dict[str, Any]:
-        if self.lockbox_id in self._used_ids:
-            raise RuntimeError("formula hidden lockbox already used")
-        self._used_ids.add(self.lockbox_id)
+        reservation = reserve_hidden_submission(
+            store_path=self.store_path,
+            namespace="formula_suite",
+            requested_lockbox_id=self.lockbox_id,
+            target=self.target,
+            hidden_rows=self._hidden_rows,
+            artifact_id=_formula_artifact_id(model),
+        )
         predictions = model.predict(self._hidden_rows)
         return {
             "formula_id": model.model_id,
-            "lockbox_id": self.lockbox_id,
+            **reservation,
             "hidden_rows": len(self._hidden_rows),
             "hidden_log_loss": multiclass_log_loss(predictions, labels=model.labels),
             "hidden_submission_count": 1,
@@ -93,20 +102,20 @@ def build_formula_candidates() -> list[FormulaCandidate]:
         FormulaCandidate(
             "formula_relative_offer_accept",
             "accept",
-            ["relative_offer", "gap_to_reference", "round_number"],
+            ["relative_offer", "gap_to_listing", "round_number"],
             "Fails if higher relative offers do not reduce chronological development log loss versus base rate.",
         ),
         FormulaCandidate(
             "formula_low_offer_decline",
             "decline",
-            ["relative_offer_below_70", "gap_to_reference", "seller_experience"],
+            ["relative_offer_below_70", "gap_to_listing", "seller_experience"],
             "Fails if low relative offers are not more likely to be declined out of sample.",
         ),
         FormulaCandidate(
             "formula_concession_counter",
             "counter",
-            ["concession_size", "prior_counter_count", "round_number"],
-            "Fails if concession and round context do not improve counter prediction.",
+            ["relative_offer", "prior_counter_count", "round_number"],
+            "Fails if offer ratio and round context do not improve counter prediction.",
         ),
         FormulaCandidate(
             "formula_timing_category_interaction",
@@ -115,10 +124,10 @@ def build_formula_candidates() -> list[FormulaCandidate]:
             "Fails if timing/category interaction does not beat simpler offer-ratio terms.",
         ),
         FormulaCandidate(
-            "formula_reference_price_threshold",
+            "formula_listing_price_threshold",
             "accept",
-            ["reference_price_ratio", "relative_offer_above_85", "round_number"],
-            "Fails if reference-price closeness does not calibrate acceptance probabilities.",
+            ["listing_price_ratio", "relative_offer_above_85", "round_number"],
+            "Fails if listing-price closeness does not calibrate acceptance probabilities.",
         ),
     ]
 
@@ -158,11 +167,12 @@ def evaluate_formula_candidates(
     black_box_model_id: str | None = None,
     black_box_hidden_loss: float | None = None,
     hidden_lockbox_id: str | None = None,
+    hidden_lockbox_store_path: str | Path | None = None,
 ) -> dict[str, Any]:
     for split_name, rows in [("train", train), ("development", development), ("hidden", hidden)]:
         for row in rows:
             row["split"] = split_name
-    labels = sorted({str(row["label"]) for row in train + development + hidden})
+    labels = sorted({str(row["label"]) for row in train + development})
     baseline_predictions = _base_rate_predictions(development, train, labels)
     baseline_development_loss = multiclass_log_loss(baseline_predictions, labels=labels)
     dev_rows = []
@@ -198,10 +208,19 @@ def evaluate_formula_candidates(
                 "hidden_rows_reserved": len(hidden),
             }
         else:
-            hidden_report = FormulaHiddenLockbox(hidden, lockbox_id=hidden_lockbox_id).submit_once(chosen_model)
+            if hidden_lockbox_store_path is None:
+                raise ValueError("hidden_lockbox_store_path is required for hidden submission")
+            hidden_report = FormulaHiddenLockbox(
+                hidden,
+                lockbox_id=hidden_lockbox_id,
+                store_path=hidden_lockbox_store_path,
+                target="seller_next_action_formula",
+            ).submit_once(chosen_model)
     return {
         "evidence_role": EVIDENCE_ROLE,
+        "research_only": True,
         "production_export_allowed": PRODUCTION_EXPORT_ALLOWED,
+        "scope": research_scope(),
         "feature_contract": FEATURE_CONTRACT,
         "falsification_enforced": True,
         "baseline_development_log_loss": baseline_development_loss,
@@ -222,26 +241,19 @@ def term_value(term: str, row: dict[str, Any]) -> float:
     features = enriched_features(row)
     ratio = float(features.get("offer_to_asking_ratio") or 0.0)
     current_amount = float(features.get("current_amount") or 0.0)
-    reference_price = float(features.get("reference_price") or features.get("listing_price") or 0.0)
     listing_price = float(features.get("listing_price") or 0.0)
-    history = row.get("observed_history", [])
-    previous_amount = None
-    if len(history) >= 2:
-        previous_amount = history[-2].get("amount")
     if term == "relative_offer":
         return ratio
-    if term == "gap_to_reference":
-        return (reference_price - current_amount) / reference_price if reference_price else 0.0
-    if term == "concession_size":
-        return (float(previous_amount) - current_amount) / listing_price if previous_amount is not None and listing_price else 0.0
+    if term == "gap_to_listing":
+        return (listing_price - current_amount) / listing_price if listing_price else 0.0
     if term == "round_number":
         return float(features.get("round_number") or 0.0)
     if term == "timing_hour":
         return float(features.get("event_hour") or 0.0) / 24.0
     if term in {"seller_experience", "prior_counter_count"}:
         return float(features.get("prior_counter_count") or 0.0)
-    if term == "reference_price_ratio":
-        return current_amount / reference_price if reference_price else 0.0
+    if term == "listing_price_ratio":
+        return current_amount / listing_price if listing_price else 0.0
     if term == "category_refurbished":
         return 1.0 if "refurbished" in str(features.get("category", "")).lower() else 0.0
     if term == "relative_offer_below_70":
@@ -256,13 +268,12 @@ def term_value(term: str, row: dict[str, Any]) -> float:
 def _formula_feature_contract(terms: list[str]) -> list[str]:
     mapping = {
         "relative_offer": ["offer_to_asking_ratio"],
-        "gap_to_reference": ["current_amount", "reference_price"],
-        "concession_size": ["current_amount", "listing_price", "observed_history"],
+        "gap_to_listing": ["current_amount", "listing_price"],
         "round_number": ["round_number"],
         "timing_hour": ["event_hour"],
         "seller_experience": ["prior_counter_count"],
         "prior_counter_count": ["prior_counter_count"],
-        "reference_price_ratio": ["current_amount", "reference_price"],
+        "listing_price_ratio": ["current_amount", "listing_price"],
         "category_refurbished": ["category"],
         "relative_offer_below_70": ["offer_to_asking_ratio"],
         "relative_offer_above_85": ["offer_to_asking_ratio"],
@@ -272,6 +283,21 @@ def _formula_feature_contract(terms: list[str]) -> list[str]:
     for term in terms:
         output.extend(mapping.get(term, []))
     return sorted(set(output))
+
+
+def _formula_artifact_id(model: FormulaModel) -> str:
+    return stable_hash(
+        {
+            "suite": "formula_v1",
+            "model_id": model.model_id,
+            "candidate": model.candidate.to_dict(),
+            "coefficients": model.coefficients,
+            "intercept": model.intercept,
+            "labels": model.labels,
+            "non_target_distribution": model.non_target_distribution,
+            "lineage": model.lineage,
+        }
+    )
 
 
 def _mean(values: list[float]) -> float:

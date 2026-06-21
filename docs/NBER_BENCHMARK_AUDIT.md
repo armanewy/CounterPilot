@@ -49,9 +49,12 @@ run without unbounded in-memory task materialization.
 
 ## Interpretation
 
-This benchmark can support a statement like:
+After a completed scoped benchmark run, this benchmark can support a statement like:
 
 > Observable Best Offer variables predict negotiation outcomes better than simple baselines under chronological and seller-disjoint tests.
+
+The current fixture and bounded real-source smoke runs do not yet support a
+full-release performance claim.
 
 It cannot support:
 

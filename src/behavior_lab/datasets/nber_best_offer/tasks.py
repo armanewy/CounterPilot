@@ -8,6 +8,7 @@ from typing import Any
 
 from behavior_lab.datasets.nber_best_offer.normalize import read_jsonl
 from behavior_lab.datasets.nber_best_offer.schema import FORBIDDEN_FUTURE_FIELDS
+from behavior_lab.offerlab_models.common import validate_feature_contract
 
 
 class NberTaskError(ValueError):
@@ -266,6 +267,8 @@ def response_latency_task_real(listings: dict[str, dict[str, Any]], threads: dic
     rows = []
     for thread_id, turns in threads.items():
         for index, turn in enumerate(turns):
+            if _status_id(turn.get("status_id")) == 8:
+                continue
             event_time = turn.get("event_time")
             response_time = turn.get("response_time")
             if not event_time or not response_time:
@@ -288,6 +291,8 @@ def response_latency_task_real(listings: dict[str, dict[str, Any]], threads: dic
 
 
 def assert_no_future_leakage(rows: list[dict[str, Any]]) -> bool:
+    if not validate_feature_contract(rows):
+        return False
     for row in rows:
         feature_names = set(row.get("features", {}))
         if feature_names & FORBIDDEN_FUTURE_FIELDS:
@@ -305,13 +310,11 @@ def _snapshot(*, task: str, label: Any, listing: dict[str, Any], turn: dict[str,
         "category": listing["category"],
         "condition": listing["condition"],
         "listing_price": listing["listing_price"],
-        "reference_price": _safe_reference_price(listing),
         "current_actor": turn["actor"],
         "current_action": turn["action"],
         "current_amount": turn["amount"],
         "offer_to_asking_ratio": (float(turn["amount"]) / float(listing["listing_price"])) if turn.get("amount") else None,
         "round_number": turn["turn_index"],
-        "event_time": turn["event_time"],
         "prior_turn_count": len(history) - 1,
         "prior_counter_count": sum(1 for item in history[:-1] if item["action"] == "counter"),
     }
@@ -394,7 +397,6 @@ def _sanitize_history_turn(turn: dict[str, Any]) -> dict[str, Any]:
         "actor": turn["actor"],
         "action": turn["action"],
         "amount": turn["amount"],
-        "event_time": turn["event_time"],
     }
 
 

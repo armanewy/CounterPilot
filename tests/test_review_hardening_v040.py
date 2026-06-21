@@ -12,10 +12,11 @@ from behavior_lab.benchmarks.splits import (
     assert_disjoint_groups,
     chronological_group_purged_split,
 )
+from behavior_lab.core import stable_hash
 from behavior_lab.data_sources.cache import ContentAddressedCache
 from behavior_lab.data_sources.registry import AuthorizationEvidence, default_registry
 from behavior_lab.datasets.nber_best_offer.tasks import agreement_label, agreement_task
-from behavior_lab.offerlab_models.common import model_lineage
+from behavior_lab.offerlab_models.common import model_lineage, reserve_hidden_submission
 from behavior_lab.offerlab_models.transfer import evaluate_transfer_ablation
 from behavior_lab.offerlab_research import (
     AppendOnlyResearchStore,
@@ -39,7 +40,6 @@ def _rows() -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict
                 "category": "parts",
                 "condition": "used",
                 "listing_price": 100.0,
-                "reference_price": 95.0,
                 "current_actor": "buyer",
                 "current_action": "offer",
                 "current_amount": 70.0 + index,
@@ -47,7 +47,6 @@ def _rows() -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict
                 "round_number": 1,
                 "prior_turn_count": 0,
                 "prior_counter_count": 0,
-                "event_time": f"2020-01-{index:02d}T00:00:00+00:00",
             },
             "observed_history": [],
         }
@@ -137,6 +136,92 @@ class ReviewHardeningV040Tests(unittest.TestCase):
             self.assertEqual(reopened.hidden_submissions_remaining, 0)
             with self.assertRaises(ResearchBudgetError):
                 reopened.submit_hidden_once("p1", lockbox_id="renamed-lockbox")
+            with self.assertRaises(ResearchBudgetError):
+                reserve_hidden_submission(
+                    store_path=store_path,
+                    namespace="predictive_suite",
+                    requested_lockbox_id="other-path",
+                    target="seller_next_action",
+                    hidden_rows=hidden,
+                    artifact_id="artifact",
+                )
+
+    def test_model_suite_reservation_blocks_api_hidden_replay(self) -> None:
+        train, development, hidden = _rows()
+        with tempfile.TemporaryDirectory() as tmp:
+            store_path = Path(tmp) / "research.jsonl"
+            reserve_hidden_submission(
+                store_path=store_path,
+                namespace="formula_suite",
+                requested_lockbox_id="formula-first",
+                target="seller_next_action_formula",
+                hidden_rows=hidden,
+                artifact_id="formula-artifact",
+            )
+            api = OfferLabResearchAPI(
+                campaign_id="cross-path-hidden",
+                training_rows=train,
+                development_rows=development,
+                hidden_rows=hidden,
+                development_evaluations=2,
+                hidden_submissions=1,
+                store=AppendOnlyResearchStore(store_path),
+            )
+            api.register_formula(_proposal())
+            api.evaluate_development("p1")
+            with self.assertRaises(ResearchBudgetError):
+                api.submit_hidden_once("p1", lockbox_id="api-after-formula")
+
+    def test_legacy_hidden_case_hash_blocks_cross_path_replay(self) -> None:
+        train, development, hidden = _rows()
+        case_set_hash = stable_hash(
+            sorted(
+                stable_hash(
+                    {
+                        "task": row.get("task"),
+                        "timestamp": row.get("timestamp"),
+                        "features": row.get("features", {}),
+                        "observed_history": row.get("observed_history", []),
+                    }
+                )
+                for row in hidden
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            store_path = Path(tmp) / "research.jsonl"
+            AppendOnlyResearchStore(store_path).append(
+                "hidden_submitted",
+                {
+                    "campaign_id": "legacy-hidden",
+                    "result": {
+                        "lockbox_id": "legacy-lockbox",
+                        "hidden_case_set_hash": case_set_hash,
+                    },
+                },
+            )
+            with self.assertRaises(ResearchBudgetError):
+                reserve_hidden_submission(
+                    store_path=store_path,
+                    namespace="predictive_suite",
+                    requested_lockbox_id="predictive-after-legacy",
+                    target="seller_next_action",
+                    hidden_rows=hidden,
+                    artifact_id="artifact",
+                )
+
+            api = OfferLabResearchAPI(
+                campaign_id="legacy-hidden-api",
+                training_rows=train,
+                development_rows=development,
+                hidden_rows=hidden,
+                development_evaluations=2,
+                hidden_submissions=1,
+                store=AppendOnlyResearchStore(store_path),
+            )
+            api.register_formula(_proposal())
+            api.evaluate_development("p1")
+            with self.assertRaises(ResearchBudgetError):
+                api.submit_hidden_once("p1", lockbox_id="api-after-legacy")
 
     def test_campaign_metadata_reset_and_overlapping_hidden_subset_are_rejected(self) -> None:
         train, development, hidden = _rows()
@@ -192,6 +277,7 @@ class ReviewHardeningV040Tests(unittest.TestCase):
             training_rows=train,
             development_rows=development,
             hidden_rows=hidden,
+            store=AppendOnlyResearchStore(Path(tempfile.mkdtemp()) / "research.jsonl"),
         )
         api.register_formula(_proposal())
         api.evaluate_development("p1")

@@ -16,7 +16,7 @@ import _bootstrap  # noqa: F401
 from behavior_lab.benchmarks.splits import chronological_split
 from behavior_lab.datasets.nber_best_offer.normalize import build_sample_dataset, normalize_dataset
 from behavior_lab.datasets.nber_best_offer.tasks import build_tasks
-from behavior_lab.offerlab_research import HypothesisAgent, OfferLabResearchAPI, ResearchLimits, ResearchPermissionError, ResearchScheduler
+from behavior_lab.offerlab_research import AppendOnlyResearchStore, HypothesisAgent, OfferLabResearchAPI, ResearchLimits, ResearchPermissionError, ResearchScheduler
 
 
 def _api() -> OfferLabResearchAPI:
@@ -25,7 +25,14 @@ def _api() -> OfferLabResearchAPI:
         build_sample_dataset(root / "raw")
         normalize_dataset(root / "raw", root / "normalized")
         split = chronological_split(build_tasks(root / "normalized")["seller_next_action"], time_key="timestamp")
-        return OfferLabResearchAPI(campaign_id="adv", training_rows=split.train, development_rows=split.development, hidden_rows=split.hidden, development_evaluations=2)
+        return OfferLabResearchAPI(
+            campaign_id="adv",
+            training_rows=split.train,
+            development_rows=split.development,
+            hidden_rows=split.hidden,
+            development_evaluations=2,
+            store=AppendOnlyResearchStore(Path(tempfile.mkdtemp()) / "research.jsonl"),
+        )
 
 
 class Provider:

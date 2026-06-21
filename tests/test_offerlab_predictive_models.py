@@ -42,6 +42,12 @@ class OfferLabPredictiveModelTests(unittest.TestCase):
         self.assertIn("monotonic_offer_model", development_models)
         self.assertEqual(report["leaderboards"]["hidden"], [])
         self.assertFalse(report["hidden_lockbox"]["submitted"])
+        self.assertTrue(report["research_only"])
+        self.assertEqual(report["scope"]["evidence_scope"], "bounded_smoke_or_semantics")
+        self.assertTrue(report["negative_controls"]["random_label_permutation"]["executed"])
+        self.assertTrue(report["negative_controls"]["random_row_split"]["executed"])
+        self.assertTrue(report["negative_controls"]["same_timestamp_ordering"]["executed"])
+        self.assertTrue(report["negative_controls"]["artifact_name_canary"]["rejected"])
         self.assertFalse(report["production_export_allowed"])
         self.assertFalse(report["participant_id_features_used"])
         for board in report["leaderboards"].values():
@@ -49,6 +55,10 @@ class OfferLabPredictiveModelTests(unittest.TestCase):
                 self.assertNotIn("seller_id", row["features_used"])
                 self.assertNotIn("buyer_id", row["features_used"])
                 self.assertIn("lineage", row)
+                self.assertIn("abstention", row)
+                self.assertIn("relative_improvement", row)
+                self.assertIn("subgroup_counts", row)
+                self.assertIn("negative_control_references", row)
 
     def test_quantile_regression_reports_intervals_for_final_price(self) -> None:
         rows = [
@@ -70,16 +80,55 @@ class OfferLabPredictiveModelTests(unittest.TestCase):
     def test_hidden_predictive_evaluation_is_explicit_and_one_shot(self) -> None:
         rows = _tasks()["seller_next_action"]
         split = chronological_split(rows, time_key="timestamp")
-        report = predictive_suite("seller_next_action", split.train, split.development, split.hidden, hidden_lockbox_id="predictive-test")
-        self.assertTrue(report["hidden_lockbox"]["submitted"])
-        self.assertEqual(len(report["leaderboards"]["hidden"]), 1)
-        with self.assertRaises(RuntimeError):
-            predictive_suite("seller_next_action", split.train, split.development, split.hidden, hidden_lockbox_id="predictive-test")
-        altered_hidden = [dict(row) for row in split.hidden]
-        altered_hidden[0] = dict(altered_hidden[0])
-        altered_hidden[0]["row_id"] = "different-hidden-row"
-        with self.assertRaises(RuntimeError):
-            predictive_suite("seller_next_action", split.train, split.development, altered_hidden, hidden_lockbox_id="predictive-test")
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "hidden.jsonl"
+            report = predictive_suite(
+                "seller_next_action",
+                split.train,
+                split.development,
+                split.hidden,
+                hidden_lockbox_id="predictive-test",
+                hidden_lockbox_store_path=store,
+            )
+            self.assertTrue(report["hidden_lockbox"]["submitted"])
+            self.assertEqual(len(report["leaderboards"]["hidden"]), 1)
+            self.assertTrue(store.exists())
+            with self.assertRaises(RuntimeError):
+                predictive_suite(
+                    "seller_next_action",
+                    split.train,
+                    split.development,
+                    split.hidden,
+                    hidden_lockbox_id="predictive-test",
+                    hidden_lockbox_store_path=store,
+                )
+            with self.assertRaises(RuntimeError):
+                predictive_suite(
+                    "seller_next_action",
+                    split.train,
+                    split.development,
+                    list(reversed(split.hidden)),
+                    hidden_lockbox_id="predictive-test-reordered",
+                    hidden_lockbox_store_path=store,
+                )
+            altered_hidden = [dict(row) for row in split.hidden]
+            altered_hidden[0] = dict(altered_hidden[0])
+            altered_hidden[0]["row_id"] = "different-hidden-row"
+            with self.assertRaises(RuntimeError):
+                predictive_suite(
+                    "seller_next_action",
+                    split.train,
+                    split.development,
+                    altered_hidden,
+                    hidden_lockbox_id="predictive-test-renamed-row",
+                    hidden_lockbox_store_path=store,
+                )
+
+    def test_hidden_predictive_evaluation_requires_persistent_store(self) -> None:
+        rows = _tasks()["seller_next_action"]
+        split = chronological_split(rows, time_key="timestamp")
+        with self.assertRaises(ValueError):
+            predictive_suite("seller_next_action", split.train, split.development, split.hidden, hidden_lockbox_id="missing-store")
 
     def test_label_is_not_allowed_as_a_model_feature(self) -> None:
         self.assertFalse(validate_feature_contract([{"features": {"label": "accept"}}]))
@@ -106,6 +155,8 @@ class OfferLabPredictiveModelTests(unittest.TestCase):
         )
         payload = json.loads(output.stdout)
         self.assertEqual(payload["evidence_role"], "OFFERLAB_RESEARCH_MODEL_SUITE")
+        self.assertTrue(payload["research_only"])
+        self.assertEqual(payload["scope"]["evidence_scope"], "bounded_smoke_or_semantics")
         self.assertFalse(payload["production_export_allowed"])
 
 
@@ -119,19 +170,17 @@ def _final_price_row(row_id: str, timestamp: str, category: str, label: float) -
         "label": label,
         "timestamp": timestamp,
         "seller_id": f"seller-{row_id}",
-        "features": {
-            "category": category,
-            "condition": "used",
-            "listing_price": 100.0,
-            "reference_price": 95.0,
-            "current_actor": "buyer",
-            "current_action": "offer",
-            "current_amount": label * 100.0,
-            "offer_to_asking_ratio": label,
-            "round_number": 1,
-            "prior_turn_count": 0,
-            "prior_counter_count": 0,
-            "event_time": timestamp,
-        },
+            "features": {
+                "category": category,
+                "condition": "used",
+                "listing_price": 100.0,
+                "current_actor": "buyer",
+                "current_action": "offer",
+                "current_amount": label * 100.0,
+                "offer_to_asking_ratio": label,
+                "round_number": 1,
+                "prior_turn_count": 0,
+                "prior_counter_count": 0,
+            },
         "observed_history": [],
     }

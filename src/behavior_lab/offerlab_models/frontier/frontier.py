@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from behavior_lab.core import stable_hash
 from behavior_lab.offerlab_models.common import PRODUCTION_EXPORT_ALLOWED, SOURCE_ID, enriched_features, model_lineage
 
 
@@ -67,9 +68,13 @@ def counteroffer_frontier(context: dict[str, Any], historical_rows: list[dict[st
                 },
                 "nearest_comparable_counters": [
                     {
-                        "row_id": item["row"].get("row_id"),
+                        "case_token": stable_hash(
+                            {
+                                "timestamp": item["row"].get("timestamp"),
+                                "features": item["row"].get("features", {}),
+                            }
+                        )[:16],
                         "ratio": item["ratio"],
-                        "label": item["row"].get("label"),
                     }
                     for item in comparables
                 ],
@@ -81,6 +86,7 @@ def counteroffer_frontier(context: dict[str, Any], historical_rows: list[dict[st
         "production_export_allowed": PRODUCTION_EXPORT_ALLOWED,
         "causal_claim": False,
         "profit_optimization": False,
+        "historical_rows_scope": "caller_supplied_training_rows_only",
         "support_range": support_range,
         "same_category_support_range": category_support_range,
         "frontier": frontier,

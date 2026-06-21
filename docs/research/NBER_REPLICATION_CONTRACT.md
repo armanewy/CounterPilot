@@ -13,7 +13,7 @@ dependency.
 
 - Dataset: NBER Best Offer Sequential Bargaining.
 - Required tables: `anon_bo_lists.csv` and `anon_bo_threads.csv`.
-- Source cache: `C:\OfferLabData\source_docs`.
+- Source cache: `$OFFERLAB_DATA_ROOT\source_docs`.
 - Raw data policy: raw `anon_bo_lists.csv.gz`, `anon_bo_threads.csv.gz`, and
   `bargaining_data.zip` were not downloaded for this contract.
 - Gate rule: every fatal structural invariant and fatal published descriptive
@@ -25,16 +25,16 @@ dependency.
 
 | ID | Official source | Local cached artifact | SHA-256 |
 | --- | --- | --- | --- |
-| `nber_dataset_page` | https://www.nber.org/research/data/best-offer-sequential-bargaining | `C:\OfferLabData\source_docs\best-offer-sequential-bargaining.html` | `546BE9EC06750E04E973DB6CA02703711554A96FC98AE838DAFFC3A16E05154D` |
-| `nber_appendix_listing` | http://www.nber.org/data-appendix/w24306/bargaining | `C:\OfferLabData\source_docs\data-appendix-w24306-bargaining.html` | `DB01C80EFF129D4E451F4799EC4A1394E5691123EE69D24F4F2954CFEFF62EAA` |
-| `nber_codebook` | https://nber.org/bargaining/Codebook.xlsx | `C:\OfferLabData\source_docs\Codebook.xlsx` | `3FA5E83046AC29E610CF2BCF02FD85682F93F3608C689C5A434D794C65BB6516` |
-| `nber_readme_pdf` | http://www.nber.org/data-appendix/w24306/bargaining/README.pdf | `C:\OfferLabData\source_docs\README.pdf` | `B7C1DE64087C77ECC88A7746299EAD5642FBBBD62AA2618815A937866B9E4246` |
-| `nber_working_paper_pdf` | https://www.nber.org/system/files/working_papers/w24306/w24306.pdf | `C:\OfferLabData\source_docs\w24306.pdf` | `5E12E4DAC6DE91570013B6AC34B8757D17237DF783ABB58A6E40D23B77A1227B` |
-| `released_code_zip` | https://nber.org/bargaining/sequential_bargaining_QJE_code.zip | `C:\OfferLabData\source_docs\sequential_bargaining_QJE_code.zip` | `94790B8638A0BE5D96807A1D09E970BBE7C2A8282FC91B95838F1220CA6D882E` |
-| `paper_sample_do` | released code ZIP: `paper_sample.do` | `C:\OfferLabData\source_docs\paper_sample.do` | `9AFD57C2DC711EB00B6709CA4A6CAB335505EC6B3966E1F76EF4BCA16A9D3F97` |
-| `summary_stats_main_do` | released code ZIP: `summary_stats_main.do` | `C:\OfferLabData\source_docs\summary_stats_main.do` | `56FD56F3F0D5DB82970BEBF2AF6C698C43D345CB63A357BF172DFF75F8C81184` |
-| `summary_stats_ref_do` | released code ZIP: `summary_stats_ref.do` | `C:\OfferLabData\source_docs\summary_stats_ref.do` | `995B3A1B782CC946887D8D6201B8630D004ADB11721FABA307F9D12563BD2CE3` |
-| `game_tree_do` | released code ZIP: `game_tree.do` | `C:\OfferLabData\source_docs\game_tree.do` | `20DAFFC2F5727012703B5832750FEFE368B51CFB25036EE54DCB923F5245C80B` |
+| `nber_dataset_page` | https://www.nber.org/research/data/best-offer-sequential-bargaining | `$OFFERLAB_DATA_ROOT\source_docs\best-offer-sequential-bargaining.html` | `546BE9EC06750E04E973DB6CA02703711554A96FC98AE838DAFFC3A16E05154D` |
+| `nber_appendix_listing` | http://www.nber.org/data-appendix/w24306/bargaining | `$OFFERLAB_DATA_ROOT\source_docs\data-appendix-w24306-bargaining.html` | `DB01C80EFF129D4E451F4799EC4A1394E5691123EE69D24F4F2954CFEFF62EAA` |
+| `nber_codebook` | https://nber.org/bargaining/Codebook.xlsx | `$OFFERLAB_DATA_ROOT\source_docs\Codebook.xlsx` | `3FA5E83046AC29E610CF2BCF02FD85682F93F3608C689C5A434D794C65BB6516` |
+| `nber_readme_pdf` | http://www.nber.org/data-appendix/w24306/bargaining/README.pdf | `$OFFERLAB_DATA_ROOT\source_docs\README.pdf` | `B7C1DE64087C77ECC88A7746299EAD5642FBBBD62AA2618815A937866B9E4246` |
+| `nber_working_paper_pdf` | https://www.nber.org/system/files/working_papers/w24306/w24306.pdf | `$OFFERLAB_DATA_ROOT\source_docs\w24306.pdf` | `5E12E4DAC6DE91570013B6AC34B8757D17237DF783ABB58A6E40D23B77A1227B` |
+| `released_code_zip` | https://nber.org/bargaining/sequential_bargaining_QJE_code.zip | `$OFFERLAB_DATA_ROOT\source_docs\sequential_bargaining_QJE_code.zip` | `94790B8638A0BE5D96807A1D09E970BBE7C2A8282FC91B95838F1220CA6D882E` |
+| `paper_sample_do` | released code ZIP: `paper_sample.do` | `$OFFERLAB_DATA_ROOT\source_docs\paper_sample.do` | `9AFD57C2DC711EB00B6709CA4A6CAB335505EC6B3966E1F76EF4BCA16A9D3F97` |
+| `summary_stats_main_do` | released code ZIP: `summary_stats_main.do` | `$OFFERLAB_DATA_ROOT\source_docs\summary_stats_main.do` | `56FD56F3F0D5DB82970BEBF2AF6C698C43D345CB63A357BF172DFF75F8C81184` |
+| `summary_stats_ref_do` | released code ZIP: `summary_stats_ref.do` | `$OFFERLAB_DATA_ROOT\source_docs\summary_stats_ref.do` | `995B3A1B782CC946887D8D6201B8630D004ADB11721FABA307F9D12563BD2CE3` |
+| `game_tree_do` | released code ZIP: `game_tree.do` | `$OFFERLAB_DATA_ROOT\source_docs\game_tree.do` | `20DAFFC2F5727012703B5832750FEFE368B51CFB25036EE54DCB923F5245C80B` |
 
 ## Codebook Commitments
 

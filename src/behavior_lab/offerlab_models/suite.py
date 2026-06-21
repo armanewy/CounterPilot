@@ -16,6 +16,7 @@ from behavior_lab.offerlab_models.calibration.calibration import (
 )
 from behavior_lab.offerlab_models.formulas.formulas import evaluate_formula_candidates
 from behavior_lab.offerlab_models.frontier.frontier import counteroffer_frontier
+from behavior_lab.offerlab_models.common import research_scope
 from behavior_lab.offerlab_models.predictive.models import RegularizedLogisticClassifier, predictive_suite
 from behavior_lab.offerlab_models.transfer.ablation import evaluate_transfer_ablation
 
@@ -51,7 +52,9 @@ def build_research_leaderboards(tasks: dict[str, list[dict[str, Any]]]) -> dict[
     registry = default_registry()
     return {
         "evidence_role": "OFFERLAB_RESEARCH_MODEL_SUITE",
+        "research_only": True,
         "production_export_allowed": False,
+        "scope": research_scope(),
         "source_id": "nber_ebay_best_offer",
         "leaderboards": leaderboards,
         "formula_hypotheses": formula_report,
@@ -111,7 +114,19 @@ def _calibration_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def _frontier_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     if not rows:
         return {"rows": 0, "frontier": []}
-    context = rows[0]
+    split = chronological_group_purged_split(rows, time_key="timestamp", group_key="listing_id")
+    training_rows = split.train
+    if not training_rows:
+        return {"rows": 0, "frontier": [], "scope": "no_training_rows"}
+    context = training_rows[-1]
     listing_price = float(context["features"]["listing_price"])
     candidates = [round(listing_price * ratio, 2) for ratio in [0.60, 0.75, 0.90, 1.10]]
-    return counteroffer_frontier(context, rows, candidates)
+    report = counteroffer_frontier(context, training_rows, candidates)
+    report["split_scope"] = {
+        "historical_rows": "chronological_train_only",
+        "train_rows": len(split.train),
+        "development_rows_reserved": len(split.development),
+        "hidden_rows_reserved": len(split.hidden),
+        "purged_rows": split.purged_rows,
+    }
+    return report

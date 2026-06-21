@@ -13,7 +13,7 @@ Status: source-inventory contract. Raw source files belong under `OFFERLAB_DATA_
 The repository includes `src/behavior_lab/datasets/nber_best_offer/source_inventory.py` and the CLI command:
 
 ```powershell
-$env:OFFERLAB_DATA_ROOT = "C:\OfferLabData"
+$env:OFFERLAB_DATA_ROOT = "$OFFERLAB_DATA_ROOT"
 python -m behavior_lab nber-best-offer source-inventory --write-report
 ```
 
@@ -31,4 +31,4 @@ The command hashes anonymized item, buyer, seller, product, title, and thread id
 
 ## Current Local Evidence
 
-On 2026-06-21, official raw CSV.GZ files were observed locally under `C:\OfferLabData\raw\nber_best_offer` for real-source testing. The full raw CSV downloads are intentionally not committed. Committed reports may record metadata and hashes, but not raw records or raw samples.
+On 2026-06-21, official raw CSV.GZ files were observed locally under `$OFFERLAB_DATA_ROOT\raw\nber_best_offer` for real-source testing. The full raw CSV downloads are intentionally not committed. Committed reports may record metadata and hashes, but not raw records or raw samples.

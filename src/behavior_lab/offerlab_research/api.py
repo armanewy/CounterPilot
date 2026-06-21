@@ -231,7 +231,11 @@ class OfferLabResearchAPI:
         self._development_rows = copy.deepcopy(list(development_rows))
         self._hidden_rows = copy.deepcopy(list(hidden_rows))
         self.max_formula_terms = max_formula_terms
-        self.store = store or AppendOnlyResearchStore()
+        if store is None:
+            raise ValueError("OfferLabResearchAPI requires an explicit file-backed research store")
+        elif store.path is None:
+            raise ValueError("OfferLabResearchAPI requires a file-backed research store")
+        self.store = store
         if not validate_feature_contract(
             self._training_rows + self._development_rows + self._hidden_rows
         ):
@@ -262,11 +266,13 @@ class OfferLabResearchAPI:
 
     @property
     def training_rows(self) -> list[dict[str, Any]]:
-        return copy.deepcopy(self._training_rows)
+        return [_public_training_row(row) for row in self._training_rows]
 
     @property
     def development_rows(self) -> list[dict[str, Any]]:
-        return copy.deepcopy(self._development_rows)
+        raise ResearchPermissionError(
+            "development rows are not directly inspectable; use budgeted evaluate_development"
+        )
 
     @property
     def development_evaluations_remaining(self) -> int:
@@ -467,10 +473,27 @@ class OfferLabResearchAPI:
                 )
             requested_tokens = set(self._hidden_case_tokens)
             for event in events:
-                if event.get("event_type") != "hidden_submission_reserved":
+                if event.get("event_type") not in {
+                    "hidden_submission_reserved",
+                    "offerlab_hidden_submission_reserved",
+                    "hidden_submitted",
+                }:
                     continue
                 payload = event.get("payload", {})
-                previous_tokens = set(payload.get("hidden_case_tokens", []))
+                result = payload.get("result", {})
+                if not isinstance(result, dict):
+                    result = {}
+                previous_case_set = (
+                    payload.get("hidden_case_set_hash")
+                    or payload.get("canonical_lockbox_id")
+                    or result.get("hidden_case_set_hash")
+                    or result.get("canonical_lockbox_id")
+                )
+                if previous_case_set == self._hidden_case_set_hash:
+                    raise ResearchBudgetError(
+                        "hidden case set was already reserved"
+                    )
+                previous_tokens = set(payload.get("hidden_case_tokens", []) or result.get("hidden_case_tokens", []))
                 if requested_tokens & previous_tokens:
                     raise ResearchBudgetError(
                         "hidden case overlap detected with a previously reserved lockbox"
@@ -811,6 +834,14 @@ def _count_budget_reservations(
         return len(reservations)
     # Compatibility for pre-v0.4 stores that recorded only completed queries.
     return sum(1 for event in events if event.get("event_type") == legacy_completed)
+
+
+def _public_training_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "row_id": row.get("row_id"),
+        "label": row.get("label"),
+        "features": copy.deepcopy(row.get("features", {})),
+    }
 
 
 def _case_token(row: dict[str, Any]) -> str:

@@ -8,7 +8,7 @@ code and does not use or commit raw NBER datasets.
 ## Sources Used
 
 Downloaded source documents were stored outside the repository at
-`C:\OfferLabData\source_docs`.
+`$OFFERLAB_DATA_ROOT\source_docs`.
 
 | Artifact | Official URL | SHA-256 |
 | --- | --- | --- |

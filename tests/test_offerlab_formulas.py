@@ -26,8 +26,9 @@ class OfferLabFormulaTests(unittest.TestCase):
         self.assertGreaterEqual(len(candidates), 5)
         terms = {term for candidate in candidates for term in candidate.terms}
         self.assertIn("relative_offer", terms)
-        self.assertIn("gap_to_reference", terms)
-        self.assertIn("concession_size", terms)
+        self.assertIn("gap_to_listing", terms)
+        self.assertIn("prior_counter_count", terms)
+        self.assertNotIn("concession_size", terms)
         self.assertIn("timing_hour", terms)
         self.assertIn("relative_offer_x_round", terms)
         for candidate in candidates:
@@ -38,29 +39,40 @@ class OfferLabFormulaTests(unittest.TestCase):
         split = chronological_split(_seller_rows(), time_key="timestamp")
         report = evaluate_formula_candidates(split.train, split.development, split.hidden, black_box_model_id="regularized_glm", black_box_hidden_loss=1.0)
         self.assertFalse(report["production_export_allowed"])
+        self.assertTrue(report["research_only"])
+        self.assertEqual(report["scope"]["evidence_scope"], "bounded_smoke_or_semantics")
         self.assertTrue(report["falsification_enforced"])
         self.assertFalse(report["hidden_lockbox"]["submitted"])
         self.assertTrue(report["black_box_comparison"]["compared"])
 
-        submitted = evaluate_formula_candidates(
-            split.train,
-            split.development,
-            split.hidden,
-            black_box_model_id="regularized_glm",
-            black_box_hidden_loss=1.0,
-            hidden_lockbox_id="formula-test",
-        )
-        self.assertEqual(submitted["hidden_lockbox"]["hidden_submission_count"], 1)
-        with self.assertRaises(RuntimeError):
-            evaluate_formula_candidates(split.train, split.development, split.hidden, hidden_lockbox_id="formula-test")
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "formula-hidden.jsonl"
+            submitted = evaluate_formula_candidates(
+                split.train,
+                split.development,
+                split.hidden,
+                black_box_model_id="regularized_glm",
+                black_box_hidden_loss=1.0,
+                hidden_lockbox_id="formula-test",
+                hidden_lockbox_store_path=store,
+            )
+            self.assertEqual(submitted["hidden_lockbox"]["hidden_submission_count"], 1)
+            with self.assertRaises(RuntimeError):
+                evaluate_formula_candidates(
+                    split.train,
+                    split.development,
+                    split.hidden,
+                    hidden_lockbox_id="formula-test",
+                    hidden_lockbox_store_path=store,
+                )
 
-        model = fit_formula(build_formula_candidates()[0], split.train)
-        with self.assertRaises(TypeError):
-            FormulaHiddenLockbox(split.hidden)  # type: ignore[call-arg]
-        lockbox = FormulaHiddenLockbox(split.hidden, lockbox_id="formula-direct")
-        lockbox.submit_once(model)
-        with self.assertRaises(RuntimeError):
+            model = fit_formula(build_formula_candidates()[0], split.train)
+            with self.assertRaises(TypeError):
+                FormulaHiddenLockbox(split.hidden)  # type: ignore[call-arg]
+            lockbox = FormulaHiddenLockbox(split.hidden, lockbox_id="formula-direct", store_path=Path(tmp) / "formula-direct.jsonl")
             lockbox.submit_once(model)
+            with self.assertRaises(RuntimeError):
+                lockbox.submit_once(model)
 
 
 if __name__ == "__main__":

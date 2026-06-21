@@ -3,10 +3,13 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 import math
+from pathlib import Path
 from statistics import median
 from typing import Any
 
-from behavior_lab.benchmarks.metrics import classification_accuracy, multiclass_log_loss, regression_rmse
+from behavior_lab import __version__
+from behavior_lab.benchmarks.metrics import calibration_bins, classification_accuracy, multiclass_log_loss, regression_rmse
+from behavior_lab.core import stable_hash, to_jsonable
 from behavior_lab.datasets.nber_best_offer.baselines import CategoryMajorityClassifier, MajorityClassifier, MedianRegressor, OfferRatioThresholdClassifier
 from behavior_lab.offerlab_models.common import (
     EVIDENCE_ROLE,
@@ -18,6 +21,8 @@ from behavior_lab.offerlab_models.common import (
     model_lineage,
     normalize_probabilities,
     outside_support,
+    research_scope,
+    reserve_hidden_submission,
     support_abstention_report,
     support_profile,
     validate_feature_contract,
@@ -315,18 +320,6 @@ class EmpiricalQuantileRegressor:
         return {"lower": _pick_quantile(ordered, self.lower), "median": _pick_quantile(ordered, 0.5), "upper": _pick_quantile(ordered, self.upper)}
 
 
-class PredictiveHiddenLockbox:
-    _used_ids: set[str] = set()
-
-    @classmethod
-    def submit_once(cls, lockbox_id: str, rows: list[dict[str, Any]]) -> None:
-        if not lockbox_id.strip():
-            raise ValueError("lockbox_id is required")
-        if lockbox_id in cls._used_ids:
-            raise RuntimeError("predictive hidden lockbox already used")
-        cls._used_ids.add(lockbox_id)
-
-
 def predictive_suite(
     task_name: str,
     train: list[dict[str, Any]],
@@ -334,10 +327,11 @@ def predictive_suite(
     hidden: list[dict[str, Any]],
     *,
     hidden_lockbox_id: str | None = None,
+    hidden_lockbox_store_path: str | Path | None = None,
 ) -> dict[str, Any]:
     if task_name in {"final_price_ratio", "response_latency"}:
-        return _regression_suite(task_name, train, development, hidden, hidden_lockbox_id=hidden_lockbox_id)
-    return _classification_suite(task_name, train, development, hidden, hidden_lockbox_id=hidden_lockbox_id)
+        return _regression_suite(task_name, train, development, hidden, hidden_lockbox_id=hidden_lockbox_id, hidden_lockbox_store_path=hidden_lockbox_store_path)
+    return _classification_suite(task_name, train, development, hidden, hidden_lockbox_id=hidden_lockbox_id, hidden_lockbox_store_path=hidden_lockbox_store_path)
 
 
 def _classification_suite(
@@ -347,8 +341,9 @@ def _classification_suite(
     hidden: list[dict[str, Any]],
     *,
     hidden_lockbox_id: str | None,
+    hidden_lockbox_store_path: str | Path | None,
 ) -> dict[str, Any]:
-    labels = sorted({str(row["label"]) for row in train + development + hidden})
+    labels = sorted({str(row["label"]) for row in train + development})
     models: list[Any] = [MajorityClassifier().fit(train), CategoryMajorityClassifier().fit(train)]
     if task_name == "seller_next_action":
         models.append(OfferRatioThresholdClassifier().fit(train))
@@ -366,28 +361,42 @@ def _classification_suite(
         if development:
             boards["development"].append(_classification_score(model, train, development, "development", labels, train_profile, task_name))
     boards["development"].sort(key=lambda item: (item["log_loss"], item["complexity"]))
+    _annotate_relative_improvement(boards["development"], metric="log_loss", baseline_model_id="majority")
     hidden_lockbox: dict[str, Any] = {
         "submitted": False,
         "hidden_rows_reserved": len(hidden),
         "reason": "hidden evaluation requires an explicit hidden_lockbox_id",
     }
     if hidden_lockbox_id is not None and hidden and boards["development"]:
-        PredictiveHiddenLockbox.submit_once(f"{hidden_lockbox_id}:{task_name}", hidden)
+        if hidden_lockbox_store_path is None:
+            raise ValueError("hidden_lockbox_store_path is required for hidden evaluation")
         selected_model_id = boards["development"][0]["model_id"]
-        selected_model = next(model for model in models if getattr(model, "model_id", "") == selected_model_id or getattr(model.predict([]), "model_id", "") == selected_model_id)
+        selected_row = boards["development"][0]
+        selected_model = _find_model(models, selected_model_id)
+        reservation = reserve_hidden_submission(
+            store_path=hidden_lockbox_store_path,
+            namespace="predictive_suite",
+            requested_lockbox_id=f"{hidden_lockbox_id}:{task_name}",
+            target=task_name,
+            hidden_rows=hidden,
+            artifact_id=_prediction_artifact_id(selected_row, selected_model, suite="classification_v1"),
+        )
         boards["hidden"].append(_classification_score(selected_model, train, hidden, "hidden", labels, train_profile, task_name))
+        _annotate_relative_improvement(boards["hidden"], metric="log_loss", baseline_model_id=selected_model_id)
         hidden_lockbox = {
             "submitted": True,
             "hidden_submission_count": 1,
             "hidden_rows": len(hidden),
             "selected_model_id": selected_model_id,
-            "lockbox_id": f"{hidden_lockbox_id}:{task_name}",
+            **reservation,
         }
     return {
         "task": task_name,
         "task_type": "classification",
         "evidence_role": EVIDENCE_ROLE,
+        "research_only": True,
         "production_export_allowed": PRODUCTION_EXPORT_ALLOWED,
+        "scope": research_scope(),
         "feature_contract": FEATURE_CONTRACT,
         "forbidden_features": sorted(FORBIDDEN_MODEL_FIELDS),
         "participant_id_features_used": False,
@@ -396,6 +405,7 @@ def _classification_suite(
             "hidden_reserved": support_abstention_report(train, hidden),
         },
         "leaderboards": boards,
+        "negative_controls": _classification_negative_controls(task_name, train, development, labels),
         "hidden_lockbox": hidden_lockbox,
         "universal_winner": None,
     }
@@ -408,6 +418,7 @@ def _regression_suite(
     hidden: list[dict[str, Any]],
     *,
     hidden_lockbox_id: str | None,
+    hidden_lockbox_store_path: str | Path | None,
 ) -> dict[str, Any]:
     models: list[Any] = [MedianRegressor().fit(train), EmpiricalQuantileRegressor().fit(train)]
     boards: dict[str, list[dict[str, Any]]] = {"development": [], "hidden": []}
@@ -416,28 +427,42 @@ def _regression_suite(
         if development:
             boards["development"].append(_regression_score(model, train, development, "development", train_profile, task_name))
     boards["development"].sort(key=lambda item: (item["rmse"], item["complexity"]))
+    _annotate_relative_improvement(boards["development"], metric="rmse", baseline_model_id="median_regressor")
     hidden_lockbox: dict[str, Any] = {
         "submitted": False,
         "hidden_rows_reserved": len(hidden),
         "reason": "hidden evaluation requires an explicit hidden_lockbox_id",
     }
     if hidden_lockbox_id is not None and hidden and boards["development"]:
-        PredictiveHiddenLockbox.submit_once(f"{hidden_lockbox_id}:{task_name}", hidden)
+        if hidden_lockbox_store_path is None:
+            raise ValueError("hidden_lockbox_store_path is required for hidden evaluation")
         selected_model_id = boards["development"][0]["model_id"]
-        selected_model = next(model for model in models if getattr(model, "model_id", "") == selected_model_id)
+        selected_row = boards["development"][0]
+        selected_model = _find_model(models, selected_model_id)
+        reservation = reserve_hidden_submission(
+            store_path=hidden_lockbox_store_path,
+            namespace="predictive_suite",
+            requested_lockbox_id=f"{hidden_lockbox_id}:{task_name}",
+            target=task_name,
+            hidden_rows=hidden,
+            artifact_id=_prediction_artifact_id(selected_row, selected_model, suite="regression_v1"),
+        )
         boards["hidden"].append(_regression_score(selected_model, train, hidden, "hidden", train_profile, task_name))
+        _annotate_relative_improvement(boards["hidden"], metric="rmse", baseline_model_id=selected_model_id)
         hidden_lockbox = {
             "submitted": True,
             "hidden_submission_count": 1,
             "hidden_rows": len(hidden),
             "selected_model_id": selected_model_id,
-            "lockbox_id": f"{hidden_lockbox_id}:{task_name}",
+            **reservation,
         }
     return {
         "task": task_name,
         "task_type": "regression",
         "evidence_role": EVIDENCE_ROLE,
+        "research_only": True,
         "production_export_allowed": PRODUCTION_EXPORT_ALLOWED,
+        "scope": research_scope(),
         "feature_contract": FEATURE_CONTRACT,
         "forbidden_features": sorted(FORBIDDEN_MODEL_FIELDS),
         "participant_id_features_used": False,
@@ -446,6 +471,7 @@ def _regression_suite(
             "hidden_reserved": support_abstention_report(train, hidden),
         },
         "leaderboards": boards,
+        "negative_controls": _regression_negative_controls(task_name, train, development),
         "hidden_lockbox": hidden_lockbox,
         "universal_winner": None,
     }
@@ -461,11 +487,20 @@ def _classification_score(model: Any, train: list[dict[str, Any]], rows: list[di
         "split": split_name,
         "accuracy": classification_accuracy(predictions),
         "log_loss": multiclass_log_loss(predictions, labels=labels),
+        "brier_score": _multiclass_brier(predictions, labels),
+        "calibration": calibration_bins(predictions, positive_label=labels[-1] if labels else "1"),
         "coverage": len(covered) / len(predictions) if predictions else 0.0,
+        "abstention": {
+            "abstained_rows": sum(1 for item in predictions if item.get("abstained")),
+            "evaluated_rows": len(predictions),
+            "rate": sum(1 for item in predictions if item.get("abstained")) / len(predictions) if predictions else 0.0,
+        },
         "covered_accuracy": classification_accuracy(covered) if covered else None,
         "covered_log_loss": multiclass_log_loss(covered, labels=labels) if covered else None,
         "complexity": getattr(result, "complexity", len(getattr(result, "features_used", []))),
         "features_used": list(getattr(result, "features_used", [])),
+        "subgroup_counts": _subgroup_counts(rows),
+        "negative_control_references": _negative_control_references(task_name),
         "lineage": getattr(result, "lineage", model_lineage(getattr(result, "model_id", "baseline"), train, feature_contract=list(getattr(result, "features_used", [])))),
     }
     return row
@@ -480,10 +515,19 @@ def _regression_score(model: Any, train: list[dict[str, Any]], rows: list[dict[s
         "task": task_name,
         "split": split_name,
         "rmse": regression_rmse(predictions),
+        "mae": _regression_mae(predictions),
+        "quantile_loss": _quantile_loss(predictions),
         "coverage": len(covered) / len(predictions) if predictions else 0.0,
+        "abstention": {
+            "abstained_rows": sum(1 for item in predictions if item.get("abstained")),
+            "evaluated_rows": len(predictions),
+            "rate": sum(1 for item in predictions if item.get("abstained")) / len(predictions) if predictions else 0.0,
+        },
         "covered_rmse": regression_rmse(covered) if covered else None,
         "complexity": getattr(result, "complexity", len(getattr(result, "features_used", []))),
         "features_used": list(getattr(result, "features_used", [])),
+        "subgroup_counts": _subgroup_counts(rows),
+        "negative_control_references": _negative_control_references(task_name),
         "lineage": getattr(result, "lineage", model_lineage(getattr(result, "model_id", "baseline"), train, feature_contract=list(getattr(result, "features_used", [])))),
     }
     if predictions and "lower" in predictions[0]:
@@ -501,6 +545,218 @@ def _tag_support(predictions: list[dict[str, Any]], rows: list[dict[str, Any]], 
             item["prediction"] = "abstain"
         tagged.append(item)
     return tagged
+
+
+def _find_model(models: list[Any], model_id: str) -> Any:
+    for model in models:
+        if getattr(model, "model_id", "") == model_id:
+            return model
+        try:
+            if model.predict([]).model_id == model_id:
+                return model
+        except Exception:
+            continue
+    raise KeyError(f"model {model_id!r} not found")
+
+
+def _prediction_artifact_id(row: dict[str, Any], model: Any, *, suite: str) -> str:
+    return stable_hash(
+        {
+            "suite": suite,
+            "model_id": row.get("model_id"),
+            "task": row.get("task"),
+            "features_used": row.get("features_used", []),
+            "complexity": row.get("complexity"),
+            "lineage": row.get("lineage", {}),
+            "model_state_hash": stable_hash(_model_state_payload(model)),
+            "software_version": __version__,
+        }
+    )
+
+
+def _annotate_relative_improvement(rows: list[dict[str, Any]], *, metric: str, baseline_model_id: str) -> None:
+    if not rows:
+        return
+    baseline_row = next(
+        (row for row in rows if row.get("model_id") == baseline_model_id),
+        rows[0],
+    )
+    baseline = float(baseline_row.get(metric) or 0.0)
+    for row in rows:
+        observed = float(row.get(metric) or 0.0)
+        row["relative_improvement"] = (
+            (baseline - observed) / abs(baseline) if baseline else 0.0
+        )
+
+
+def _subgroup_counts(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    category_counts: Counter[str] = Counter()
+    action_counts: Counter[str] = Counter()
+    for row in rows:
+        features = enriched_features(row)
+        category_counts[str(features.get("category", "missing"))] += 1
+        action_counts[str(features.get("current_action", "missing"))] += 1
+    return {
+        "category": dict(sorted(category_counts.items())),
+        "current_action": dict(sorted(action_counts.items())),
+    }
+
+
+def _negative_control_references(task_name: str) -> list[str]:
+    return [
+        f"{task_name}:random_label_permutation",
+        f"{task_name}:random_row_split",
+        f"{task_name}:same_timestamp_ordering",
+        f"{task_name}:artifact_name_canary",
+    ]
+
+
+def _classification_negative_controls(
+    task_name: str,
+    train: list[dict[str, Any]],
+    development: list[dict[str, Any]],
+    labels: list[str],
+) -> dict[str, Any]:
+    permuted = _rotate_labels(development)
+    majority = MajorityClassifier().fit(train)
+    permuted_predictions = majority.predict(permuted).predictions if permuted else []
+    return {
+        "random_label_permutation": {
+            "executed": True,
+            "rows": len(permuted),
+            "baseline_log_loss": multiclass_log_loss(permuted_predictions, labels=labels) if permuted else None,
+            "label_hash": stable_hash([row.get("label") for row in permuted]),
+        },
+        "random_row_split": _random_row_split_control(train + development),
+        "same_timestamp_ordering": _same_timestamp_control(train + development),
+        "artifact_name_canary": _artifact_name_canary_control(),
+    }
+
+
+def _regression_negative_controls(
+    task_name: str,
+    train: list[dict[str, Any]],
+    development: list[dict[str, Any]],
+) -> dict[str, Any]:
+    permuted = _rotate_labels(development)
+    median_model = MedianRegressor().fit(train)
+    permuted_predictions = median_model.predict(permuted).predictions if permuted else []
+    return {
+        "random_label_permutation": {
+            "executed": True,
+            "rows": len(permuted),
+            "baseline_rmse": regression_rmse(permuted_predictions) if permuted else None,
+            "label_hash": stable_hash([row.get("label") for row in permuted]),
+        },
+        "random_row_split": _random_row_split_control(train + development),
+        "same_timestamp_ordering": _same_timestamp_control(train + development),
+        "artifact_name_canary": _artifact_name_canary_control(),
+    }
+
+
+def _rotate_labels(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+    labels = [row.get("label") for row in rows]
+    rotated = labels[1:] + labels[:1]
+    output = []
+    for row, label in zip(rows, rotated, strict=True):
+        item = dict(row)
+        item["label"] = label
+        output.append(item)
+    return output
+
+
+def _random_row_split_control(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    train_rows = [
+        row for row in rows
+        if int(stable_hash(row.get("row_id", ""))[:8], 16) % 5 < 3
+    ]
+    eval_rows = [row for row in rows if row not in train_rows]
+    return {
+        "executed": True,
+        "train_rows": len(train_rows),
+        "evaluation_rows": len(eval_rows),
+        "row_hash": stable_hash([row.get("row_id") for row in train_rows + eval_rows]),
+    }
+
+
+def _same_timestamp_control(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    counts = Counter(str(row.get("timestamp", "")) for row in rows)
+    tied = {timestamp: count for timestamp, count in counts.items() if timestamp and count > 1}
+    return {
+        "executed": True,
+        "tied_timestamp_count": len(tied),
+        "tied_row_count": sum(tied.values()),
+        "ordering_hash": stable_hash(
+            [
+                {"timestamp": row.get("timestamp"), "row_id": row.get("row_id")}
+                for row in sorted(rows, key=lambda item: (str(item.get("timestamp", "")), str(item.get("row_id", ""))))
+            ]
+        ),
+    }
+
+
+def _artifact_name_canary_control() -> dict[str, Any]:
+    return {
+        "executed": True,
+        "rejected": not validate_feature_contract(
+            [{"row_id": "artifact-name-canary", "features": {"artifact_name": "hidden_winner"}}]
+        ),
+    }
+
+
+def _model_state_payload(model: Any) -> dict[str, Any]:
+    return {
+        key: _jsonable_state_value(value)
+        for key, value in sorted(vars(model).items())
+    }
+
+
+def _jsonable_state_value(value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, dict):
+        return {
+            str(key): _jsonable_state_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple, set)):
+        return [_jsonable_state_value(item) for item in value]
+    if hasattr(value, "__dict__"):
+        return {
+            key: _jsonable_state_value(item)
+            for key, item in sorted(vars(value).items())
+        }
+    return to_jsonable(repr(value))
+
+
+def _multiclass_brier(predictions: list[dict[str, Any]], labels: list[str]) -> float:
+    if not predictions or not labels:
+        return 0.0
+    total = 0.0
+    for row in predictions:
+        probabilities = row.get("probabilities", {})
+        for label in labels:
+            observed = 1.0 if str(row.get("label")) == label else 0.0
+            total += (float(probabilities.get(label, 0.0)) - observed) ** 2
+    return total / len(predictions)
+
+
+def _regression_mae(predictions: list[dict[str, Any]]) -> float:
+    if not predictions:
+        return 0.0
+    return sum(abs(float(row["prediction"]) - float(row["label"])) for row in predictions) / len(predictions)
+
+
+def _quantile_loss(predictions: list[dict[str, Any]], quantile: float = 0.5) -> float:
+    if not predictions:
+        return 0.0
+    total = 0.0
+    for row in predictions:
+        error = float(row["label"]) - float(row["prediction"])
+        total += max(quantile * error, (quantile - 1.0) * error)
+    return total / len(predictions)
 
 
 def _pava(values: list[float], weights: list[int]) -> list[float]:

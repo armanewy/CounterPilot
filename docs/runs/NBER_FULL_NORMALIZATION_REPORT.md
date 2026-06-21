@@ -5,19 +5,20 @@ Status: blocked on 2026-06-21 before full-source normalization began.
 ## Command
 
 ```powershell
-$env:OFFERLAB_DATA_ROOT = "C:\OfferLabData"
-python -m behavior_lab nber-best-offer normalize-real --raw-dir C:\OfferLabData\raw\nber_best_offer --output-dir C:\OfferLabData\processed\nber_best_offer_full --full
+$env:OFFERLAB_DATA_ROOT = "<external_data_root>"
+python -m behavior_lab nber-best-offer normalize-real --raw-dir $env:OFFERLAB_DATA_ROOT\raw\nber_best_offer --output-dir $env:OFFERLAB_DATA_ROOT\processed\nber_best_offer_full --full
 ```
 
 Result: the command raised `NberRealNormalizeError` before reading source rows:
 
 ```text
-Full NBER normalization is intentionally blocked: the current real-source normalizer is validated only for bounded --limit-threads runs. Implement disk-backed listing/thread indexes and full-run checkpointing before using --full.
+Full NBER normalization is intentionally blocked: the current real-source normalizer is validated only for bounded --limit-threads runs. Run a full-release preflight and implement streaming estimator execution before using --full.
 ```
 
 ## Data Checked
 
-Raw source files remained outside the repository under `C:\OfferLabData\raw\nber_best_offer`.
+Raw source files remained outside the repository under
+`$OFFERLAB_DATA_ROOT/raw/nber_best_offer`.
 
 | File | Bytes | SHA-256 |
 | --- | ---: | --- |
@@ -27,16 +28,16 @@ Raw source files remained outside the repository under `C:\OfferLabData\raw\nber
 Local disk at command time:
 
 - Drive: `C:`
-- Free bytes: `284638674944`
-- Used bytes: `713837408256`
+- Free bytes: `284591312896`
+- Used bytes: `713884770304`
 
 ## Lineage
 
-- Git commit: `ecdf9ab357588b240fe452347db54d4f24351935`
+- Git commit: `c1079166a676cd336a913c2a9ddc5f431727f7dc`
 - Transformation version: `nber_best_offer_real_normalization.v1`
 - Random seed: default `20240621`
 - Split-manifest hash: not applicable; full normalization did not start.
-- Output directory requested: `C:\OfferLabData\processed\nber_best_offer_full`
+- Output directory requested: `$OFFERLAB_DATA_ROOT/processed/nber_best_offer_full`
 - Full normalized manifest: not produced.
 
 ## Rows
@@ -68,6 +69,28 @@ The prior bounded 100K check remains useful only as a structure and lineage gate
 
 Published descriptive moments and full-source structural targets are not replicated.
 
+## Bounded Real-Run Evidence
+
+The existing 100,000-thread run at
+`$OFFERLAB_DATA_ROOT/processed/nber_best_offer_100k` was rechecked during Wave 2.
+It is not a substitute for the full release, but it supports task-semantics and
+red-team work:
+
+- Thread limit: `100000`
+- Normalized negotiation-turn rows: `430628`
+- Thread-linked listing rows: `231922`
+- Distinct threads: `100000`
+- Unmatched thread-linked listing IDs: `0`
+- Quarantine counts: `{}`
+- Leakage audit: all task checks passed.
+- Split audit: listing-purged chronological and seller-disjoint checks passed.
+- Benchmark smoke: simple baselines ran on the bounded run only through
+  `python -m behavior_lab nber-best-offer benchmark --normalized-dir $OFFERLAB_DATA_ROOT/processed/nber_best_offer_100k`.
+
+The bounded benchmark smoke was not archived as a benchmark artifact and did
+not produce a production claim. It showed only that preregistered baseline
+plumbing can execute on the 100K manifest.
+
 ## Leakage Risks
 
 No model training or task construction was run from a full normalized dataset. The current blocker prevents a misleading full-data claim before the execution path has full-run proof. Existing risks remain:
@@ -79,5 +102,9 @@ No model training or task construction was run from a full normalized dataset. T
 
 ## Gate
 
-Wave 2 full normalization did not pass. Do not run Wave 2B, Wave 2C, or the Wave 2 benchmark integration against real NBER data until `--full` has a separately tested bounded-memory implementation with full-run checkpoints, disk preflight, partition verification, and published-stat replication.
-
+Wave 2 full normalization did not pass. Task-semantics audits, protocol
+freezing, and adversarial red-team tests may proceed against synthetic fixtures
+and the bounded 100K real manifest. Do not run the Wave 2 benchmark integration
+as full-release evidence until `--full` has a separately tested bounded-memory
+implementation with full-run checkpoints, disk preflight, partition
+verification, streaming task/model evaluation, and published-stat replication.

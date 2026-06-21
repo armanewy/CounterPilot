@@ -244,7 +244,8 @@ class RealNberPipelineTests(unittest.TestCase):
         self.assertTrue(tasks["final_price_ratio"])
         self.assertTrue(all(row["label"] == 0.88 for row in tasks["final_price_ratio"]))
         self.assertTrue(any(row["label"] == 86400.0 for row in tasks["response_latency"]))
-        self.assertIsNone(tasks["seller_next_action"][0]["features"]["reference_price"])
+        self.assertNotIn("reference_price", tasks["seller_next_action"][0]["features"])
+        self.assertNotIn("event_time", tasks["seller_next_action"][0]["features"])
         self.assertNotIn("status_id", tasks["seller_next_action"][0]["observed_history"][0])
         self.assertNotIn("response_time", tasks["seller_next_action"][0]["observed_history"][0])
 

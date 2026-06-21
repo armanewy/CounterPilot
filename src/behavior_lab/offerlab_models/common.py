@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import math
+from pathlib import Path
 from typing import Any, Iterable
 
 from behavior_lab.core import stable_hash
@@ -11,13 +12,13 @@ from behavior_lab.data_sources.registry import default_registry
 
 SOURCE_ID = "nber_ebay_best_offer"
 EVIDENCE_ROLE = "OFFERLAB_RESEARCH_MODEL"
+EVIDENCE_SCOPE = "bounded_smoke_or_semantics"
 PRODUCTION_EXPORT_ALLOWED = default_registry().check(SOURCE_ID, "production_export").allowed
 
 FEATURE_CONTRACT = [
     "category",
     "condition",
     "listing_price",
-    "reference_price",
     "current_actor",
     "current_action",
     "current_amount",
@@ -27,6 +28,7 @@ FEATURE_CONTRACT = [
     "prior_counter_count",
     "event_hour",
 ]
+ALLOWED_MODEL_FEATURES = set(FEATURE_CONTRACT)
 
 FORBIDDEN_MODEL_FIELDS = {
     "buyer_id",
@@ -37,7 +39,9 @@ FORBIDDEN_MODEL_FIELDS = {
     "source_row_id",
     "status",
     "status_id",
+    "event_time",
     "response_time",
+    "reference_price",
     "ref_price4",
     "excluded_reference_price_ref_price4",
     "buyer_id_if_sold",
@@ -58,7 +62,6 @@ FORBIDDEN_MODEL_FIELDS = {
 CATEGORICAL_FEATURES = ["category", "condition", "current_actor", "current_action"]
 NUMERIC_FEATURES = [
     "listing_price",
-    "reference_price",
     "current_amount",
     "offer_to_asking_ratio",
     "round_number",
@@ -130,14 +133,28 @@ def _raw_features_for_contract(feature_contract: list[str]) -> list[str]:
 def validate_feature_contract(rows: Iterable[dict[str, Any]]) -> bool:
     for row in rows:
         features = row.get("features", {})
-        if set(features) & FORBIDDEN_MODEL_FIELDS:
+        feature_names = set(features)
+        if feature_names & FORBIDDEN_MODEL_FIELDS:
+            return False
+        if not feature_names <= ALLOWED_MODEL_FEATURES:
             return False
     return True
 
 
+def research_scope(*, evidence_scope: str = EVIDENCE_SCOPE) -> dict[str, Any]:
+    return {
+        "research_only": True,
+        "production_export_allowed": PRODUCTION_EXPORT_ALLOWED,
+        "commercial_training_allowed": False,
+        "full_release_evidence": False,
+        "evidence_scope": evidence_scope,
+        "source_dataset_ids": [SOURCE_ID],
+    }
+
+
 def enriched_features(row: dict[str, Any]) -> dict[str, Any]:
     features = dict(row.get("features", {}))
-    features["event_hour"] = _event_hour(features.get("event_time") or row.get("timestamp"))
+    features["event_hour"] = _event_hour(row.get("timestamp"))
     return features
 
 
@@ -242,6 +259,86 @@ def normalize_probabilities(probabilities: dict[str, float], labels: list[str]) 
     return {label: value / total for label, value in cleaned.items()}
 
 
+def reserve_hidden_submission(
+    *,
+    store_path: str | Path,
+    namespace: str,
+    requested_lockbox_id: str,
+    target: str,
+    hidden_rows: list[dict[str, Any]],
+    artifact_id: str,
+) -> dict[str, Any]:
+    if not str(requested_lockbox_id).strip():
+        raise ValueError("lockbox_id is required")
+    if not str(namespace).strip():
+        raise ValueError("namespace is required")
+    if not str(target).strip():
+        raise ValueError("target is required")
+    if not str(artifact_id).strip():
+        raise ValueError("artifact_id is required")
+    from behavior_lab.offerlab_research.api import AppendOnlyResearchStore, ResearchBudgetError
+
+    tokens = sorted({_hidden_case_token(row) for row in hidden_rows})
+    case_set_hash = stable_hash(tokens)
+    event_type = "offerlab_hidden_submission_reserved"
+    store = AppendOnlyResearchStore(store_path)
+    requested_tokens = set(tokens)
+
+    def guard(events: list[dict[str, Any]]) -> None:
+        for event in events:
+            if event.get("event_type") not in {
+                event_type,
+                "hidden_submission_reserved",
+                "hidden_submitted",
+            }:
+                continue
+            payload = event.get("payload", {})
+            result = payload.get("result", {})
+            if not isinstance(result, dict):
+                result = {}
+            previous_lockbox_id = (
+                payload.get("requested_lockbox_id")
+                or result.get("lockbox_id")
+                or result.get("requested_lockbox_id")
+            )
+            if previous_lockbox_id == requested_lockbox_id:
+                raise ResearchBudgetError("hidden submission budget exhausted for this lockbox")
+            previous_case_set = (
+                payload.get("hidden_case_set_hash")
+                or payload.get("canonical_lockbox_id")
+                or result.get("hidden_case_set_hash")
+                or result.get("canonical_lockbox_id")
+            )
+            if previous_case_set == case_set_hash:
+                raise ResearchBudgetError("hidden case set was already reserved")
+            previous_tokens = set(payload.get("hidden_case_tokens", []) or result.get("hidden_case_tokens", []))
+            if requested_tokens & previous_tokens:
+                raise ResearchBudgetError("hidden case overlap detected with a previously reserved lockbox")
+
+    event = store.append_guarded(
+        event_type,
+        {
+            "namespace": namespace,
+            "requested_lockbox_id": requested_lockbox_id,
+            "target": target,
+            "hidden_case_set_hash": case_set_hash,
+            "hidden_case_tokens": tokens,
+            "hidden_case_tokens_hash": stable_hash(tokens),
+            "hidden_rows": len(hidden_rows),
+            "artifact_id": artifact_id,
+        },
+        guard=guard,
+    )
+    return {
+        "reservation_event_id": event["event_id"],
+        "lockbox_id": requested_lockbox_id,
+        "canonical_lockbox_id": case_set_hash,
+        "hidden_case_set_hash": case_set_hash,
+        "hidden_rows": len(hidden_rows),
+        "artifact_id": artifact_id,
+    }
+
+
 def _event_hour(value: Any) -> float:
     if not value:
         return 0.0
@@ -261,3 +358,14 @@ def _to_float(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _hidden_case_token(row: dict[str, Any]) -> str:
+    return stable_hash(
+        {
+            "task": row.get("task"),
+            "timestamp": row.get("timestamp"),
+            "features": row.get("features", {}),
+            "observed_history": row.get("observed_history", []),
+        }
+    )

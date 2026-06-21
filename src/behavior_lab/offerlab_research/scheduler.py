@@ -32,6 +32,8 @@ class ResearchScheduler:
     def __init__(self, *, limits: ResearchLimits | None = None, state_path: str | Path | None = None) -> None:
         self.limits = limits or ResearchLimits()
         self.limits.validate()
+        if state_path is None:
+            raise ValueError("ResearchScheduler requires an explicit file-backed state_path")
         self.store = AppendOnlyResearchStore(state_path)
 
     def run(

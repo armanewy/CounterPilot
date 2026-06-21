@@ -22,6 +22,10 @@ def _splits() -> tuple[list[dict[str, object]], list[dict[str, object]], list[di
 
 
 class OfferLabResearchSchedulerTests(unittest.TestCase):
+    def test_scheduler_requires_explicit_file_backed_store(self) -> None:
+        with self.assertRaises(ValueError):
+            ResearchScheduler(limits=ResearchLimits(cycles=1))
+
     def test_scheduler_respects_limits_and_persists_research_events(self) -> None:
         train, dev, hidden = _splits()
         with tempfile.TemporaryDirectory() as tmp:
