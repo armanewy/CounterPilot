@@ -161,6 +161,7 @@ class EbayApiProbe:
     def _field_matrix(self, responses: dict[str, dict[str, Any]]) -> dict[str, dict[str, bool]]:
         fields = {
             "offer_amount": ["bestOffers", "price", "offerPrice", "amount"],
+            "offer_currency": ["currency", "currencyID", "currency_id"],
             "buyer_obfuscated_id": ["buyer", "buyerUserId", "userId"],
             "listing_id": ["itemId", "listingId", "inventoryItemGroupKey"],
             "traffic": ["impressions", "views", "clickThroughRate"],
@@ -170,9 +171,12 @@ class EbayApiProbe:
         }
         matrix: dict[str, dict[str, bool]] = {}
         for name, response in responses.items():
-            flattened = _flatten_keys(response)
+            flattened = _field_keys(response)
             matrix[name] = {field: any(candidate.lower() in flattened for candidate in candidates) for field, candidates in fields.items()}
-            matrix[name]["message_content_detected"] = matrix[name]["message_content"]
+            matrix[name]["offer_amount"] = matrix[name]["offer_amount"] or bool(response.get("amount_field_visible"))
+            matrix[name]["offer_currency"] = matrix[name]["offer_currency"] or bool(response.get("currency_field_visible"))
+            matrix[name]["buyer_obfuscated_id"] = matrix[name]["buyer_obfuscated_id"] or bool(response.get("identifier_field_visible"))
+            matrix[name]["message_content_detected"] = matrix[name]["message_content"] or bool(response.get("message_content_detected"))
             matrix[name]["message_content"] = False
         return matrix
 
@@ -203,18 +207,66 @@ def _flatten_keys(value: Any) -> set[str]:
     return keys
 
 
+def _field_keys(response: dict[str, Any]) -> set[str]:
+    keys = _flatten_keys(response)
+    for key in response.get("field_keys", []) or []:
+        keys.add(str(key).lower())
+    return keys
+
+
 def _observed_permission_result(status: int, response: dict[str, Any]) -> str:
     if status == 0 or response.get("transport_error") or response.get("parse_error"):
         return "indeterminate"
     if status in {401, 403}:
         return "denied"
+    ack = str(response.get("ack") or "").strip().lower()
+    if ack in {"failure", "partialfailure"} or response.get("error_codes"):
+        return "indeterminate"
     if not (200 <= status < 300):
         return "indeterminate"
-    keys = _flatten_keys(response)
-    offer_markers = {"bestoffers", "bestoffer", "offerprice", "price", "amount", "currency"}
-    non_status_keys = keys - {"status", "ack", "request_name", "transport", "error_codes", "warning_codes", "field_keys", "raw_payload_retained"}
+    keys = _field_keys(response)
+    offer_markers = {"bestoffers", "bestoffer", "offerprice", "price", "amount", "currency", "currencyid", "@currencyid"}
+    summary_markers = {
+        "amount_field_visible",
+        "currency_field_visible",
+        "status_field_visible",
+        "type_field_visible",
+        "timestamp_field_visible",
+        "identifier_field_visible",
+    }
+    has_summary = bool({"field_keys", "offer_count", "raw_payload_retained"} & set(response))
+    if any(bool(response.get(marker)) for marker in summary_markers):
+        return "accessible"
+    try:
+        if int(response.get("offer_count", 0)) > 0:
+            return "accessible"
+    except (TypeError, ValueError):
+        pass
     if keys & offer_markers:
         return "accessible"
-    if not non_status_keys:
+    wrapper_keys = {
+        "status",
+        "ack",
+        "request_name",
+        "transport",
+        "error_codes",
+        "warning_codes",
+        "field_keys",
+        "offer_count",
+        "amount_field_visible",
+        "currency_field_visible",
+        "status_field_visible",
+        "type_field_visible",
+        "timestamp_field_visible",
+        "identifier_field_visible",
+        "message_content_detected",
+        "message_content_discarded",
+        "pii_content_detected",
+        "pii_content_discarded",
+        "listing_id_hashes",
+        "raw_payload_retained",
+    }
+    non_status_keys = keys - wrapper_keys
+    if has_summary or not non_status_keys:
         return "empty"
     return "accessible"

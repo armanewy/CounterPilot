@@ -4,7 +4,12 @@
   "email": "buyer@example.invalid",
   "shippingAddress": {
     "name": "Synthetic Buyer",
-    "street": "1 Example Street"
+    "fullName": "Synthetic Buyer Full",
+    "addressLine1": "1 Example Street",
+    "street": "1 Example Street",
+    "postalCode": "00000",
+    "phoneNumber": "555-0100"
   },
-  "message": "synthetic private message"
+  "message": "synthetic private message",
+  "buyerMessage": "synthetic buyer private message"
 }

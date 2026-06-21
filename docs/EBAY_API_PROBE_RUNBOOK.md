@@ -30,7 +30,7 @@ python -m tools.ebay_api_probe.cli `
   --output reports/ebay_sandbox_role_probe.json
 ```
 
-Use separate seller, bidder, and unrelated observer users for the role experiment. Preserve only the JSON field matrix and redacted identifiers.
+Use separate seller, bidder, and unrelated observer users for the role experiment. Preserve only the JSON field matrix, hashed listing identifiers, and identifier-presence flags.
 
 ## Production Feasibility Probe
 
@@ -53,8 +53,8 @@ The committed repository may contain only redacted summaries:
 - API acknowledgment
 - warning/error code
 - field-availability booleans
-- hashed listing/user identifiers
+- hashed listing identifiers
+- user identifier presence flags, not raw or hashed user IDs
 - message-field detected/discarded flags
 
 Raw XML/JSON responses, message content, names, addresses, emails, access tokens, and refresh tokens must not be retained.
-

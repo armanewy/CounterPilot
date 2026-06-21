@@ -87,6 +87,51 @@ class EbayApiProbeTests(unittest.TestCase):
         self.assertTrue(report["message_content_violation"])
         self.assertFalse(report["field_matrix"]["seller_owned_best_offers"]["message_content"])
 
+    def test_summary_wrappers_do_not_create_false_accessibility(self) -> None:
+        responses = {
+            "seller_owned_best_offers": {
+                "status": 200,
+                "ack": "Success",
+                "field_keys": ["Ack", "BestOffer", "Price", "currencyID"],
+                "offer_count": 1,
+                "amount_field_visible": True,
+                "currency_field_visible": True,
+                "message_content_detected": True,
+                "raw_payload_retained": False,
+            },
+            "buyer_participated_best_offers": {
+                "status": 200,
+                "ack": "Success",
+                "field_keys": ["Ack"],
+                "offer_count": 0,
+                "raw_payload_retained": False,
+            },
+            "unrelated_best_offers_probe": {
+                "status": 200,
+                "ack": "Failure",
+                "error_codes": ["219"],
+                "field_keys": ["Ack", "Errors", "ErrorCode"],
+                "offer_count": 0,
+                "raw_payload_retained": False,
+            },
+        }
+        for key in ["inventory_read", "orders_read", "finances_read", "traffic_read"]:
+            responses[key] = {"status": 200}
+
+        report = EbayApiProbe(StaticProbeClient(responses)).run(
+            scopes=["https://api.ebay.com/oauth/api_scope"],
+            seller_owned_listing_id="a",
+            buyer_participated_listing_id="b",
+            unrelated_listing_id="c",
+        )
+
+        self.assertTrue(report["field_matrix"]["seller_owned_best_offers"]["offer_amount"])
+        self.assertTrue(report["field_matrix"]["seller_owned_best_offers"]["offer_currency"])
+        self.assertTrue(report["message_content_detected"])
+        self.assertEqual(report["permission_matrix"]["buyer_participated_best_offers"]["observed_result"], "empty")
+        self.assertEqual(report["permission_matrix"]["unrelated_best_offers_probe"]["observed_result"], "indeterminate")
+        self.assertFalse(report["permission_matrix"]["unrelated_best_offers_probe"]["accessible"])
+
     def test_compare_modes_returns_field_matrix_diff_without_raw_payloads(self) -> None:
         sandbox = {"mode": "sandbox", "field_matrix": {"traffic_read": {"traffic": False}}}
         production = {"mode": "production", "field_matrix": {"traffic_read": {"traffic": True}}}

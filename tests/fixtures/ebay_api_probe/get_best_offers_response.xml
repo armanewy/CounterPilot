@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <GetBestOffersResponse>
   <Ack>Success</Ack>
+  <ItemID>123</ItemID>
   <BestOfferArray>
     <BestOffer>
       <Price currencyID="USD">72.00</Price>
+      <BestOfferStatus>Active</BestOfferStatus>
+      <BestOfferType>BuyerBestOffer</BestOfferType>
+      <CreationTime>2026-01-01T00:00:00.000Z</CreationTime>
       <Buyer>
         <UserID>synthetic-buyer-id</UserID>
         <Email>buyer@example.invalid</Email>
