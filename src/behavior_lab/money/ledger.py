@@ -94,6 +94,7 @@ class MoneyLedgerEntry:
     realized_gross_value: float | None = None
     realized_net_value: float | None = None
     mechanically_defined_no_action_outcome: dict[str, Any] | None = None
+    economic_event_key: str | None = None
     provenance: dict[str, Any] = field(default_factory=dict)
     artifact_hashes: dict[str, str] = field(default_factory=dict)
     assumption_versions: dict[str, str] = field(default_factory=dict)
@@ -122,6 +123,8 @@ class MoneyLedgerEntry:
             raise MoneyLedgerError("this wave cannot create manually_approved_real entries")
         if self.designation not in DESIGNATIONS:
             raise MoneyLedgerError("designation must be paper or real")
+        if self.designation == "real":
+            raise MoneyLedgerError("this wave cannot create real money ledger entries")
         if self.designation == "paper" and self.evidence_state in REAL_STATES:
             raise MoneyLedgerError("paper entries cannot use real evidence states")
         if self.designation == "real" and self.evidence_state == "paper_decision":
@@ -145,6 +148,9 @@ class MoneyLedgerEntry:
         if self.evidence_state in RESOLVED_STATES:
             if self.resolution is None or self.realized_gross_value is None or self.realized_net_value is None:
                 raise MoneyLedgerError("resolved entries require resolution and realized values")
+            if not self.mechanically_defined_no_action_outcome:
+                raise MoneyLedgerError("resolved entries require a mechanically defined no-action outcome")
+            _validate_realized_resolution(self.resolution, self.realized_gross_value, self.realized_net_value)
         if self.evidence_state in INITIAL_STATES and self.resolution is not None:
             raise MoneyLedgerError("unresolved entries may not include resolution")
 
@@ -214,11 +220,12 @@ class MoneyLedger:
         if latest is None:
             raise MoneyLedgerError(f"unknown decision_id: {decision_id}")
         payload = latest["payload"]
-        state = "resolved_paper" if payload["designation"] == "paper" else "resolved_real"
+        if payload["designation"] != "paper":
+            raise MoneyLedgerError("this wave can only resolve paper money ledger entries")
         entry = MoneyLedgerEntry(
             **{
                 **payload,
-                "evidence_state": state,
+                "evidence_state": "resolved_paper",
                 "resolution": resolution,
                 "realized_gross_value": realized_gross_value,
                 "realized_net_value": realized_net_value,
@@ -261,6 +268,22 @@ def _assert_immutable_decision_fields(previous: dict[str, Any], current: dict[st
     for field_name in IMMUTABLE_DECISION_FIELDS:
         if previous.get(field_name) != current.get(field_name):
             raise MoneyLedgerError(f"{field_name} cannot be rewritten for an existing decision")
+
+
+def _validate_realized_resolution(
+    resolution: dict[str, Any],
+    realized_gross_value: float,
+    realized_net_value: float,
+) -> None:
+    costs = resolution.get("realized_costs")
+    if not isinstance(costs, dict) or not costs:
+        raise MoneyLedgerError("resolved entries require non-empty resolution.realized_costs")
+    negative = [field for field, value in costs.items() if value is not None and float(value) < 0]
+    if negative:
+        raise MoneyLedgerError(f"realized costs may not be negative: {sorted(negative)}")
+    expected_net = round(float(realized_gross_value) - sum(float(value or 0.0) for value in costs.values()), 2)
+    if round(float(realized_net_value), 2) != expected_net:
+        raise MoneyLedgerError("realized_net_value must equal realized_gross_value minus realized_costs")
 
 
 def _require_nonempty(value: str, field_name: str) -> None:

@@ -114,6 +114,7 @@ Evidence class: `private_seller_historical_evidence`.
 
 ## Supportable Now
 
+- shared paper-only financial decision contracts and MoneyLedger core
 - research-only Benchmark v2 gated execution
 - local seller pilot template generation
 - local seller pilot import into an external ledger
@@ -133,10 +134,17 @@ Evidence class: `private_seller_historical_evidence`.
 
 ## Unresolved Blockers
 
-- No MoneyLedger or shared financial decision contract exists yet.
 - No real seller pilot data has been imported into an external ledger in this
   repository.
 - Benchmark v2 has no tracked full-release result.
 - The authorized eBay production feasibility probe has not run.
-- No Weather Edge, ETF risk, or financial-data semantics layer exists in this
-  handoff wave.
+- No Weather Edge, ETF risk, or financial-data semantics layer is integrated
+  with MoneyLedger yet.
+- No real-action approval workflow exists; MoneyLedger remains paper-only.
+
+## Wave 1 Update
+
+Finance Wave 1 adds the shared paper-only `MoneyLedger`,
+`FinancialDecisionContract`, deterministic accounting helpers, storage facade,
+and minimal OfferLab shadow mapping. This does not authorize real seller
+actions, brokerage actions, notifications, or realized commercial claims.

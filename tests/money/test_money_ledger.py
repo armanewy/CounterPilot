@@ -56,7 +56,7 @@ class MoneyLedgerTests(unittest.TestCase):
             first = ledger.append_entry(_entry())
             resolved = ledger.append_resolution(
                 "decision_1",
-                resolution={"outcome": "no_action"},
+                resolution={"outcome": "no_action", "realized_costs": {"fees": 0.0}},
                 realized_gross_value=0.0,
                 realized_net_value=0.0,
                 mechanically_defined_no_action_outcome={"value": 0.0},
@@ -103,6 +103,37 @@ class MoneyLedgerTests(unittest.TestCase):
             replace(_entry(), fees=None)
         with self.assertRaises(MoneyLedgerError):
             replace(_entry(), evidence_state="manually_approved_real", designation="real")
+        with self.assertRaises(MoneyLedgerError):
+            _entry(designation="real")
+
+    def test_resolved_entries_require_no_action_outcome_and_reconciled_costs(self) -> None:
+        base = _entry()
+        with self.assertRaises(MoneyLedgerError):
+            replace(
+                base,
+                evidence_state="resolved_paper",
+                resolution={"outcome": "sold", "realized_costs": {"fees": 2.0}},
+                realized_gross_value=10.0,
+                realized_net_value=8.0,
+            )
+        with self.assertRaises(MoneyLedgerError):
+            replace(
+                base,
+                evidence_state="resolved_paper",
+                resolution={"outcome": "sold", "realized_costs": {"fees": -2.0}},
+                realized_gross_value=10.0,
+                realized_net_value=12.0,
+                mechanically_defined_no_action_outcome={"value": 0.0},
+            )
+        with self.assertRaises(MoneyLedgerError):
+            replace(
+                base,
+                evidence_state="resolved_paper",
+                resolution={"outcome": "sold", "realized_costs": {"fees": 2.0}},
+                realized_gross_value=10.0,
+                realized_net_value=9.0,
+                mechanically_defined_no_action_outcome={"value": 0.0},
+            )
 
     def test_corrections_append_superseding_record_with_reason(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

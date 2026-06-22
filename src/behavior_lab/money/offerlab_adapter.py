@@ -110,6 +110,7 @@ def offerlab_shadow_entry(
             "seller_mutation": False,
             "realized_commercial_evidence": False,
         },
+        economic_event_key=f"offerlab_shadow:{stable_hash({'pilot': audit.get('pilot_id'), 'import': audit.get('latest_import_hash')})[:16]}",
         provenance={
             "source_id": "offerlab_seller_pilot",
             "strategy_id": "seller_shadow_abstain_until_validated",

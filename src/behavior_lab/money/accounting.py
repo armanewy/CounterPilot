@@ -49,6 +49,11 @@ def compute_decision_accounting(
     that same condition raises `UnknownMaterialCostError`.
     """
 
+    if uncertainty_adjustment < 0:
+        raise ValueError("uncertainty_adjustment may not be negative")
+    negative = [field for field, value in costs.items() if value is not None and float(value) < 0]
+    if negative:
+        raise ValueError(f"cost components may not be negative: {sorted(negative)}")
     missing = [field for field in material_cost_fields if costs.get(field) is None]
     if missing:
         if strict:
@@ -108,6 +113,13 @@ def summarize_money_entries(entries: Iterable[Any]) -> dict[str, Any]:
     if len(designations) > 1:
         raise ValueError("paper and real outcomes cannot be summarized together")
     unique_decisions = {entry["decision_id"]: entry for entry in materialized}
+    by_event: dict[str, dict[str, Any]] = {}
+    duplicate_event_decisions = 0
+    for entry in sorted(unique_decisions.values(), key=lambda item: (item.get("decision_timestamp"), item["decision_id"])):
+        event_key = _economic_event_key(entry)
+        if event_key in by_event:
+            duplicate_event_decisions += 1
+        by_event[event_key] = entry
     action_counts: dict[str, int] = {}
     no_action_count = 0
     by_contract: dict[str, float] = {}
@@ -117,7 +129,7 @@ def summarize_money_entries(entries: Iterable[Any]) -> dict[str, Any]:
     capital_at_risk = 0.0
     maximum_possible_loss = 0.0
     max_single_decision_loss = 0.0
-    for entry in sorted(unique_decisions.values(), key=lambda item: (item.get("decision_timestamp"), item["decision_id"])):
+    for entry in sorted(by_event.values(), key=lambda item: (item.get("decision_timestamp"), item["decision_id"])):
         action = str(entry.get("selected_action"))
         action_counts[action] = action_counts.get(action, 0) + 1
         if action == entry.get("no_action_alternative"):
@@ -139,7 +151,9 @@ def summarize_money_entries(entries: Iterable[Any]) -> dict[str, Any]:
         maximum_possible_loss = _money(maximum_possible_loss + loss)
         max_single_decision_loss = _money(max(max_single_decision_loss, loss))
     return {
-        "opportunity_count": len(unique_decisions),
+        "opportunity_count": len(by_event),
+        "decision_count": len(unique_decisions),
+        "duplicate_economic_event_decisions": duplicate_event_decisions,
         "action_frequency": action_counts,
         "no_action_frequency": no_action_count,
         "capital_at_risk": capital_at_risk,
@@ -160,6 +174,16 @@ def _cumulative(values: list[float]) -> list[float]:
         total += Decimal(str(value))
         output.append(_money(total))
     return output
+
+
+def _economic_event_key(entry: dict[str, Any]) -> str:
+    provenance = entry.get("provenance") or {}
+    target = entry.get("target") or {}
+    for container in (entry, provenance, target):
+        key = container.get("economic_event_key") or container.get("economic_event_id")
+        if key:
+            return str(key)
+    return str(entry["decision_id"])
 
 
 def _maybe_money(value: float | None) -> float | None:

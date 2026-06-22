@@ -170,6 +170,39 @@
       "supportable_actions": [
         "operator-run read-only probe with explicit production token and manual listing IDs"
       ]
+    },
+    {
+      "result_id": "shared_money_ledger_core",
+      "display_name": "Shared financial decision contracts and MoneyLedger core",
+      "evidence_class": "prospective_shadow_evidence",
+      "status": "implementation_ready_paper_only_core",
+      "artifact_paths": [
+        "src/behavior_lab/money",
+        "tests/money",
+        "docs/finance/MONEY_LEDGER.md"
+      ],
+      "commercial_use_allowed": false,
+      "production_export_allowed": false,
+      "causal_profit_claim_allowed": false,
+      "readiness": {
+        "contracts_available": true,
+        "append_only_money_ledger_available": true,
+        "paper_only": true,
+        "real_entries_allowed": false,
+        "broker_connected": false,
+        "scheduler_connected": false
+      },
+      "supportable_targets": [
+        "paper financial decision records",
+        "seller shadow decision representation",
+        "deterministic cost accounting"
+      ],
+      "supportable_actions": [
+        "append paper decision",
+        "append resolved paper decision",
+        "append explicit correction",
+        "summarize paper ledger values"
+      ]
     }
   ],
   "evidence_class_policy": {
@@ -216,6 +249,7 @@
   },
   "supportable_targets_and_actions": {
     "supportable_now": [
+      "shared paper-only financial decision contracts and MoneyLedger core",
       "research-only Benchmark v2 gated execution",
       "local seller pilot template generation",
       "local seller pilot import into an external ledger",
@@ -234,10 +268,10 @@
     ]
   },
   "unresolved_blockers": [
-    "No MoneyLedger or shared financial decision contract exists yet.",
     "No real seller pilot data has been imported into an external ledger in this repository.",
     "Benchmark v2 has no tracked full-release result.",
     "The authorized eBay production feasibility probe has not run.",
-    "No Weather Edge, ETF risk, or financial-data semantics layer exists in this handoff wave."
+    "No Weather Edge, ETF risk, or financial-data semantics layer is integrated with MoneyLedger yet.",
+    "No real-action approval workflow exists; MoneyLedger remains paper-only."
   ]
 }

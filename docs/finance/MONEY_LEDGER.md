@@ -48,8 +48,9 @@ Evidence states are:
 - `rejected`
 - `expired`
 
-This wave rejects creation of `manually_approved_real` entries. Real action
-approval requires a later explicit wave.
+This wave rejects creation of `manually_approved_real` entries and rejects all
+`designation="real"` MoneyLedger entries. Real action approval requires a later
+explicit wave with a verifiable approval state machine.
 
 ## Accounting Rules
 
@@ -57,12 +58,17 @@ Accounting is deterministic and conservative:
 
 - unknown material costs are never treated as zero
 - unknown material costs make a decision ineligible
+- ordinary cost components may not be negative
 - fees, slippage, shipping, holding costs, refunds, return losses,
   cancellations, and research/API costs are explicit
 - paper and real outcomes cannot be summarized together
 - drawdown is calculated from an ordered value curve
+- resolved entries require a mechanically defined no-action outcome
+- realized net value must reconcile to realized gross value minus realized
+  costs
 - value summaries preserve the no-action comparator and group by contract,
   strategy, and source
+- multiple decisions from one economic event are counted as one opportunity
 
 ## Append-Only Corrections
 

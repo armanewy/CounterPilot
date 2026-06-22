@@ -109,6 +109,12 @@ class ContractAccountingTests(unittest.TestCase):
         self.assertEqual(result.conservative_expected_net_value, 50.5)
         self.assertEqual(maximum_drawdown([100, 90, 110, 80])["maximum_drawdown"], 30.0)
 
+    def test_negative_cost_components_cannot_inflate_net_value(self) -> None:
+        with self.assertRaises(ValueError):
+            compute_decision_accounting(gross_value=100.0, fees=-5.0, material_cost_fields=["fees"])
+        with self.assertRaises(ValueError):
+            compute_decision_accounting(gross_value=100.0, fees=5.0, uncertainty_adjustment=-1.0)
+
     def test_summary_refuses_to_mix_paper_and_real(self) -> None:
         entries = [
             {
@@ -168,6 +174,43 @@ class ContractAccountingTests(unittest.TestCase):
         self.assertEqual(summary["no_action_frequency"], 1)
         self.assertEqual(summary["capital_at_risk"], 15.0)
         self.assertEqual(summary["maximum_possible_loss"], 6.0)
+        self.assertEqual(summary["value_by_contract"]["contract_a"], 2.0)
+
+    def test_summary_counts_one_economic_event_once(self) -> None:
+        summary = summarize_money_entries(
+            [
+                {
+                    "decision_id": "first",
+                    "contract_hash": "contract_a",
+                    "decision_timestamp": "2026-01-01T00:00:00+00:00",
+                    "selected_action": "abstain",
+                    "no_action_alternative": "abstain",
+                    "capital_required": 1.0,
+                    "maximum_possible_loss": 1.0,
+                    "conservative_expected_net_value": 1.0,
+                    "designation": "paper",
+                    "economic_event_key": "same_event",
+                    "provenance": {"strategy_id": "s1", "source_id": "src"},
+                },
+                {
+                    "decision_id": "second",
+                    "contract_hash": "contract_a",
+                    "decision_timestamp": "2026-01-02T00:00:00+00:00",
+                    "selected_action": "accept",
+                    "no_action_alternative": "abstain",
+                    "capital_required": 1.0,
+                    "maximum_possible_loss": 1.0,
+                    "conservative_expected_net_value": 2.0,
+                    "designation": "paper",
+                    "economic_event_key": "same_event",
+                    "provenance": {"strategy_id": "s1", "source_id": "src"},
+                },
+            ]
+        )
+        self.assertEqual(summary["decision_count"], 2)
+        self.assertEqual(summary["opportunity_count"], 1)
+        self.assertEqual(summary["duplicate_economic_event_decisions"], 1)
+        self.assertEqual(summary["action_frequency"], {"accept": 1})
         self.assertEqual(summary["value_by_contract"]["contract_a"], 2.0)
 
 
