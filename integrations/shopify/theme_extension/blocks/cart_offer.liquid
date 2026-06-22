@@ -1,0 +1,44 @@
+<div
+  class="marginpilot-offer marginpilot-offer--cart"
+  data-marginpilot-cart-offer
+  data-marginpilot-visible="{{ block.settings.enabled }}"
+>
+  {% if block.settings.enabled %}
+    <button type="button" class="marginpilot-offer__button" data-marginpilot-open>
+      {{ block.settings.button_label }}
+    </button>
+    <form class="marginpilot-offer__form" data-marginpilot-form hidden>
+      <label class="marginpilot-offer__label">
+        Cart offer amount
+        <input class="marginpilot-offer__input" name="offer_amount" inputmode="decimal" autocomplete="off">
+      </label>
+      <button type="submit" class="marginpilot-offer__submit">Submit offer</button>
+    </form>
+  {% endif %}
+</div>
+
+{% schema %}
+{
+  "name": "Cart Offer",
+  "target": "section",
+  "stylesheet": "marginpilot-offer.css",
+  "javascript": "marginpilot-offer.js",
+  "enabled_on": {
+    "templates": ["cart"]
+  },
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "enabled",
+      "label": "Enable cart offer button",
+      "default": false
+    },
+    {
+      "type": "text",
+      "id": "button_label",
+      "label": "Button label",
+      "default": "Make an offer on cart"
+    }
+  ]
+}
+{% endschema %}

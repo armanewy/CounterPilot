@@ -1,0 +1,5 @@
+name = "marginpilot-offer-surface"
+type = "theme"
+
+[extension_points]
+blocks = ["make_offer", "cart_offer"]
