@@ -111,6 +111,18 @@ class OfferLabBenchmarkV2ProtocolTests(unittest.TestCase):
         self.assertEqual(report.status, "ready")
         self.assertEqual(report.v1_exclusion_cases, 1)
 
+    def test_v2_hidden_validator_canonicalizes_token_whitespace(self) -> None:
+        v2 = json.loads(V2_MANIFEST.read_text(encoding="utf-8"))
+        v1 = json.loads(V1_FINAL.read_text(encoding="utf-8"))
+
+        with self.assertRaisesRegex(V2ProtocolError, "overlaps"):
+            validate_v2_hidden_exclusion(
+                v2_manifest=v2,
+                v1_final_manifest=v1,
+                candidate_hidden_case_tokens=[" spent-v1 "],
+                external_v1_hidden_case_tokens=["spent-v1"],
+            )
+
     def test_v2_pre_hidden_validator_requires_all_development_gates(self) -> None:
         manifest = json.loads(V2_MANIFEST.read_text(encoding="utf-8"))
         report = _valid_v2_readiness_report(manifest)
@@ -146,6 +158,22 @@ class OfferLabBenchmarkV2ProtocolTests(unittest.TestCase):
         report["model_selection"]["seller_next_action"]["hidden_results_used"] = True
         with self.assertRaisesRegex(V2ProtocolError, "hidden results used"):
             validate_v2_pre_hidden_readiness(v2_manifest=manifest, readiness_report=report)
+
+    def test_v2_pre_hidden_validator_rejects_nan_and_infinite_metrics(self) -> None:
+        manifest = json.loads(V2_MANIFEST.read_text(encoding="utf-8"))
+        mutations = [
+            ("seller_next_action", "classwise_expected_calibration_error", {"accept": float("nan"), "counter": 0.05, "decline": 0.04}),
+            ("seller_next_action", "expected_calibration_error", float("inf")),
+            ("final_price_ratio", "interval_width_to_median_target_iqr", float("nan")),
+            ("final_price_ratio", "quantile_pinball_loss_ratio_to_median_baseline", float("inf")),
+        ]
+
+        for target, field, value in mutations:
+            with self.subTest(target=target, field=field):
+                report = _valid_v2_readiness_report(manifest)
+                report["calibration"][target][field] = value
+                with self.assertRaisesRegex(V2ProtocolError, "finite number|classwise calibration"):
+                    validate_v2_pre_hidden_readiness(v2_manifest=manifest, readiness_report=report)
 
     def test_v2_requires_calibration_coverage_controls_and_censored_label_handling(self) -> None:
         manifest = json.loads(V2_MANIFEST.read_text(encoding="utf-8"))

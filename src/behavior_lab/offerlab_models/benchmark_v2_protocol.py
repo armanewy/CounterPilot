@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from math import isfinite
+from numbers import Real
 from typing import Any
 
 
@@ -48,7 +50,7 @@ def validate_v2_hidden_exclusion(
     if not hidden_policy.get("exclude_all_v1_hidden_case_tokens", False):
         raise V2ProtocolError("Benchmark v2 must require exclusion of all v1 hidden case tokens")
 
-    candidate_tokens = {str(token) for token in candidate_hidden_case_tokens if str(token).strip()}
+    candidate_tokens = _canonical_tokens(candidate_hidden_case_tokens)
     if not candidate_tokens:
         raise V2ProtocolError("candidate hidden case token set is empty")
 
@@ -56,16 +58,8 @@ def validate_v2_hidden_exclusion(
         v1_final_manifest.get("hidden_lockbox", {})
         .get("case_tokens", {})
     )
-    manifest_tokens = {
-        str(token)
-        for token in manifest_token_block.get("tokens", [])
-        if str(token).strip()
-    }
-    external_tokens = {
-        str(token)
-        for token in (external_v1_hidden_case_tokens or [])
-        if str(token).strip()
-    }
+    manifest_tokens = _canonical_tokens(manifest_token_block.get("tokens", []))
+    external_tokens = _canonical_tokens(external_v1_hidden_case_tokens or [])
     exclusion_tokens = manifest_tokens | external_tokens
 
     if not exclusion_tokens:
@@ -168,11 +162,11 @@ def _validate_calibration(v2_manifest: dict[str, Any], readiness_report: dict[st
         if "log_loss" in metric:
             if report.get("ece_definition") != classification_spec.get("ece_definition"):
                 raise V2ProtocolError(f"wrong ECE definition for {target}")
-            if report.get("expected_calibration_error", 1.0) > classification_spec.get("expected_calibration_error_max", 0.0):
+            if _finite_number(report.get("expected_calibration_error"), "expected_calibration_error", target) > _finite_number(classification_spec.get("expected_calibration_error_max"), "expected_calibration_error_max", target):
                 raise V2ProtocolError(f"ECE threshold failed for {target}")
-            if report.get("reliability_bin_count", 0) < classification_spec.get("minimum_reliability_bin_count", 0):
+            if _finite_number(report.get("reliability_bin_count"), "reliability_bin_count", target) < _finite_number(classification_spec.get("minimum_reliability_bin_count"), "minimum_reliability_bin_count", target):
                 raise V2ProtocolError(f"not enough reliability bins for {target}")
-            if report.get("nonempty_reliability_bins", 0) < classification_spec.get("minimum_nonempty_reliability_bins", 0):
+            if _finite_number(report.get("nonempty_reliability_bins"), "nonempty_reliability_bins", target) < _finite_number(classification_spec.get("minimum_nonempty_reliability_bins"), "minimum_nonempty_reliability_bins", target):
                 raise V2ProtocolError(f"not enough reliability bins for {target}")
             if report.get("classwise_ece_definition") != classification_spec.get("classwise_ece_definition"):
                 raise V2ProtocolError(f"wrong classwise ECE definition for {target}")
@@ -180,7 +174,7 @@ def _validate_calibration(v2_manifest: dict[str, Any], readiness_report: dict[st
             if not isinstance(classwise, dict) or not classwise:
                 raise V2ProtocolError(f"missing classwise calibration for {target}")
             for class_name, ece in classwise.items():
-                if ece > classification_spec.get("classwise_expected_calibration_error_max", 0.0):
+                if _finite_number(ece, f"classwise_expected_calibration_error.{class_name}", target) > _finite_number(classification_spec.get("classwise_expected_calibration_error_max"), "classwise_expected_calibration_error_max", target):
                     raise V2ProtocolError(f"classwise calibration threshold failed for {target}: {class_name}")
             class_rows = report.get("class_row_counts", {})
             if not isinstance(class_rows, dict) or not class_rows:
@@ -195,18 +189,18 @@ def _validate_calibration(v2_manifest: dict[str, Any], readiness_report: dict[st
                     raise V2ProtocolError(f"class row support threshold failed for {target}: {class_name}")
             if any(count < classification_spec.get("minimum_rows_per_reported_class", 0) for count in class_rows.values()):
                 raise V2ProtocolError(f"class row support threshold failed for {target}")
-            if report.get("macro_classwise_expected_calibration_error", 1.0) > classification_spec.get("macro_classwise_expected_calibration_error_max", 0.0):
+            if _finite_number(report.get("macro_classwise_expected_calibration_error"), "macro_classwise_expected_calibration_error", target) > _finite_number(classification_spec.get("macro_classwise_expected_calibration_error_max"), "macro_classwise_expected_calibration_error_max", target):
                 raise V2ProtocolError(f"classwise calibration threshold failed for {target}")
         else:
             if report.get("central_interval_nominal_coverage") != regression_spec.get("central_interval_nominal_coverage"):
                 raise V2ProtocolError(f"wrong interval coverage target for {target}")
-            if report.get("central_interval_absolute_error", 1.0) > regression_spec.get("central_interval_allowed_absolute_error", 0.0):
+            if _finite_number(report.get("central_interval_absolute_error"), "central_interval_absolute_error", target) > _finite_number(regression_spec.get("central_interval_allowed_absolute_error"), "central_interval_allowed_absolute_error", target):
                 raise V2ProtocolError(f"interval calibration threshold failed for {target}")
-            if report.get("interval_width_to_median_target_iqr", float("inf")) > regression_spec.get("maximum_interval_width_to_median_target_iqr", 0.0):
+            if _finite_number(report.get("interval_width_to_median_target_iqr"), "interval_width_to_median_target_iqr", target) > _finite_number(regression_spec.get("maximum_interval_width_to_median_target_iqr"), "maximum_interval_width_to_median_target_iqr", target):
                 raise V2ProtocolError(f"interval width threshold failed for {target}")
             if report.get("quantile_levels") != regression_spec.get("quantile_levels"):
                 raise V2ProtocolError(f"wrong quantile levels for {target}")
-            if report.get("quantile_pinball_loss_ratio_to_median_baseline", float("inf")) > regression_spec.get("maximum_quantile_pinball_loss_ratio_to_median_baseline", 0.0):
+            if _finite_number(report.get("quantile_pinball_loss_ratio_to_median_baseline"), "quantile_pinball_loss_ratio_to_median_baseline", target) > _finite_number(regression_spec.get("maximum_quantile_pinball_loss_ratio_to_median_baseline"), "maximum_quantile_pinball_loss_ratio_to_median_baseline", target):
                 raise V2ProtocolError(f"quantile loss threshold failed for {target}")
 
 
@@ -228,11 +222,21 @@ def _validate_model_selection(v2_manifest: dict[str, Any], readiness_report: dic
         if selection.get("primary_split_survival") != objective.get("required_primary_split_survival"):
             raise V2ProtocolError(f"primary split survival mismatch for {target}")
         if "minimum_relative_improvement" in objective:
-            if selection.get("relative_improvement", -1.0) < objective["minimum_relative_improvement"]:
+            if _finite_number(selection.get("relative_improvement"), "relative_improvement", target) < _finite_number(objective["minimum_relative_improvement"], "minimum_relative_improvement", target):
                 raise V2ProtocolError(f"minimum improvement failed for {target}")
         if "maximum_error_ratio_to_baseline" in objective:
-            if selection.get("error_ratio_to_baseline", 2.0) > objective["maximum_error_ratio_to_baseline"]:
+            if _finite_number(selection.get("error_ratio_to_baseline"), "error_ratio_to_baseline", target) > _finite_number(objective["maximum_error_ratio_to_baseline"], "maximum_error_ratio_to_baseline", target):
                 raise V2ProtocolError(f"baseline error-ratio gate failed for {target}")
         if "minimum_support_coverage" in objective:
-            if selection.get("support_coverage", 0.0) < objective["minimum_support_coverage"]:
+            if _finite_number(selection.get("support_coverage"), "support_coverage", target) < _finite_number(objective["minimum_support_coverage"], "minimum_support_coverage", target):
                 raise V2ProtocolError(f"support coverage gate failed for {target}")
+
+
+def _canonical_tokens(tokens: Iterable[str]) -> set[str]:
+    return {str(token).strip() for token in tokens if str(token).strip()}
+
+
+def _finite_number(value: Any, field: str, target: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, Real) or not isfinite(float(value)):
+        raise V2ProtocolError(f"{field} is not a finite number for {target}")
+    return float(value)
