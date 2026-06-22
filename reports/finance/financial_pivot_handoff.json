@@ -1,0 +1,237 @@
+{
+  "schema_version": "financial_pivot_handoff.v1",
+  "wave_id": "FINANCE_WAVE_0",
+  "completed_offerlab_evidence_base_commit": "e486609b48bfb1aaeafe6be64a01127cd8d6fe22",
+  "exact_base_commit_for_subsequent_waves": "e486609b48bfb1aaeafe6be64a01127cd8d6fe22",
+  "base_commit_note": "This is the completed audited OfferLab evidence-phase commit used to create the handoff. The FINANCE_WAVE_0 independent audit must record its own HEAD_COMMIT; later implementation may use that audit-passed head when it needs these documentation artifacts.",
+  "product_objective": "Increase cumulative conservative verified value while minimizing capital, research cost, maintenance, and human attention.",
+  "real_action_policy": {
+    "manual_only": true,
+    "paper_decisions_allowed": true,
+    "order_tickets_allowed": true,
+    "submits_trades": false,
+    "submits_seller_actions": false,
+    "purchases_inventory": false,
+    "sends_notifications": false
+  },
+  "allowed_evidence_classes": [
+    "public_research_evidence",
+    "private_seller_historical_evidence",
+    "prospective_shadow_evidence",
+    "realized_commercial_evidence"
+  ],
+  "evidence_inventory": [
+    {
+      "result_id": "offerlab_benchmark_v1",
+      "display_name": "OfferLab Benchmark v1",
+      "evidence_class": "public_research_evidence",
+      "status": "frozen_hidden_spent",
+      "artifact_paths": [
+        "reports/offerlab_benchmark_v1_final_manifest.json",
+        "reports/offerlab_benchmark_v1.json"
+      ],
+      "commercial_use_allowed": false,
+      "production_export_allowed": false,
+      "causal_profit_claim_allowed": false,
+      "summary": "Benchmark v1 is permanently frozen. Its hidden set is spent and must never be reused for model selection or commercial claims.",
+      "supportable_targets": [],
+      "supportable_actions": []
+    },
+    {
+      "result_id": "offerlab_benchmark_v2",
+      "display_name": "OfferLab Benchmark v2 integration gate",
+      "evidence_class": "public_research_evidence",
+      "status": "implementation_ready_gated_not_run_in_repo",
+      "artifact_paths": [
+        "src/behavior_lab/offerlab_models/benchmark_v2_integration.py",
+        "tests/test_offerlab_benchmark_v2_integration.py"
+      ],
+      "commercial_use_allowed": false,
+      "production_export_allowed": false,
+      "causal_profit_claim_allowed": false,
+      "readiness": {
+        "benchmark_v1_frozen": true,
+        "requires_audited_full_nber_release": true,
+        "requires_external_v1_hidden_token_exclusion": true,
+        "requires_preregistered_pre_hidden_selection": true,
+        "hidden_submission_performed": false,
+        "selection_from_hidden_results_allowed": false
+      },
+      "result": "No tracked Benchmark v2 result is present in this repository. The integration command fails closed unless preregistered prerequisites pass.",
+      "supportable_targets": [
+        "research-only seller_next_action",
+        "research-only buyer_response_to_counter",
+        "research-only agreement",
+        "research-only final_price_ratio",
+        "research-only response_latency"
+      ],
+      "supportable_actions": []
+    },
+    {
+      "result_id": "seller_pilot_import_and_audit",
+      "display_name": "Seller pilot local data kit and mature-margin audit",
+      "evidence_class": "private_seller_historical_evidence",
+      "status": "implementation_ready_requires_external_seller_data",
+      "artifact_paths": [
+        "src/behavior_lab/offerlab_pilot.py",
+        "tests/test_offerlab_pilot.py",
+        "docs/OFFERLAB.md"
+      ],
+      "commercial_use_allowed": true,
+      "commercial_use_conditions": [
+        "seller supplies or authorizes the data",
+        "data remains outside the repository",
+        "readiness gates pass",
+        "cost basis, actual fees, shipping, returns, cancellations, and mature outcomes are present",
+        "all seller-facing actions remain manual"
+      ],
+      "production_export_allowed": false,
+      "causal_profit_claim_allowed": false,
+      "readiness": {
+        "template_available": true,
+        "import_available": true,
+        "audit_available": true,
+        "shadow_report_available": true,
+        "current_real_seller_pilot_loaded_in_repo": false,
+        "requires_external_ledger": true,
+        "unknown_cost_basis_blocks_net_claims": true,
+        "unknown_shipping_blocks_net_claims": true
+      },
+      "supportable_targets": [
+        "mature contribution margin",
+        "seller accepted",
+        "buyer paid",
+        "order completed",
+        "return-window matured"
+      ],
+      "supportable_actions": [
+        "read-only import",
+        "read-only audit",
+        "prospective shadow policy design",
+        "manual seller review"
+      ]
+    },
+    {
+      "result_id": "seller_pilot_shadow_report",
+      "display_name": "Seller pilot shadow report",
+      "evidence_class": "prospective_shadow_evidence",
+      "status": "implementation_ready_requires_ready_pilot",
+      "artifact_paths": [
+        "src/behavior_lab/offerlab_pilot.py",
+        "tests/test_offerlab_pilot.py"
+      ],
+      "commercial_use_allowed": true,
+      "commercial_use_conditions": [
+        "shadow decisions remain non-mutating",
+        "historical seller-policy comparisons are descriptive only",
+        "prospective validation is required before any recommendation",
+        "seller approval is required for every real action"
+      ],
+      "production_export_allowed": false,
+      "causal_profit_claim_allowed": false,
+      "supportable_targets": [
+        "shadow-only mature contribution margin"
+      ],
+      "supportable_actions": [
+        "abstain",
+        "read-only data repair request",
+        "manual prospective shadow experiment proposal"
+      ]
+    },
+    {
+      "result_id": "authorized_ebay_read_only_probe",
+      "display_name": "Authorized read-only eBay feasibility probe",
+      "evidence_class": "private_seller_historical_evidence",
+      "status": "not_run_blocked_by_missing_authorized_token_and_manual_listing_ids",
+      "artifact_paths": [
+        "reports/ebay_production_feasibility.json",
+        "tests/test_ebay_api_probe.py",
+        "tools/ebay_api_probe"
+      ],
+      "commercial_use_allowed": false,
+      "production_export_allowed": false,
+      "causal_profit_claim_allowed": false,
+      "readiness": {
+        "production_token_available": false,
+        "manual_listing_ids_available": false,
+        "crawling_allowed": false,
+        "mutation_endpoints_allowed": false,
+        "raw_payloads_retained": false
+      },
+      "supportable_targets": [
+        "feasibility of authorized seller-owned read-only offer fields"
+      ],
+      "supportable_actions": [
+        "operator-run read-only probe with explicit production token and manual listing IDs"
+      ]
+    }
+  ],
+  "evidence_class_policy": {
+    "nber_results_must_be": "public_research_evidence",
+    "nber_results_must_never_be": [
+      "private_seller_historical_evidence",
+      "prospective_shadow_evidence",
+      "realized_commercial_evidence"
+    ],
+    "historical_seller_comparisons_claim_causal_lift": false,
+    "realized_commercial_evidence_present": false
+  },
+  "benchmark_v1_final_status": {
+    "status": "frozen_hidden_spent",
+    "rerun_allowed": false,
+    "hidden_reuse_allowed": false,
+    "commercial_claim_allowed": false
+  },
+  "benchmark_v2_readiness_result": {
+    "status": "gated_not_executed_from_tracked_artifacts",
+    "result_available": false,
+    "why": "No audited full-release NBER normalization artifact or external v1 hidden-token exclusion set is present in the repository.",
+    "next_allowed_step": "Run the Benchmark v2 integration command only after every preregistered prerequisite passes."
+  },
+  "seller_pilot_readiness": {
+    "status": "implementation_ready_data_needed",
+    "real_pilot_data_loaded": false,
+    "commercial_data_may_be_used": "Only seller-supplied or explicitly authorized private seller data may support commercial analysis, and only in read-only or paper-shadow mode until a later approval wave.",
+    "blocked_by": [
+      "no external seller pilot ledger in this repository",
+      "no prospective shadow run against real seller data",
+      "no randomized seller experiment",
+      "no manual approval workflow for real actions"
+    ]
+  },
+  "ebay_feasibility_result": {
+    "status": "not_run",
+    "feasibility": "indeterminate",
+    "blocked_by": [
+      "missing authorized production user token",
+      "missing manually supplied listing IDs"
+    ],
+    "next_allowed_step": "Operator-run production-only read-only probe with explicit token and manual listing IDs."
+  },
+  "supportable_targets_and_actions": {
+    "supportable_now": [
+      "research-only Benchmark v2 gated execution",
+      "local seller pilot template generation",
+      "local seller pilot import into an external ledger",
+      "read-only mature-margin audit",
+      "read-only seller shadow report",
+      "operator-run read-only eBay feasibility probe"
+    ],
+    "not_supportable_now": [
+      "real seller recommendations",
+      "automated seller actions",
+      "trade execution",
+      "inventory purchases",
+      "notifications",
+      "production model export",
+      "causal profit lift claims"
+    ]
+  },
+  "unresolved_blockers": [
+    "No MoneyLedger or shared financial decision contract exists yet.",
+    "No real seller pilot data has been imported into an external ledger in this repository.",
+    "Benchmark v2 has no tracked full-release result.",
+    "The authorized eBay production feasibility probe has not run.",
+    "No Weather Edge, ETF risk, or financial-data semantics layer exists in this handoff wave."
+  ]
+}
