@@ -94,7 +94,7 @@ class ShopifyDevelopmentAdapter:
             "merchant_id": merchant_id,
             "store_id": store_id,
             "surface": "theme_app_extension_product_block",
-            "visibility": dict(visibility),
+            "visibility": _redact_visibility(visibility),
             "network_calls": 0,
         }
 
@@ -466,6 +466,17 @@ def _validate_offer_input(offer: ShopifyOfferInput) -> None:
             raise ValueError(f"{field} may not be negative")
     if offer.contact_email and "@" not in offer.contact_email:
         raise ValueError("contact_email must be an email-like operational value")
+
+
+def _redact_visibility(visibility: dict[str, Any]) -> dict[str, Any]:
+    redacted: dict[str, Any] = {}
+    for key, value in visibility.items():
+        lowered = str(key).lower()
+        if "gid" in lowered or lowered.endswith("_id") or (isinstance(value, str) and value.startswith("gid://shopify/")):
+            redacted[f"{key}_reference"] = "operational_store"
+        else:
+            redacted[str(key)] = value
+    return redacted
 
 
 def _namespace(merchant_id: str, store_id: str) -> str:

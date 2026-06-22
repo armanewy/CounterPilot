@@ -1,0 +1,1 @@
+"""External commerce integration adapters."""
