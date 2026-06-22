@@ -406,6 +406,115 @@ def full_normalization_status(output_dir: str | Path) -> dict[str, Any]:
     }
 
 
+def finalize_full_release_evidence(output_dir: str | Path, *, independent_audit_artifact: str | Path) -> dict[str, Any]:
+    output = Path(output_dir)
+    manifest_path = output / "manifest.json"
+    if not manifest_path.exists():
+        raise NberRealNormalizeError(f"Missing normalized manifest: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload_hash = _manifest_payload_hash_for_evidence(manifest)
+    manifest.setdefault("lineage", {})["normalization_manifest_payload_hash"] = payload_hash
+    manifest["lineage"]["normalization_manifest_hash"] = _canonical_manifest_hash(manifest)
+    _write_atomic_json(manifest_path, manifest)
+
+    evidence = manifest.setdefault("audited_full_release_evidence", {})
+    replication_artifact = manifest.get("replication_checks")
+    if not isinstance(replication_artifact, dict) or not _replication_artifact_verification(manifest, evidence)["passed"]:
+        replication_artifact = _run_replication_artifact(output, manifest_hash=payload_hash)
+    audit_path = Path(independent_audit_artifact)
+    if not audit_path.exists():
+        raise NberRealNormalizeError(f"Missing independent audit artifact: {audit_path}")
+    evidence["replication_contract_artifact"] = {
+        "path": replication_artifact["path"],
+        "sha256": replication_artifact["sha256"],
+    }
+    manifest["replication_checks"] = replication_artifact
+    replication_payload = json.loads(Path(replication_artifact["path"]).read_text(encoding="utf-8"))
+    evidence["replication_contract_passed"] = bool(replication_payload.get("passed") and replication_payload.get("full_replication_passed"))
+    evidence["independent_audit_artifact"] = {
+        "path": str(audit_path.resolve()),
+        "sha256": sha256_file(audit_path),
+    }
+    audit_payload = json.loads(audit_path.read_text(encoding="utf-8"))
+    evidence["independent_audit_passed"] = bool(audit_payload.get("passed") and audit_payload.get("independent_audit_passed"))
+    evidence["passed"] = True
+    evidence["reason"] = "Full-source normalization, frozen replication contract, and independent audit artifacts are attached and verified."
+    manifest["lineage"]["normalization_manifest_hash"] = _canonical_manifest_hash(manifest)
+    manifest["lineage"]["normalization_manifest_payload_hash"] = payload_hash
+    _write_atomic_json(manifest_path, manifest)
+    report = verify_full_release_evidence(manifest)
+    if not report["passed"]:
+        evidence["passed"] = False
+        evidence["reason"] = "Full-release evidence finalization failed verification: " + ", ".join(report["failures"])
+        manifest["lineage"]["normalization_manifest_hash"] = _canonical_manifest_hash(manifest)
+        manifest["lineage"]["normalization_manifest_payload_hash"] = payload_hash
+        _write_atomic_json(manifest_path, manifest)
+        report = verify_full_release_evidence(manifest)
+    manifest_sha_path = manifest_path.with_suffix(manifest_path.suffix + ".sha256")
+    manifest_sha_path.write_text(f"{sha256_file(manifest_path)}  {manifest_path.name}\n", encoding="utf-8")
+    return {
+        "schema_version": "nber_full_release_evidence_finalization.v1",
+        "manifest_path": str(manifest_path.resolve()),
+        "manifest_sha256": sha256_file(manifest_path),
+        "normalization_manifest_hash": manifest["lineage"]["normalization_manifest_hash"],
+        "normalization_manifest_payload_hash": payload_hash,
+        "replication_artifact": _replication_artifact_verification(manifest, evidence),
+        "independent_audit_artifact": _independent_audit_artifact_verification(manifest, evidence),
+        "full_release_evidence": report,
+    }
+
+
+def _manifest_payload_hash_for_evidence(manifest: dict[str, Any]) -> str:
+    lineage = manifest.get("lineage", {})
+    current = lineage.get("normalization_manifest_payload_hash") if isinstance(lineage, dict) else None
+    evidence = manifest.get("audited_full_release_evidence", {})
+    if isinstance(evidence, dict):
+        replication = _read_artifact_payload(evidence.get("replication_contract_artifact"))
+        artifact_hash = replication.get("normalization_manifest_hash") if isinstance(replication, dict) else None
+        if artifact_hash:
+            candidate = _reconstruct_pre_evidence_payload_hash(manifest)
+            if artifact_hash == candidate:
+                return artifact_hash
+    if current:
+        return str(current)
+    return _reconstruct_pre_evidence_payload_hash(manifest)
+
+
+def _read_artifact_payload(artifact: Any) -> dict[str, Any]:
+    if not isinstance(artifact, dict):
+        return {}
+    path_text = artifact.get("path")
+    if not path_text:
+        return {}
+    path = Path(path_text)
+    if not path.exists():
+        return {}
+    expected_sha = artifact.get("sha256")
+    if expected_sha and sha256_file(path) != expected_sha:
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _reconstruct_pre_evidence_payload_hash(manifest: dict[str, Any]) -> str:
+    candidate = json.loads(json.dumps(manifest, sort_keys=True))
+    candidate.pop("replication_checks", None)
+    evidence = candidate.get("audited_full_release_evidence")
+    if isinstance(evidence, dict):
+        evidence["passed"] = False
+        evidence["replication_contract_passed"] = False
+        evidence["replication_contract_artifact"] = None
+        evidence["independent_audit_passed"] = False
+        evidence["independent_audit_artifact"] = None
+        evidence["reason"] = (
+            "Normalization can prove the streaming full-run path, but replication and independent audit must be recorded by separate Wave 2 checks before this becomes full-release benchmark evidence."
+        )
+    return _canonical_manifest_hash(candidate)
+
+
 def inspect_real_source_schema(raw_dir: str | Path) -> dict[str, Any]:
     raw = Path(raw_dir)
     lists_path = _find_source(raw, "anon_bo_lists.csv")

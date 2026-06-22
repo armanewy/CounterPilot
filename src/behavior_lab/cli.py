@@ -41,7 +41,7 @@ from behavior_lab.datasets.nber_best_offer.audit import audit as nber_audit
 from behavior_lab.datasets.nber_best_offer.audit import benchmark as nber_benchmark
 from behavior_lab.datasets.nber_best_offer.inventory import inventory_path
 from behavior_lab.datasets.nber_best_offer.normalize import build_sample_dataset, normalize_dataset
-from behavior_lab.datasets.nber_best_offer.real_normalize import full_normalization_status, inspect_real_source_schema, normalize_real_dataset
+from behavior_lab.datasets.nber_best_offer.real_normalize import finalize_full_release_evidence, full_normalization_status, inspect_real_source_schema, normalize_real_dataset
 from behavior_lab.datasets.nber_best_offer.replication import replication_check, validate_replication_targets
 from behavior_lab.datasets.nber_best_offer.source_inventory import inventory_official_sources, public_summary, run_source_inventory
 from behavior_lab.datasets.nber_best_offer.source_schema import inspect_schema
@@ -465,6 +465,10 @@ def command_nber_replication_check(args: argparse.Namespace) -> None:
         _print_json(validate_replication_targets(args.targets))
 
 
+def command_nber_finalize_evidence(args: argparse.Namespace) -> None:
+    _print_json(finalize_full_release_evidence(args.normalized_dir, independent_audit_artifact=args.independent_audit_artifact))
+
+
 def command_nber_benchmark(args: argparse.Namespace) -> None:
     _print_json(nber_benchmark(args.normalized_dir))
 
@@ -653,6 +657,11 @@ def build_parser() -> argparse.ArgumentParser:
     nber_replication.add_argument("--normalized-dir", help="Run checks against a normalized real-source manifest")
     nber_replication.add_argument("--targets", help="Optional replication target manifest")
     nber_replication.set_defaults(func=command_nber_replication_check)
+
+    nber_finalize = nber_subparsers.add_parser("finalize-evidence", help="Attach verified replication and independent audit artifacts to a full NBER manifest")
+    nber_finalize.add_argument("--normalized-dir", required=True)
+    nber_finalize.add_argument("--independent-audit-artifact", required=True)
+    nber_finalize.set_defaults(func=command_nber_finalize_evidence)
 
     nber_bench = nber_subparsers.add_parser("benchmark", help="Run leakage-safe baseline leaderboards")
     nber_bench.add_argument("--normalized-dir", required=True)
