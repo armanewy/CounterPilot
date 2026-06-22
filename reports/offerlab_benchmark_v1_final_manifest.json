@@ -1,0 +1,77 @@
+{
+  "schema_id": "offerlab_benchmark_v1_final_manifest",
+  "schema_version": 1,
+  "benchmark_id": "offerlab_benchmark_v1",
+  "status": "frozen",
+  "hidden_status": "hidden_spent",
+  "reuse_policy": "never_reusable_for_model_selection",
+  "final_decision": {
+    "status": "STOP",
+    "reason": "Faint research signal only; no actionable commercial claim, incomplete protocol splits, row cap, unvalidated calibration, insufficient support coverage, and no full-release evidence."
+  },
+  "artifacts": {
+    "protocol_path": "datasets/manifests/offerlab_benchmark_v1.yaml",
+    "protocol_hash_reported": "6305092f3452be300641ed55974d57c39ce99a60b0e801358832323a86bd2a20",
+    "protocol_file_sha256": "D912518AB8DEAAF933C4130E061AAB16621A35ADF857660599CD4C429B4D32C9",
+    "result_path": "reports/offerlab_benchmark_v1.json",
+    "result_file_sha256": "14011B63D95FF32BEE1EF41ED68004C8CB246E0C840703F237505499EA1B0C8B",
+    "source_manifest_paths": [
+      "datasets/manifests/nber_best_offer_downloads.yaml",
+      "datasets/manifests/nber_best_offer_real_mapping.yaml"
+    ],
+    "source_manifest_hashes": {
+      "datasets/manifests/nber_best_offer_downloads.yaml": "8FF247843C8E725484F4CA4A8A63B57529FFE8E759E5ED0E51125075E7BA5AA1",
+      "datasets/manifests/nber_best_offer_real_mapping.yaml": "D77D9B8906E021890299870107CEAC21624B38CD4A51B5385E3DBC19F174D4E8"
+    },
+    "normalized_source_manifest_hash_reported": "4717f92cdb181267c48b6b61c00abd5fca598dd1dea5534c20f46cad0f926065",
+    "result_git_commit_reported": "53453484f102a98e1631073ace1b042d1f3821ed",
+    "archive_manifest_commit": "45ac07b"
+  },
+  "hidden_lockbox": {
+    "canonical_store_name": "hidden_lockbox_offerlab_benchmark_v1_4717f92cdb18.jsonl",
+    "event_count_reported": 5,
+    "retained_outside_repository": true,
+    "external_store_recovered_for_archive": false,
+    "case_tokens": {
+      "availability": "not_present_in_repository_or_common_workspace_locations",
+      "tokens": [],
+      "case_set_hashes": [],
+      "required_v2_behavior": "block v2 hidden lockbox creation until the external v1 token exclusion set is supplied or a documented all-source exclusion strategy proves zero overlap"
+    },
+    "queries": [
+      {"target": "agreement", "selected_model_id": "regularized_glm", "baseline_model_id": "majority", "hidden_rows": 100, "hidden_submission_count": 1},
+      {"target": "buyer_response_to_counter", "selected_model_id": "majority", "baseline_model_id": "majority", "hidden_rows": 100, "hidden_submission_count": 1},
+      {"target": "final_price_ratio", "selected_model_id": "median_regressor", "baseline_model_id": "median_regressor", "hidden_rows": 100, "hidden_submission_count": 1},
+      {"target": "response_latency", "selected_model_id": "median_regressor", "baseline_model_id": "median_regressor", "hidden_rows": 100, "hidden_submission_count": 1},
+      {"target": "seller_next_action", "selected_model_id": "regularized_glm", "baseline_model_id": "majority", "hidden_rows": 100, "hidden_submission_count": 1}
+    ]
+  },
+  "selected_artifacts": [
+    {"target": "agreement", "artifact": "regularized_glm", "model_card": "docs/model_cards/offerlab_benchmark_v1/agreement.md"},
+    {"target": "buyer_response_to_counter", "artifact": "majority", "model_card": "docs/model_cards/offerlab_benchmark_v1/buyer_response_to_counter.md"},
+    {"target": "final_price_ratio", "artifact": "median_regressor", "model_card": "docs/model_cards/offerlab_benchmark_v1/final_price_ratio.md"},
+    {"target": "response_latency", "artifact": "median_regressor", "model_card": "docs/model_cards/offerlab_benchmark_v1/response_latency.md"},
+    {"target": "seller_next_action", "artifact": "regularized_glm", "model_card": "docs/model_cards/offerlab_benchmark_v1/seller_next_action.md"}
+  ],
+  "known_limitations": [
+    "Used the 100,000-thread bounded normalization, not the full NBER release.",
+    "Inspectable model runs used a deterministic 500-row cap per target.",
+    "Only chronological listing-purged and seller-disjoint splits executed.",
+    "Buyer-disjoint, category-disjoint, and thread-safe nested-development splits were omitted.",
+    "Calibration was reported but not validated against preregistered thresholds.",
+    "Primary selected model support coverage was below 80%.",
+    "Negative controls were not all complete.",
+    "Hidden lockbox was local and one-shot, not a remote third-party service.",
+    "No production model was exported.",
+    "No causal seller-profit or contribution-margin claim was made."
+  ],
+  "v2_implications": {
+    "repeat_v1_allowed": false,
+    "fresh_hidden_cases_required": true,
+    "exclude_v1_hidden_cases_required": true,
+    "full_release_required": true,
+    "row_cap_allowed": false,
+    "calibration_validation_required": true,
+    "all_protocol_splits_required": true
+  }
+}

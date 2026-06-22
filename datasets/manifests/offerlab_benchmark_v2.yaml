@@ -1,0 +1,168 @@
+{
+  "schema_id": "offerlab_benchmark_protocol",
+  "schema_version": 2,
+  "benchmark_id": "offerlab_benchmark_v2",
+  "status": "defined",
+  "v1_relationship": "new_benchmark_not_repeat",
+  "research_only": true,
+  "production_export_allowed": false,
+  "source_dataset_ids": ["nber_ebay_best_offer"],
+  "primary_commercial_interest_target": "seller_next_action",
+  "targets": [
+    "seller_next_action",
+    "buyer_response_to_counter",
+    "agreement",
+    "final_price_ratio",
+    "response_latency"
+  ],
+  "required_normalization": {
+    "source": "complete_official_nber_best_offer_release",
+    "full_release_required": true,
+    "streaming_required": true,
+    "model_row_cap_allowed": false,
+    "preserve_raw_hashes": true,
+    "preserve_schema_and_transformation_versions": true,
+    "preserve_event_time_and_response_time_separately": true,
+    "quarantine_malformed_records": true,
+    "published_moment_replication_required_when_targets_exist": true
+  },
+  "splits": [
+    {"name": "chronological_listing_purged", "group_key": "listing_id", "primary": true, "required": true},
+    {"name": "seller_disjoint", "group_key": "seller_id", "primary": true, "required": true},
+    {"name": "buyer_disjoint", "group_key": "buyer_id", "primary": false, "required": "where_identifiers_permit"},
+    {"name": "category_disjoint_diagnostic", "group_key": "category", "primary": false, "required": true},
+    {"name": "thread_safe_nested_development", "group_key": "thread_id", "primary": true, "required": true},
+    {"name": "fresh_hidden_lockbox", "query_budget_per_target": 1, "primary": true, "required": true}
+  ],
+  "hidden_policy": {
+    "hidden_queries_per_target": 1,
+    "protocol_changes_after_hidden_access_allowed": false,
+    "fresh_hidden_lockbox_required": true,
+    "exclude_all_v1_hidden_case_tokens": true,
+    "v1_hidden_case_exclusion_source": "reports/offerlab_benchmark_v1_final_manifest.json",
+    "block_hidden_creation_if_v1_tokens_unavailable": true,
+    "exclude_v1_hidden_case_tokens_before_sampling": true
+  },
+  "baselines": [
+    "overall_rate_or_median",
+    "category_baseline",
+    "offer_ratio_heuristic",
+    "prior_concession_heuristic",
+    "split_the_difference_heuristic",
+    "regularized_linear_or_logistic_model",
+    "small_tree",
+    "existing_compact_formula_candidates"
+  ],
+  "primary_metrics": [
+    "multiclass_log_loss",
+    "brier_score",
+    "reliability_bins",
+    "expected_calibration_error",
+    "classwise_calibration",
+    "mae",
+    "rmse",
+    "quantile_loss",
+    "support_coverage",
+    "abstention",
+    "relative_improvement_over_preregistered_baseline"
+  ],
+  "calibration_acceptance": {
+    "must_be_declared_before_hidden_access": true,
+    "classification": {
+      "expected_calibration_error_max": 0.08,
+      "minimum_reliability_bin_count": 10,
+      "classwise_calibration_required": true
+    },
+    "regression": {
+      "interval_coverage_required": true,
+      "quantile_calibration_required": true
+    }
+  },
+  "support_coverage": {
+    "primary_candidate_minimum": 0.8,
+    "selective_prediction_requires_preregistration": true
+  },
+  "allowed_features": [
+    "category",
+    "condition",
+    "listing_price",
+    "current_actor",
+    "current_action",
+    "current_amount",
+    "offer_to_asking_ratio",
+    "round_number",
+    "prior_turn_count",
+    "prior_counter_count",
+    "event_hour"
+  ],
+  "forbidden_features": [
+    "buyer_id",
+    "seller_id",
+    "listing_id",
+    "thread_id",
+    "row_id",
+    "source_row_id",
+    "status",
+    "status_id",
+    "event_time",
+    "response_time",
+    "reference_price",
+    "ref_price4",
+    "excluded_reference_price_ref_price4",
+    "buyer_id_if_sold",
+    "sold_by_best_offer",
+    "bo_ck_yn",
+    "item_price",
+    "final_sale_price",
+    "auto_accept_price",
+    "auto_decline_price",
+    "accept_price",
+    "decline_price",
+    "buyer_us_if_sold",
+    "accepted_price",
+    "outcome",
+    "label",
+    "future_status",
+    "future_turn_count",
+    "terminal_thread_state"
+  ],
+  "missing_and_censored_label_policy": {
+    "preserve_unknown_outcomes": true,
+    "preserve_censored_outcomes": true,
+    "convert_censored_to_rejection_allowed": false,
+    "explicit_counts_required": true
+  },
+  "negative_controls": [
+    "random_labels",
+    "future_status_canary",
+    "accepted_price_canary",
+    "identifier_memorization_canary",
+    "random_row_split_inflation",
+    "same_timestamp_ordering_perturbation",
+    "censoring_as_rejection_canary",
+    "artifact_name_leakage_canary"
+  ],
+  "model_selection_rule": {
+    "selection_split": "thread_safe_nested_development",
+    "fit_on_training_only": true,
+    "select_one_model_per_target_before_hidden_access": true,
+    "hidden_queries_per_target": 1,
+    "hidden_results_may_select_models": false,
+    "tie_breakers": [
+      "simpler_model",
+      "better_calibration",
+      "higher_support_coverage"
+    ]
+  },
+  "allowed_gate_statuses": [
+    "STOP",
+    "RESEARCH_SIGNAL",
+    "READY_FOR_SELLER_SHADOW_VALIDATION"
+  ],
+  "forbidden_claims": [
+    "production_ready",
+    "seller_profit_lift_from_nber",
+    "causal_contribution_margin_lift",
+    "automated_ebay_action"
+  ]
+}
