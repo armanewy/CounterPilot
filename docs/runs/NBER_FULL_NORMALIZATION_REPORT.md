@@ -1,136 +1,96 @@
 # NBER Full Normalization Report
 
-Status: implementation gate updated on 2026-06-21. The `--full` real-source
-normalizer is no longer hard-blocked, but the official full NBER release was
-not normalized during this patch pass.
+Status: official full-source normalization completed on 2026-06-22. The
+normalization and partition-integrity checks passed. The full-release evidence
+gate remains closed because the frozen published-stat replication contract did
+not pass and an independent pass audit is not available.
 
-## Implemented Command
+## Run
 
 ```powershell
-$env:OFFERLAB_DATA_ROOT = "<external_data_root>"
-python -m behavior_lab nber-best-offer normalize-real --raw-dir $env:OFFERLAB_DATA_ROOT\raw\nber_best_offer --output-dir $env:OFFERLAB_DATA_ROOT\processed\nber_best_offer_full --full
+python -m behavior_lab nber-best-offer normalize-real --raw-dir C:\OfferLabData\raw\nber_best_offer --output-dir C:\OfferLabData\processed\nber_best_offer_full --full --resume
+python -m behavior_lab nber-best-offer replication-check --normalized-dir C:\OfferLabData\processed\nber_best_offer_full
+python -m behavior_lab nber-best-offer finalize-evidence --normalized-dir C:\OfferLabData\processed\nber_best_offer_full --independent-audit-artifact C:\OfferLabData\processed\nber_best_offer_full\independent_audit.json
 ```
 
-The command now runs the same streaming/checkpoint path used by bounded real
-runs, with `limit_threads = null` and `normalization_scope =
-full_unbounded_source_scan`.
+## Output
 
-## Full-Run Safeguards
+| Item | Value |
+| --- | ---: |
+| Negotiation-turn rows | 47,375,804 |
+| Negotiation-turn partitions | 948 |
+| Thread-linked listing rows | 19,546,308 |
+| Listing partitions | 391 |
+| Unmatched listing IDs | 0 |
+| Duplicate full thread rows removed | 1,396 |
+| Distinct author-code thread groups (`anon_item_id`, `anon_byr_id`) in replication DB | 28,202,940 |
+| Manifest SHA-256 | `5D4A7C0E0F7B424DA7FDE27FF9537BFE6ED5C88E04579381987F4DED831BD832` |
+| Normalization payload hash | `7D1BE0CEAB893AD1AB5B178C13E45D84A661F2C6C15149E62C1801FBBD56F7B7` |
 
-- Full mode and `--limit-threads` are mutually exclusive.
-- The thread pass streams source rows into deterministic hash buckets.
-- Thread/listing membership is held in SQLite, not a Python in-memory listing-ID set.
-- The thread pass checkpoint is reused only when command args, source hashes,
-  headers, mapping hash, bucket hashes, and SQLite index content hashes match.
-- Listing extraction streams the listing source and retains only thread-linked
-  listings for the first benchmark.
-- Every output partition records a SHA-256 hash and the manifest verifies those
-  hashes before setting `streaming_full_run_passed`.
-- The manifest records disk preflight, official-source hash/byte checks, and a
-  separate `audited_full_release_evidence` gate.
-- Full-release evidence verification rechecks official source files from disk
-  against the expected byte sizes and SHA-256 hashes.
-- Replication and independent-audit claims must point to JSON artifacts with
-  recorded artifact hashes and the current normalization manifest hash;
-  manifest booleans alone are not accepted.
-
-## Evidence Gate
-
-A completed `--full` run is not automatically full-release benchmark evidence.
-The manifest field `audited_full_release_evidence.passed` remains false until
-all of these are true:
-
-- `streaming_full_run_passed`
-- `official_sources_matched`
-- `full_run_checkpoint_validated`
-- `partition_hashes_verified`
-- `replication_contract_passed`
-- `independent_audit_passed`
-
-Task generation and benchmark scope both require that stricter evidence gate
-before an unbounded full manifest can be used as full-release evidence. The
-gate verifies the source files, partition files, replication artifact, and
-independent audit artifact at evaluation time. Replication and independent
-audit artifacts must bind to `lineage.normalization_manifest_hash`; matching
-only raw source hashes is not enough. Independent audit artifacts must also
-declare `scope: "full_release"`.
-
-## Data Checked
-
-No raw source rows from the official full release were read in this patch pass.
-Previously inventoried official source metadata remains the expected contract:
+Official source hashes and byte sizes matched the frozen source contract:
 
 | File | Bytes | SHA-256 |
 | --- | ---: | --- |
 | `anon_bo_lists.csv.gz` | 4,451,661,738 | `CEDA12755878304DAA4CA43B45C72EC98A7382A1EE646E66C33F6841E5D1A646` |
 | `anon_bo_threads.csv.gz` | 1,374,076,192 | `F6FAEB797A8ED2F0C84D0E3C6E9B82F0AD2BD971DF354D57C902B478E757DEE9` |
 
-## Fixture Audit
+## Artifacts
 
-The exact-schema fixture full run verifies the implementation path without
-claiming official evidence:
+- Manifest: `C:\OfferLabData\processed\nber_best_offer_full\manifest.json`
+- Manifest hash file: `C:\OfferLabData\processed\nber_best_offer_full\manifest.json.sha256`
+- Full replication check: `C:\OfferLabData\processed\nber_best_offer_full\replication_check.json`
+- Full replication summary: `C:\OfferLabData\processed\nber_best_offer_full\_replication\full_replication_summary.json`
+- Finalization report: `C:\OfferLabData\processed\nber_best_offer_full\finalize_evidence_report.json`
+- Failed audit artifact: `C:\OfferLabData\processed\nber_best_offer_full\independent_audit.json`
 
-- `--full` completed with `limit_threads = null`.
-- Negotiation-turn rows written: `4`.
-- Thread-linked listing rows written: `3`.
-- Unmatched listing IDs: `0`.
-- Full-run preflight passed.
-- Official-source contract did not match, as expected for fixtures.
-- `streaming_full_run_passed` was true.
-- `audited_full_release_evidence.passed` remained false.
-- An idempotent rerun returned the existing manifest.
-- A forged manifest with official-looking hashes, true booleans, missing source
-  files, and missing evidence artifacts was rejected.
+## Evidence Gate
 
-Validated by:
+Passed checks:
 
-```powershell
-python -m pytest tests\nber_real\test_real_nber_pipeline.py -q -p no:cacheprovider
-python -m pytest tests\test_nber_best_offer_pipeline.py -q -p no:cacheprovider
-```
+- Full unbounded command mode.
+- Disk preflight.
+- Official source contract.
+- Source files reverified from disk.
+- Full-run checkpoint.
+- Partition hashes and current partition integrity.
+- Streaming full-run gate.
 
-## Rows
+Blocking checks:
 
-Official full release:
+- `replication_contract_passed`
+- `replication_artifact_verified`
+- `independent_audit_passed`
+- `independent_audit_artifact_verified`
+- `declared_gate_passed`
 
-- Total source rows read: `0` in this patch pass.
-- Normalized rows written: `0` in this patch pass.
-- Quarantined rows: `0` in this patch pass.
-- Distinct threads: not evaluated on official full data.
-- Distinct listings: not evaluated on official full data.
-- Duplicate identifiers: not evaluated on official full data.
-- Unmatched listing IDs: not evaluated on official full data.
+The replication artifact evaluated all fatal targets, so this is not a missing
+implementation state. It is a failed exact replication state.
 
-Fixture full-path smoke:
+## Fatal Replication Failures
 
-- Normalized negotiation-turn rows: `4`.
-- Thread-linked listing rows: `3`.
-- Quarantine counts: `{}`.
+Seven fatal targets failed under the frozen exact contract:
 
-## Replication Status
+- `struct_main_sample_listings_after_restrictions`: observed `88,388,279`; expected `88,388,220`.
+- `struct_t2_offer_limit_exclusions`: observed buyer count `3,518`; expected `3,529`; seller count matched `0`.
+- `struct_t3_t4_sequence_integrity_exclusions`: observed missing-counter count `1,420` vs `1,453`; accepted-not-last count `1,089` vs `1,111`.
+- `pub_table1_listing_used_rate`: rate within tolerance, but nonmissing denominator observed `60,709,702`; expected `60,709,655`.
+- `pub_table1_seller_count_and_feedback_denominator`: observed seller count `1,197,420`; expected `1,197,419`; feedback denominator observed `1,145,427`; expected `1,145,426`.
+- `pub_table1_buyer_count`: observed `4,701,453`; expected `4,701,455`.
+- `pub_table1_thread_count`: observed `25,458,645`; expected `25,458,516`.
 
-The full published-stat replication contract has not passed because the
-official full release has not been normalized in this patch pass. The bounded
-100K run remains only structure and lineage evidence, not a full-release
-performance claim.
+Fourteen fatal targets passed, including raw listing count, L1, L2, T1,
+listing price mean, revised rate, sold rates, received-offer rate, sale/list
+ratios, mean offers, agreement rate, and first-offer/list ratio.
 
-## Leakage Risks
+## Interpretation
 
-Existing risks remain active until a real full run and independent audit are
-complete:
+The completed run proves the full-source streaming normalizer can process the
+official NBER release with verified source files, resume checkpoints, partition
+hashes, and lineage. It does not yet prove full-release benchmark readiness.
 
-- Outcome/future fields must stay out of predictor-facing snapshots.
-- Reference prices/counts remain excluded unless recomputed with as-of timing.
-- Thread/listing boundaries must stay split-safe.
-- Published moments require the authors' full sample restrictions before model
-  comparison.
-- Observational counteroffer comparisons must not be interpreted causally.
-
-## Gate
-
-Implementation gate: passed for the streaming/checkpoint `--full` code path on
-fixtures.
-
-Official evidence gate: not passed. The official full release still needs an
-actual external-data run, replication check, and independent audit before Wave 2
-benchmark integration can claim full-release evidence.
+The observed failures are small but exact-count material. They are concentrated
+around sample-restriction boundaries and participant counts, especially the
+interaction between released-code duplicate handling and Appendix/Table target
+definitions. The correct next step is to audit the target contract against the
+released Stata code and paper appendix before allowing Benchmark v2 to consume
+this full manifest.

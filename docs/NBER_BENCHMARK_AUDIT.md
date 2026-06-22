@@ -44,9 +44,9 @@ is installed, records raw hashes and mapping lineage, keeps thread rows grouped
 before partition output, extracts only thread-linked listings for the first
 benchmark, and supports resume after the thread pass. The `--full` mode now
 runs the same streaming/checkpoint path without a thread limit, using SQLite
-membership indexing rather than a Python in-memory listing-ID set. A fixture
-full-path smoke run verifies that implementation path, but the official full
-release has not been normalized yet.
+membership indexing rather than a Python in-memory listing-ID set. The official
+full release was normalized on 2026-06-22; see
+`docs/runs/NBER_FULL_NORMALIZATION_REPORT.md`.
 
 Full-release benchmark use remains gated. Task construction and benchmark scope
 require verified official source hashes and byte sizes, current partition-file
@@ -63,8 +63,10 @@ After a completed scoped benchmark run, this benchmark can support a statement l
 
 > Observable Best Offer variables predict negotiation outcomes better than simple baselines under chronological and seller-disjoint tests.
 
-The current fixture, bounded real-source smoke runs, and fixture full-path smoke
-run do not yet support a full-release performance claim.
+The current fixture, bounded real-source smoke runs, and completed official
+normalization do not yet support a full-release performance claim because the
+frozen published-stat replication contract has seven fatal exact-target
+failures and no independent pass audit.
 
 It cannot support:
 
