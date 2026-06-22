@@ -4,12 +4,13 @@ Wave: `FINANCE_WAVE_0`
 
 Completed OfferLab evidence base commit: `e486609b48bfb1aaeafe6be64a01127cd8d6fe22`
 
-Exact base commit for subsequent waves: `e486609b48bfb1aaeafe6be64a01127cd8d6fe22`
+Exact base commit for subsequent waves: `4190ff20aa6368423970072760bf7ccbadac9e6b`
 
-The independent `FINANCE_WAVE_0` audit must record its own `HEAD_COMMIT`.
-Later implementation may use that audit-passed head when it needs these handoff
-artifacts; the completed OfferLab evidence base above is the exact audited code
-state used to produce this handoff.
+The completed OfferLab evidence base above is the pre-wave audited code state.
+The exact subsequent-wave base is the `FINANCE_WAVE_0` implementation commit
+that contains these handoff artifacts. If a later remediation commit passes
+independent audit, use the latest audit-passed implementation head
+operationally.
 
 ## Objective
 
@@ -132,4 +133,3 @@ Evidence class: `private_seller_historical_evidence`.
 - The authorized eBay production feasibility probe has not run.
 - No Weather Edge, ETF risk, or financial-data semantics layer exists in this
   handoff wave.
-

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,3 +67,19 @@ def test_handoff_does_not_publish_local_or_private_paths() -> None:
     assert "\\Users\\" not in rendered
     assert "seller_pilots" not in rendered
 
+
+def test_subsequent_wave_base_commit_contains_handoff_artifacts() -> None:
+    payload = _payload()
+    base = payload["exact_base_commit_for_subsequent_waves"]
+
+    for path in (
+        "docs/finance/FINANCIAL_PIVOT_HANDOFF.md",
+        "reports/finance/financial_pivot_handoff.json",
+    ):
+        subprocess.run(
+            ["git", "cat-file", "-e", f"{base}:{path}"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
