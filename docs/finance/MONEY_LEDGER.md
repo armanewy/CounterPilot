@@ -67,7 +67,8 @@ Accounting is deterministic and conservative:
 - drawdown is calculated from an ordered value curve
 - resolved entries require a mechanically defined no-action outcome
 - realized net value must reconcile to realized gross value minus realized
-  costs, and realized costs may not be unknown
+  costs, realized costs may not be unknown, and resolved records must include
+  every material realized cost field with `0.0` when not applicable
 - value summaries preserve the no-action comparator and group by contract,
   strategy, and source
 - multiple decisions from one economic event are counted as one opportunity

@@ -278,6 +278,9 @@ def _validate_realized_resolution(
     costs = resolution.get("realized_costs")
     if not isinstance(costs, dict) or not costs:
         raise MoneyLedgerError("resolved entries require non-empty resolution.realized_costs")
+    missing_fields = [field for field in MATERIAL_ENTRY_COST_FIELDS if field not in costs]
+    if missing_fields:
+        raise MoneyLedgerError(f"resolved entries require all realized cost fields: {missing_fields}")
     missing = [field for field, value in costs.items() if value is None]
     if missing:
         raise MoneyLedgerError(f"realized costs may not be unknown: {sorted(missing)}")

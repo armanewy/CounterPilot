@@ -17,6 +17,17 @@ import _bootstrap  # noqa: E402,F401
 from behavior_lab.money.ledger import MoneyLedger, MoneyLedgerEntry, MoneyLedgerError
 
 
+REALIZED_ZERO_COSTS = {
+    "fees": 0.0,
+    "slippage": 0.0,
+    "shipping": 0.0,
+    "taxes_or_tax_assumption_reference": 0.0,
+    "holding_costs": 0.0,
+    "return_refund_allowance": 0.0,
+    "research_api_cost": 0.0,
+}
+
+
 def _entry(decision_id: str = "decision_1", *, designation: str = "paper") -> MoneyLedgerEntry:
     return MoneyLedgerEntry(
         decision_id=decision_id,
@@ -56,7 +67,7 @@ class MoneyLedgerTests(unittest.TestCase):
             first = ledger.append_entry(_entry())
             resolved = ledger.append_resolution(
                 "decision_1",
-                resolution={"outcome": "no_action", "realized_costs": {"fees": 0.0}},
+                resolution={"outcome": "no_action", "realized_costs": REALIZED_ZERO_COSTS},
                 realized_gross_value=0.0,
                 realized_net_value=0.0,
                 mechanically_defined_no_action_outcome={"value": 0.0},
@@ -122,7 +133,7 @@ class MoneyLedgerTests(unittest.TestCase):
             replace(
                 base,
                 evidence_state="resolved_paper",
-                resolution={"outcome": "sold", "realized_costs": {"fees": -2.0}},
+                resolution={"outcome": "sold", "realized_costs": {**REALIZED_ZERO_COSTS, "fees": -2.0}},
                 realized_gross_value=10.0,
                 realized_net_value=12.0,
                 mechanically_defined_no_action_outcome={"value": 0.0},
@@ -131,7 +142,7 @@ class MoneyLedgerTests(unittest.TestCase):
             replace(
                 base,
                 evidence_state="resolved_paper",
-                resolution={"outcome": "sold", "realized_costs": {"fees": None}},
+                resolution={"outcome": "sold", "realized_costs": {**REALIZED_ZERO_COSTS, "fees": None}},
                 realized_gross_value=10.0,
                 realized_net_value=10.0,
                 mechanically_defined_no_action_outcome={"value": 0.0},
@@ -140,11 +151,20 @@ class MoneyLedgerTests(unittest.TestCase):
             replace(
                 base,
                 evidence_state="resolved_paper",
-                resolution={"outcome": "sold", "realized_costs": {"fees": 2.0}},
+                resolution={"outcome": "sold", "realized_costs": {**REALIZED_ZERO_COSTS, "fees": 2.0}},
                 realized_gross_value=10.0,
                 realized_net_value=9.0,
                 mechanically_defined_no_action_outcome={"value": 0.0},
             )
+        resolved = replace(
+            base,
+            evidence_state="resolved_paper",
+            resolution={"outcome": "sold", "realized_costs": {**REALIZED_ZERO_COSTS, "fees": 2.0}},
+            realized_gross_value=10.0,
+            realized_net_value=8.0,
+            mechanically_defined_no_action_outcome={"value": 0.0},
+        )
+        self.assertEqual(resolved.realized_net_value, 8.0)
 
     def test_corrections_append_superseding_record_with_reason(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
