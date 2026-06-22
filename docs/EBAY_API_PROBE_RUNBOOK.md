@@ -8,16 +8,13 @@ Official behavior to test:
 - Bidder visibility differs by role.
 - A caller who is neither seller nor bidder sees offer prices and currencies only if the listing has ended; active unrelated listings return nothing.
 
-## Tokens
+## Token Policy
 
-Read tokens only from environment variables:
-
-```powershell
-$env:EBAY_SANDBOX_ACCESS_TOKEN = "<sandbox user token>"
-$env:EBAY_ACCESS_TOKEN = "<production user token>"
-```
-
-Do not print, commit, or store tokens.
+Tokens remain operator-owned and local. Do not share tokens with Codex, commit
+them, print them, or store them in run artifacts. Production probing is allowed
+only after a documented seller pilot and OAuth authorization plan. Until then,
+the probe may be reviewed and tested with fixtures or an operator-controlled
+sandbox token outside the repository.
 
 ## Sandbox Probe
 

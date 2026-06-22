@@ -40,6 +40,13 @@
     "fresh_hidden_lockbox_required": true,
     "exclude_all_v1_hidden_case_tokens": true,
     "v1_hidden_case_exclusion_source": "reports/offerlab_benchmark_v1_final_manifest.json",
+    "external_v1_hidden_case_token_artifact_required_if_manifest_tokens_unavailable": true,
+    "all_source_exclusion_proof_allowed": true,
+    "all_source_exclusion_proof_required_fields": [
+      "strategy_id",
+      "artifact_hash",
+      "proves_zero_overlap"
+    ],
     "block_hidden_creation_if_v1_tokens_unavailable": true,
     "exclude_v1_hidden_case_tokens_before_sampling": true
   },
@@ -69,13 +76,24 @@
   "calibration_acceptance": {
     "must_be_declared_before_hidden_access": true,
     "classification": {
+      "ece_definition": "top_label_expected_calibration_error_weighted_by_bin_count",
       "expected_calibration_error_max": 0.08,
       "minimum_reliability_bin_count": 10,
-      "classwise_calibration_required": true
+      "minimum_nonempty_reliability_bins": 5,
+      "classwise_calibration_required": true,
+      "classwise_ece_definition": "one_vs_rest_expected_calibration_error_weighted_by_class_bin_count",
+      "classwise_expected_calibration_error_max": 0.12,
+      "macro_classwise_expected_calibration_error_max": 0.10,
+      "minimum_rows_per_reported_class": 30
     },
     "regression": {
       "interval_coverage_required": true,
-      "quantile_calibration_required": true
+      "central_interval_nominal_coverage": 0.8,
+      "central_interval_allowed_absolute_error": 0.08,
+      "maximum_interval_width_to_median_target_iqr": 4.0,
+      "quantile_calibration_required": true,
+      "quantile_levels": [0.1, 0.5, 0.9],
+      "maximum_quantile_pinball_loss_ratio_to_median_baseline": 1.0
     }
   },
   "support_coverage": {
@@ -142,12 +160,66 @@
     "censoring_as_rejection_canary",
     "artifact_name_leakage_canary"
   ],
+  "negative_control_gates": {
+    "all_controls_must_pass_before_hidden_access": true,
+    "random_labels": {"pass_condition": "selected_model_relative_improvement_lte_0"},
+    "future_status_canary": {"pass_condition": "future_status_features_rejected_by_feature_contract"},
+    "accepted_price_canary": {"pass_condition": "accepted_or_final_price_features_rejected_by_feature_contract"},
+    "identifier_memorization_canary": {"pass_condition": "identifier_features_rejected_and_identifier_only_model_not_selected"},
+    "random_row_split_inflation": {"pass_condition": "reported_random_split_gain_cannot_override_group_safe_split_failures"},
+    "same_timestamp_ordering_perturbation": {"pass_condition": "ordering_perturbation_changes_no_selected_artifact"},
+    "censoring_as_rejection_canary": {"pass_condition": "censored_as_rejection_variant_not_used_for_selection"},
+    "artifact_name_leakage_canary": {"pass_condition": "artifact_or_path_features_rejected_by_feature_contract"}
+  },
+  "task_manifest_requirements": {
+    "per_target_counts_required": [
+      "eligible_rows",
+      "supervised_rows",
+      "unknown_outcome_rows",
+      "censored_outcome_rows",
+      "excluded_rows"
+    ],
+    "unknown_and_censored_rows_must_not_be_labeled_as_rejection": true
+  },
   "model_selection_rule": {
     "selection_split": "thread_safe_nested_development",
     "fit_on_training_only": true,
     "select_one_model_per_target_before_hidden_access": true,
     "hidden_queries_per_target": 1,
     "hidden_results_may_select_models": false,
+    "target_objectives": {
+      "seller_next_action": {
+        "selection_metric": "multiclass_log_loss",
+        "preregistered_baseline": "best_of_overall_rate_category_baseline_offer_ratio_heuristic",
+        "minimum_relative_improvement": 0.05,
+        "required_primary_split_survival": ["chronological_listing_purged", "seller_disjoint"],
+        "minimum_support_coverage": 0.8
+      },
+      "buyer_response_to_counter": {
+        "selection_metric": "multiclass_log_loss",
+        "preregistered_baseline": "best_of_overall_rate_category_baseline_offer_ratio_heuristic",
+        "minimum_relative_improvement": 0.05,
+        "required_primary_split_survival": ["chronological_listing_purged", "seller_disjoint"]
+      },
+      "agreement": {
+        "selection_metric": "binary_log_loss",
+        "preregistered_baseline": "best_of_overall_rate_category_baseline",
+        "minimum_relative_improvement": 0.05,
+        "required_primary_split_survival": ["chronological_listing_purged", "seller_disjoint"]
+      },
+      "final_price_ratio": {
+        "selection_metric": "rmse",
+        "preregistered_baseline": "median_regressor",
+        "maximum_error_ratio_to_baseline": 0.98,
+        "required_primary_split_survival": ["chronological_listing_purged", "seller_disjoint"]
+      },
+      "response_latency": {
+        "selection_metric": "rmse",
+        "preregistered_baseline": "median_regressor",
+        "maximum_error_ratio_to_baseline": 0.98,
+        "required_primary_split_survival": ["chronological_listing_purged", "seller_disjoint"]
+      }
+    },
     "tie_breakers": [
       "simpler_model",
       "better_calibration",

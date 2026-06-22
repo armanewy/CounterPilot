@@ -9,6 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
 import _bootstrap  # noqa: F401,E402
 
+from behavior_lab.offerlab_models.benchmark_v2_protocol import V2ProtocolError, validate_v2_hidden_exclusion
+from behavior_lab.cli import main as cli_main
+
 
 V1_FINAL = ROOT / "reports" / "offerlab_benchmark_v1_final_manifest.json"
 V2_MANIFEST = ROOT / "datasets" / "manifests" / "offerlab_benchmark_v2.yaml"
@@ -49,18 +52,16 @@ class OfferLabBenchmarkV2ProtocolTests(unittest.TestCase):
         self.assertTrue(manifest["required_normalization"]["streaming_required"])
         self.assertFalse(manifest["required_normalization"]["model_row_cap_allowed"])
 
-        split_names = {split["name"] for split in manifest["splits"]}
-        self.assertSetEqual(
-            split_names,
-            {
-                "chronological_listing_purged",
-                "seller_disjoint",
-                "buyer_disjoint",
-                "category_disjoint_diagnostic",
-                "thread_safe_nested_development",
-                "fresh_hidden_lockbox",
-            },
-        )
+        expected_splits = {
+            "chronological_listing_purged": {"group_key": "listing_id", "primary": True, "required": True},
+            "seller_disjoint": {"group_key": "seller_id", "primary": True, "required": True},
+            "buyer_disjoint": {"group_key": "buyer_id", "primary": False, "required": "where_identifiers_permit"},
+            "category_disjoint_diagnostic": {"group_key": "category", "primary": False, "required": True},
+            "thread_safe_nested_development": {"group_key": "thread_id", "primary": True, "required": True},
+            "fresh_hidden_lockbox": {"query_budget_per_target": 1, "primary": True, "required": True},
+        }
+        split_specs = {split["name"]: {key: value for key, value in split.items() if key != "name"} for split in manifest["splits"]}
+        self.assertEqual(split_specs, expected_splits)
 
     def test_v2_hidden_policy_blocks_reuse_or_overlap_with_v1(self) -> None:
         manifest = json.loads(V2_MANIFEST.read_text(encoding="utf-8"))
@@ -70,13 +71,54 @@ class OfferLabBenchmarkV2ProtocolTests(unittest.TestCase):
         self.assertTrue(hidden["fresh_hidden_lockbox_required"])
         self.assertTrue(hidden["exclude_all_v1_hidden_case_tokens"])
         self.assertTrue(hidden["block_hidden_creation_if_v1_tokens_unavailable"])
+        self.assertTrue(hidden["external_v1_hidden_case_token_artifact_required_if_manifest_tokens_unavailable"])
         self.assertFalse(hidden["protocol_changes_after_hidden_access_allowed"])
+
+    def test_v2_hidden_validator_blocks_when_v1_tokens_are_unavailable(self) -> None:
+        v2 = json.loads(V2_MANIFEST.read_text(encoding="utf-8"))
+        v1 = json.loads(V1_FINAL.read_text(encoding="utf-8"))
+
+        with self.assertRaisesRegex(V2ProtocolError, "unavailable"):
+            validate_v2_hidden_exclusion(
+                v2_manifest=v2,
+                v1_final_manifest=v1,
+                candidate_hidden_case_tokens=["candidate-1"],
+            )
+
+    def test_v2_hidden_validator_rejects_overlap_and_accepts_external_exclusion(self) -> None:
+        v2 = json.loads(V2_MANIFEST.read_text(encoding="utf-8"))
+        v1 = json.loads(V1_FINAL.read_text(encoding="utf-8"))
+
+        with self.assertRaisesRegex(V2ProtocolError, "overlaps"):
+            validate_v2_hidden_exclusion(
+                v2_manifest=v2,
+                v1_final_manifest=v1,
+                candidate_hidden_case_tokens=["candidate-1", "spent-v1"],
+                external_v1_hidden_case_tokens=["spent-v1"],
+            )
+
+        report = validate_v2_hidden_exclusion(
+            v2_manifest=v2,
+            v1_final_manifest=v1,
+            candidate_hidden_case_tokens=["candidate-1"],
+            external_v1_hidden_case_tokens=["spent-v1"],
+        )
+        self.assertEqual(report.status, "ready")
+        self.assertEqual(report.v1_exclusion_cases, 1)
 
     def test_v2_requires_calibration_coverage_controls_and_censored_label_handling(self) -> None:
         manifest = json.loads(V2_MANIFEST.read_text(encoding="utf-8"))
 
         self.assertTrue(manifest["calibration_acceptance"]["must_be_declared_before_hidden_access"])
+        self.assertEqual(
+            manifest["calibration_acceptance"]["classification"]["ece_definition"],
+            "top_label_expected_calibration_error_weighted_by_bin_count",
+        )
         self.assertLessEqual(manifest["calibration_acceptance"]["classification"]["expected_calibration_error_max"], 0.08)
+        self.assertLessEqual(
+            manifest["calibration_acceptance"]["classification"]["classwise_expected_calibration_error_max"],
+            0.12,
+        )
         self.assertGreaterEqual(manifest["support_coverage"]["primary_candidate_minimum"], 0.8)
         self.assertTrue(manifest["missing_and_censored_label_policy"]["preserve_unknown_outcomes"])
         self.assertTrue(manifest["missing_and_censored_label_policy"]["preserve_censored_outcomes"])
@@ -94,6 +136,27 @@ class OfferLabBenchmarkV2ProtocolTests(unittest.TestCase):
             "artifact_name_leakage_canary",
         }:
             self.assertIn(name, controls)
+            self.assertIn(name, manifest["negative_control_gates"])
+        self.assertTrue(manifest["negative_control_gates"]["all_controls_must_pass_before_hidden_access"])
+
+        task_counts = set(manifest["task_manifest_requirements"]["per_target_counts_required"])
+        self.assertTrue({"eligible_rows", "supervised_rows", "unknown_outcome_rows", "censored_outcome_rows"}.issubset(task_counts))
+        self.assertTrue(manifest["task_manifest_requirements"]["unknown_and_censored_rows_must_not_be_labeled_as_rejection"])
+
+    def test_v2_preregisters_model_selection_objectives_and_primary_split_survival(self) -> None:
+        manifest = json.loads(V2_MANIFEST.read_text(encoding="utf-8"))
+        objectives = manifest["model_selection_rule"]["target_objectives"]
+
+        self.assertEqual(set(objectives), set(manifest["targets"]))
+        self.assertEqual(objectives["seller_next_action"]["selection_metric"], "multiclass_log_loss")
+        self.assertEqual(objectives["seller_next_action"]["minimum_relative_improvement"], 0.05)
+        self.assertEqual(objectives["seller_next_action"]["minimum_support_coverage"], 0.8)
+        for objective in objectives.values():
+            self.assertIn("preregistered_baseline", objective)
+            self.assertEqual(
+                objective["required_primary_split_survival"],
+                ["chronological_listing_purged", "seller_disjoint"],
+            )
 
     def test_v2_doc_refuses_production_and_v1_repeat_claims(self) -> None:
         text = V2_DOC.read_text(encoding="utf-8")
@@ -102,6 +165,20 @@ class OfferLabBenchmarkV2ProtocolTests(unittest.TestCase):
         self.assertIn("never_reusable_for_model_selection", text)
         self.assertIn("It may never return production-ready based on NBER data", text)
         self.assertIn("one hidden submission per target", text)
+        self.assertIn("passed its preregistered falsification", text)
+
+    def test_cli_benchmark_v1_is_retired_after_hidden_spent_manifest(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "Benchmark v1 is frozen and hidden-spent"):
+            cli_main(
+                [
+                    "offerlab-models",
+                    "benchmark-v1",
+                    "--normalized-dir",
+                    "does-not-matter",
+                    "--lockbox-store",
+                    "outside-repo.jsonl",
+                ]
+            )
 
 
 if __name__ == "__main__":

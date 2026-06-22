@@ -268,6 +268,14 @@ def command_offerlab_models_sample(args: argparse.Namespace) -> None:
 
 
 def command_offerlab_models_benchmark_v1(args: argparse.Namespace) -> None:
+    final_manifest = Path("reports/offerlab_benchmark_v1_final_manifest.json")
+    if final_manifest.exists() and not getattr(args, "allow_fixture_v1_rerun", False):
+        manifest = json.loads(final_manifest.read_text(encoding="utf-8"))
+        if manifest.get("hidden_status") == "hidden_spent":
+            raise SystemExit(
+                "OfferLab Benchmark v1 is frozen and hidden-spent. "
+                "Do not rerun it; create Benchmark v2 with fresh hidden cases instead."
+            )
     _print_json(
         run_offerlab_benchmark_v1(
             BenchmarkPaths(
@@ -672,7 +680,7 @@ def build_parser() -> argparse.ArgumentParser:
     offer_models_subparsers = offer_models.add_subparsers(dest="offerlab_models_command", required=True)
     offer_models_sample = offer_models_subparsers.add_parser("sample", help="Run the deterministic NBER-format sample model suite")
     offer_models_sample.set_defaults(func=command_offerlab_models_sample)
-    offer_models_benchmark = offer_models_subparsers.add_parser("benchmark-v1", help="Run scoped OfferLab Benchmark v1 integration")
+    offer_models_benchmark = offer_models_subparsers.add_parser("benchmark-v1", help="Retired: Benchmark v1 is frozen and hidden-spent")
     offer_models_benchmark.add_argument("--normalized-dir", required=True)
     offer_models_benchmark.add_argument("--output", default="reports/offerlab_benchmark_v1.json")
     offer_models_benchmark.add_argument("--doc", default="docs/runs/OFFERLAB_BENCHMARK_V1_RESULTS.md")
@@ -681,6 +689,7 @@ def build_parser() -> argparse.ArgumentParser:
     offer_models_benchmark.add_argument("--lockbox-store", required=True, help="External durable JSONL event store for one-shot hidden submissions")
     offer_models_benchmark.add_argument("--row-cap", type=_positive, default=500)
     offer_models_benchmark.add_argument("--seed", type=int, default=20240621)
+    offer_models_benchmark.add_argument("--allow-fixture-v1-rerun", action="store_true", help=argparse.SUPPRESS)
     offer_models_benchmark.set_defaults(func=command_offerlab_models_benchmark_v1)
 
     demo = subparsers.add_parser("demo", help="Run all waves end-to-end with campaign-safe lockboxes")

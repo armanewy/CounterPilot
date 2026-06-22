@@ -1,6 +1,6 @@
 # OfferLab Evidence Decision
 
-Decision: **2. Improve measurement and repeat benchmark.**
+Decision: **STOP Benchmark v1; define Benchmark v2 and pursue a read-only seller pilot.**
 
 ## Basis
 
@@ -19,7 +19,9 @@ Decision: **2. Improve measurement and repeat benchmark.**
 - Capital at risk: `$0`.
 - Expected offers: `0`.
 - Stop-loss: `$0`.
-- Maximum duration: until full NBER normalization, complete Benchmark v1 splits/controls, validated calibration/support coverage, and authorized read-only eBay feasibility probes are complete.
+- Maximum duration: until Benchmark v2 full NBER normalization, complete v2
+  splits/controls, validated calibration/support coverage, and one read-only
+  seller pilot path are complete.
 
 ## Explicit Non-Decisions
 
@@ -32,7 +34,8 @@ Decision: **2. Improve measurement and repeat benchmark.**
 ## Next Measurement Work
 
 1. Complete full NBER normalization or document an alternate authorized seller-data source.
-2. Implement every frozen Benchmark v1 split and negative control.
+2. Implement every Benchmark v2 split and negative control.
 3. Validate calibration quality and support coverage with explicit thresholds.
 4. Run the authorized read-only eBay sandbox and production probes with manual listing IDs.
-5. Repeat Benchmark v1 without the 500-row model cap.
+5. Run Benchmark v2 with a fresh hidden lockbox that excludes every spent v1
+   hidden case. Do not describe any future result as a repeat of Benchmark v1.

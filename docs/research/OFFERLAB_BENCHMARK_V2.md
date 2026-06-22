@@ -78,6 +78,8 @@ Hidden access is allowed only after the development-stage manifest proves:
 - Full normalization is complete.
 - All split manifests are immutable and hashed.
 - Every required negative control has executed.
+- Every required negative control has passed its preregistered falsification
+  gate.
 - Calibration thresholds are declared and validated on development.
 - Support coverage is reported.
 - One selected artifact per target has been frozen.
@@ -105,13 +107,20 @@ must not influence model choice.
 
 ## Calibration And Coverage
 
-Classification calibration must report:
+Classification calibration must report and pass:
 
 - Multiclass log loss.
 - Brier score.
-- Reliability bins.
-- Expected calibration error.
-- Classwise calibration.
+- Top-label expected calibration error weighted by reliability-bin count, with
+  ECE no greater than 0.08.
+- At least 10 reliability bins and at least 5 nonempty bins.
+- One-vs-rest classwise expected calibration error for each class with enough
+  support, with classwise ECE no greater than 0.12 and macro classwise ECE no
+  greater than 0.10.
+
+Regression calibration must report and pass 0.1, 0.5, and 0.9 quantile
+calibration, 80% central-interval coverage within 0.08 absolute error, and an
+interval-width bound against the target interquartile range.
 
 The primary candidate for `seller_next_action` must cover at least 80% of
 eligible hidden rows unless a selective-prediction objective was preregistered
@@ -130,11 +139,17 @@ V2 includes every v1 negative control:
 - Censoring converted to rejection.
 - Hidden metadata leakage through filenames or artifact names.
 
+Each control is a falsification gate. Hidden access requires `passed: true` for
+every control, not merely evidence that the control ran.
+
 ## Missing And Censored Labels
 
 Unknown labels and censored outcomes must be represented explicitly in task
 manifests. They may not be silently converted into rejections, failures, or
 zero-margin outcomes.
+
+Each target task manifest must report eligible, supervised, unknown, censored,
+and excluded row counts before model selection.
 
 ## Possible Outcomes
 
@@ -145,4 +160,3 @@ The v2 gate may return:
 - `READY_FOR_SELLER_SHADOW_VALIDATION`
 
 It may never return production-ready based on NBER data.
-
