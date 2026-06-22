@@ -47,6 +47,13 @@ from behavior_lab.datasets.nber_best_offer.replication import replication_check,
 from behavior_lab.datasets.nber_best_offer.source_inventory import inventory_official_sources, public_summary, run_source_inventory
 from behavior_lab.datasets.nber_best_offer.source_schema import inspect_schema
 from behavior_lab.datasets.open_bandit.ope import evaluate_policy
+from behavior_lab.marginpilot import (
+    DEFAULT_DATA_DIR as MARGINPILOT_DEFAULT_DATA_DIR,
+    ingest_marginpilot_events,
+    marginpilot_audit,
+    marginpilot_inbox,
+    write_marginpilot_templates,
+)
 from behavior_lab.offerlab import (
     ingest_offerlab_snapshots,
     profit_audit,
@@ -276,6 +283,22 @@ def command_offerlab_recommend(args: argparse.Namespace) -> None:
     if args.config:
         config = json.loads(Path(args.config).read_text(encoding="utf-8"))
     _print_json(recommend_offer_action(snapshots[0], data_dir=args.data_dir, config=config))
+
+
+def command_marginpilot_template(args: argparse.Namespace) -> None:
+    _print_json(write_marginpilot_templates(args.output_dir))
+
+
+def command_marginpilot_ingest(args: argparse.Namespace) -> None:
+    _print_json(asdict(ingest_marginpilot_events(args.input, data_dir=args.data_dir)))
+
+
+def command_marginpilot_inbox(args: argparse.Namespace) -> None:
+    _print_json(marginpilot_inbox(args.data_dir, merchant_id=args.merchant_id))
+
+
+def command_marginpilot_audit(args: argparse.Namespace) -> None:
+    _print_json(marginpilot_audit(args.data_dir, merchant_id=args.merchant_id))
 
 
 def command_offerlab_pilot_template(args: argparse.Namespace) -> None:
@@ -805,6 +828,25 @@ def build_parser() -> argparse.ArgumentParser:
     offer_recommend.add_argument("--data-dir", default=None)
     offer_recommend.add_argument("--config", help="Optional JSON economics config with fee, holding cost, and return risk")
     offer_recommend.set_defaults(func=command_offerlab_recommend)
+
+    margin_template = subparsers.add_parser("marginpilot-template", help="Write MarginPilot transaction-surface event templates")
+    margin_template.add_argument("--output-dir", default="campaigns/marginpilot/examples")
+    margin_template.set_defaults(func=command_marginpilot_template)
+
+    margin_ingest = subparsers.add_parser("marginpilot-ingest", help="Ingest local MarginPilot offer, consent, decision, and outcome events")
+    margin_ingest.add_argument("--input", required=True)
+    margin_ingest.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_ingest.set_defaults(func=command_marginpilot_ingest)
+
+    margin_inbox = subparsers.add_parser("marginpilot-inbox", help="Show open MarginPilot offers with accounting-only action economics")
+    margin_inbox.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_inbox.add_argument("--merchant-id")
+    margin_inbox.set_defaults(func=command_marginpilot_inbox)
+
+    margin_audit = subparsers.add_parser("marginpilot-audit", help="Audit MarginPilot mature margin, consent, and readiness gates")
+    margin_audit.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_audit.add_argument("--merchant-id")
+    margin_audit.set_defaults(func=command_marginpilot_audit)
 
     offer_pilot = subparsers.add_parser("offerlab-pilot", help="Local-only seller pilot import and audit kit")
     offer_pilot_subparsers = offer_pilot.add_subparsers(dest="offerlab_pilot_command", required=True)
