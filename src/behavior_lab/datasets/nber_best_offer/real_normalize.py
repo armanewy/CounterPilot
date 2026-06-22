@@ -337,11 +337,11 @@ def normalize_real_dataset(
         },
         "runtime_seconds": round(time.perf_counter() - start, 3),
     }
-    manifest_hash = _canonical_manifest_hash(manifest)
-    manifest["lineage"]["normalization_manifest_hash"] = manifest_hash
-    manifest["lineage"]["normalization_manifest_payload_hash"] = manifest_hash
+    payload_hash = _canonical_manifest_hash(manifest)
+    manifest["lineage"]["normalization_manifest_hash"] = payload_hash
+    manifest["lineage"]["normalization_manifest_payload_hash"] = payload_hash
     _write_atomic_json(manifest_path, manifest)
-    replication_artifact = _run_replication_artifact(output, manifest_hash=manifest_hash)
+    replication_artifact = _run_replication_artifact(output, manifest_hash=payload_hash)
     manifest["replication_checks"] = replication_artifact
     manifest["audited_full_release_evidence"]["replication_contract_artifact"] = {
         "path": replication_artifact["path"],
@@ -349,7 +349,7 @@ def normalize_real_dataset(
     }
     manifest_hash = _canonical_manifest_hash(manifest)
     manifest["lineage"]["normalization_manifest_hash"] = manifest_hash
-    manifest["lineage"]["normalization_manifest_payload_hash"] = manifest_hash
+    manifest["lineage"]["normalization_manifest_payload_hash"] = payload_hash
     _write_atomic_json(manifest_path, manifest)
     manifest_sha_path.write_text(f"{sha256_file(manifest_path)}  {manifest_path.name}\n", encoding="utf-8")
     return manifest
@@ -1440,8 +1440,11 @@ def _json_artifact_verification(
 
 
 def _artifact_binds_to_manifest(manifest: dict[str, Any], payload: dict[str, Any]) -> bool:
-    manifest_hash = manifest.get("lineage", {}).get("normalization_manifest_hash")
-    if manifest_hash and payload.get("normalization_manifest_hash") == manifest_hash:
+    lineage = manifest.get("lineage", {})
+    if not isinstance(lineage, dict):
+        lineage = {}
+    binding_hash = lineage.get("normalization_manifest_payload_hash") or lineage.get("normalization_manifest_hash")
+    if binding_hash and payload.get("normalization_manifest_hash") == binding_hash:
         return True
     return False
 

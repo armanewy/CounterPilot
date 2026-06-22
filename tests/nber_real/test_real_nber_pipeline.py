@@ -338,6 +338,17 @@ class RealNberPipelineTests(unittest.TestCase):
             )
             self.assertTrue(scoped["passed"], scoped["failures"])
 
+    def test_full_release_artifacts_bind_to_payload_hash_when_manifest_has_evidence_refs(self) -> None:
+        manifest = {
+            "lineage": {
+                "normalization_manifest_hash": "outer-manifest-hash",
+                "normalization_manifest_payload_hash": "payload-manifest-hash",
+                "raw_source_hashes": {"anon_bo_lists": "lists", "anon_bo_threads": "threads"},
+            }
+        }
+        self.assertTrue(_artifact_binds_to_manifest(manifest, {"normalization_manifest_hash": "payload-manifest-hash"}))
+        self.assertFalse(_artifact_binds_to_manifest(manifest, {"normalization_manifest_hash": "outer-manifest-hash"}))
+
     def test_thread_checkpoint_mismatch_rebuilds_thread_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             raw = Path(tmp) / "raw"
