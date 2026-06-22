@@ -70,7 +70,12 @@ def test_handoff_does_not_publish_local_or_private_paths() -> None:
 
 def test_subsequent_wave_base_commit_contains_handoff_artifacts() -> None:
     payload = _payload()
-    base = payload["exact_base_commit_for_subsequent_waves"]
+    base_resolution = payload["exact_base_commit_for_subsequent_waves"]
+
+    assert base_resolution["status"] == "resolved_by_independent_pass_audit"
+    assert base_resolution["audit_wave_id"] == "FINANCE_WAVE_0"
+    assert "HEAD_COMMIT" in base_resolution["resolution_rule"]
+    base = base_resolution["minimum_handoff_artifact_commit"]
 
     for path in (
         "docs/finance/FINANCIAL_PIVOT_HANDOFF.md",

@@ -4,13 +4,20 @@ Wave: `FINANCE_WAVE_0`
 
 Completed OfferLab evidence base commit: `e486609b48bfb1aaeafe6be64a01127cd8d6fe22`
 
-Exact base commit for subsequent waves: `4190ff20aa6368423970072760bf7ccbadac9e6b`
+Exact base commit for subsequent waves: resolve from the `HEAD_COMMIT` recorded
+in `docs/audits/FINANCE_WAVE_0_AUDIT.json` from the first independent
+`FINANCE_WAVE_0` audit whose verdict is `PASS`.
+
+Minimum handoff artifact commit:
+`4190ff20aa6368423970072760bf7ccbadac9e6b`
+
+Latest remediated implementation commit before audit:
+`1465b66ec769f563eb0f017574dcb879ae217281`
 
 The completed OfferLab evidence base above is the pre-wave audited code state.
-The exact subsequent-wave base is the `FINANCE_WAVE_0` implementation commit
-that contains these handoff artifacts. If a later remediation commit passes
-independent audit, use the latest audit-passed implementation head
-operationally.
+Git commits cannot contain their own final hash, so the audit-passed base for
+subsequent waves is resolved from the independent PASS audit record rather than
+embedded self-referentially in this file.
 
 ## Objective
 

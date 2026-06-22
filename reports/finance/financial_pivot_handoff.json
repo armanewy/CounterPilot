@@ -2,8 +2,14 @@
   "schema_version": "financial_pivot_handoff.v1",
   "wave_id": "FINANCE_WAVE_0",
   "completed_offerlab_evidence_base_commit": "e486609b48bfb1aaeafe6be64a01127cd8d6fe22",
-  "exact_base_commit_for_subsequent_waves": "4190ff20aa6368423970072760bf7ccbadac9e6b",
-  "base_commit_note": "The completed_offerlab_evidence_base_commit is the pre-wave audited OfferLab evidence state. The exact_base_commit_for_subsequent_waves is the FINANCE_WAVE_0 implementation commit that contains these handoff artifacts; if a later remediation commit passes independent audit, use the latest audit-passed implementation head operationally.",
+  "exact_base_commit_for_subsequent_waves": {
+    "status": "resolved_by_independent_pass_audit",
+    "resolution_rule": "Use the HEAD_COMMIT recorded in docs/audits/FINANCE_WAVE_0_AUDIT.json from the first independent FINANCE_WAVE_0 audit whose verdict is PASS.",
+    "audit_wave_id": "FINANCE_WAVE_0",
+    "minimum_handoff_artifact_commit": "4190ff20aa6368423970072760bf7ccbadac9e6b",
+    "latest_remediated_implementation_commit_before_audit": "1465b66ec769f563eb0f017574dcb879ae217281"
+  },
+  "base_commit_note": "The completed_offerlab_evidence_base_commit is the pre-wave audited OfferLab evidence state. Git commits cannot contain their own final hash, so the exact audit-passed base for subsequent waves is resolved from the independent PASS audit record rather than embedded self-referentially in this file.",
   "product_objective": "Increase cumulative conservative verified value while minimizing capital, research cost, maintenance, and human attention.",
   "real_action_policy": {
     "manual_only": true,
