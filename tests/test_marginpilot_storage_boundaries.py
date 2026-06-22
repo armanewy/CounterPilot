@@ -43,6 +43,7 @@ def _grant(
     store_id: str = STORE,
     purposes: tuple[str, ...] = (MERCHANT_SPECIFIC_MODEL_TRAINING,),
     prohibited: tuple[str, ...] = (CROSS_MERCHANT_TRAINING,),
+    granted_at: str = GRANTED_AT,
 ) -> None:
     consent.append(
         ConsentRecord(
@@ -52,7 +53,7 @@ def _grant(
             policy_hash="policy_hash_v1",
             granted_purposes=purposes,
             prohibited_purposes=prohibited,
-            granted_at=GRANTED_AT,
+            granted_at=granted_at,
             provenance={"source": "unit_test"},
         )
     )
@@ -111,19 +112,19 @@ def _append_research_event(
         event_id=event_id,
         occurred_at=TRAINING_AS_OF,
         offer_context={
-            "asking_price": 150.0,
-            "buyer_offer_amount": 120.0,
+            "asking_price_minor": 15000,
+            "buyer_offer_amount_minor": 12000,
             "category": "refurbished technology",
             "condition": "refurbished",
             "surface": "cart_offer",
         },
-        decisions={"amount": 130.0, "selected_action": "counter_at_amount"},
+        decisions={"amount_minor": 13000, "selected_action": "counter_at_amount"},
         outcomes={"buyer_paid": True, "return_window_matured": True, "returned": False},
         financial_components={
-            "cost_basis": 50.0,
-            "mature_contribution_margin": 70.8,
-            "payment_fee": 4.2,
-            "shipping_cost": 5.0,
+            "cost_basis_minor": 5000,
+            "mature_contribution_margin_minor": 7080,
+            "payment_fee_minor": 420,
+            "shipping_cost_minor": 500,
         },
         consent_policy_version=evidence.get("consent_policy_version"),
         consent_policy_hash=evidence.get("policy_hash"),
@@ -250,6 +251,148 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
             self.assertEqual(research.events()[0], event_hash_before)
             self.assertEqual(len(consent.records()), 2)
 
+    def test_backdated_grant_after_revocation_does_not_reactivate_or_cite_future_consent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            consent = ConsentLedger(Path(tmp) / "consent.jsonl")
+            consent.append(
+                ConsentRecord(
+                    merchant_id=MERCHANT,
+                    store_id=STORE,
+                    consent_policy_version="marginpilot-consent-v1",
+                    policy_hash="policy_v1",
+                    granted_purposes=(MERCHANT_SPECIFIC_MODEL_TRAINING,),
+                    prohibited_purposes=(CROSS_MERCHANT_TRAINING,),
+                    granted_at="2026-06-22T10:00:00+00:00",
+                    provenance={"source": "unit_test"},
+                )
+            )
+            consent.revoke(
+                merchant_id=MERCHANT,
+                store_id=STORE,
+                purpose=MERCHANT_SPECIFIC_MODEL_TRAINING,
+                revoked_at="2026-06-22T10:10:00+00:00",
+                provenance={"source": "unit_test"},
+            )
+            consent.append(
+                ConsentRecord(
+                    merchant_id=MERCHANT,
+                    store_id=STORE,
+                    consent_policy_version="marginpilot-consent-v1",
+                    policy_hash="backdated_policy",
+                    granted_purposes=(MERCHANT_SPECIFIC_MODEL_TRAINING,),
+                    prohibited_purposes=(CROSS_MERCHANT_TRAINING,),
+                    granted_at="2026-06-22T10:05:00+00:00",
+                    provenance={"source": "late_append"},
+                )
+            )
+            consent.append(
+                ConsentRecord(
+                    merchant_id=MERCHANT,
+                    store_id=STORE,
+                    consent_policy_version="marginpilot-consent-v2",
+                    policy_hash="future_policy",
+                    granted_purposes=(MERCHANT_SPECIFIC_MODEL_TRAINING,),
+                    prohibited_purposes=(CROSS_MERCHANT_TRAINING,),
+                    granted_at="2026-06-22T10:30:00+00:00",
+                    provenance={"source": "future_append"},
+                )
+            )
+
+            self.assertFalse(
+                consent.is_active(
+                    merchant_id=MERCHANT,
+                    store_id=STORE,
+                    purpose=MERCHANT_SPECIFIC_MODEL_TRAINING,
+                    as_of="2026-06-22T10:11:00+00:00",
+                )
+            )
+            evidence = consent.latest_evidence(
+                merchant_id=MERCHANT,
+                store_id=STORE,
+                purpose=MERCHANT_SPECIFIC_MODEL_TRAINING,
+                require_active=False,
+                as_of="2026-06-22T10:11:00+00:00",
+            )
+            self.assertEqual(evidence["policy_hash"], "policy_v1")
+            self.assertNotEqual(evidence["policy_hash"], "future_policy")
+
+    def test_revocation_uses_effective_time_and_wins_same_timestamp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            consent = ConsentLedger(Path(tmp) / "consent.jsonl")
+            consent.append(
+                ConsentRecord(
+                    merchant_id=MERCHANT,
+                    store_id=STORE,
+                    consent_policy_version="marginpilot-consent-v2",
+                    policy_hash="future_policy",
+                    granted_purposes=(MERCHANT_SPECIFIC_MODEL_TRAINING,),
+                    prohibited_purposes=(CROSS_MERCHANT_TRAINING,),
+                    granted_at="2026-06-22T10:30:00+00:00",
+                    provenance={"source": "future_append"},
+                )
+            )
+            consent.append(
+                ConsentRecord(
+                    merchant_id=MERCHANT,
+                    store_id=STORE,
+                    consent_policy_version="marginpilot-consent-v1",
+                    policy_hash="current_policy",
+                    granted_purposes=(MERCHANT_SPECIFIC_MODEL_TRAINING,),
+                    prohibited_purposes=(CROSS_MERCHANT_TRAINING,),
+                    granted_at="2026-06-22T10:00:00+00:00",
+                    provenance={"source": "unit_test"},
+                )
+            )
+            revoked = consent.revoke(
+                merchant_id=MERCHANT,
+                store_id=STORE,
+                purpose=MERCHANT_SPECIFIC_MODEL_TRAINING,
+                revoked_at="2026-06-22T10:05:00+00:00",
+                provenance={"source": "unit_test"},
+            )
+            self.assertEqual(revoked["payload"]["policy_hash"], "current_policy")
+
+            same_time = ConsentLedger(Path(tmp) / "same_time.jsonl")
+            same_time.append(
+                ConsentRecord(
+                    merchant_id=MERCHANT,
+                    store_id=STORE,
+                    consent_policy_version="marginpilot-consent-v1",
+                    policy_hash="same_time_policy",
+                    granted_purposes=(MERCHANT_SPECIFIC_MODEL_TRAINING,),
+                    prohibited_purposes=(),
+                    granted_at="2026-06-22T10:00:00+00:00",
+                    provenance={"source": "unit_test"},
+                )
+            )
+            same_time.revoke(
+                merchant_id=MERCHANT,
+                store_id=STORE,
+                purpose=MERCHANT_SPECIFIC_MODEL_TRAINING,
+                revoked_at="2026-06-22T10:00:00+00:00",
+                provenance={"source": "unit_test"},
+            )
+            same_time.append(
+                ConsentRecord(
+                    merchant_id=MERCHANT,
+                    store_id=STORE,
+                    consent_policy_version="marginpilot-consent-v1",
+                    policy_hash="late_same_time_grant",
+                    granted_purposes=(MERCHANT_SPECIFIC_MODEL_TRAINING,),
+                    prohibited_purposes=(),
+                    granted_at="2026-06-22T10:00:00+00:00",
+                    provenance={"source": "late_same_time_append"},
+                )
+            )
+            self.assertFalse(
+                same_time.is_active(
+                    merchant_id=MERCHANT,
+                    store_id=STORE,
+                    purpose=MERCHANT_SPECIFIC_MODEL_TRAINING,
+                    as_of="2026-06-22T10:00:00+00:00",
+                )
+            )
+
     def test_cross_merchant_training_defaults_to_prohibited_until_explicit_cross_consent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             consent = ConsentLedger(Path(tmp) / "consent.jsonl")
@@ -285,6 +428,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
                     store_id=store_id,
                     purposes=(CROSS_MERCHANT_TRAINING,),
                     prohibited=(),
+                    granted_at="2026-06-22T10:01:00+00:00",
                 )
             dataset = research.training_dataset(
                 purpose=CROSS_MERCHANT_TRAINING,
@@ -298,6 +442,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
         pii_payloads = [
             {"customer": {"id": "customer_123"}},
             {"offer_context": {"contact_email": "opaque-ref"}},
+            {"offer_context": {"message": "buyer wants this quickly"}},
             {"metadata": {"nested": [{"message": "email buyer@example.com before delivery"}]}},
             {"checkout_reference": "https://checkout.example.test/checkouts/abc"},
             {"metadata": {"exception": ValueError("failed for buyer@example.com")}},
@@ -309,6 +454,61 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
                     scanner.scan(payload, label="test payload")
                 self.assertNotIn("buyer@example.com", str(raised.exception))
                 self.assertNotIn("gid://shopify", str(raised.exception))
+
+    def test_research_events_reject_float_money_and_non_minor_money_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            consent = ConsentLedger(Path(tmp) / "consent.jsonl")
+            _grant(consent)
+            mapping = EphemeralMappingLayer(secret=b"marginpilot-test-mapping-secret")
+            operational = _operational_record()
+            with self.assertRaises(ValueError):
+                ResearchEventRecord.from_operational(
+                    operational,
+                    mapping,
+                    event_id="bad_float_money",
+                    occurred_at=TRAINING_AS_OF,
+                    offer_context={"asking_price": 150.0, "category": "refurbished technology"},
+                    decisions={"selected_action": "accept", "amount_minor": 15000},
+                    outcomes={"buyer_paid": True},
+                    financial_components={"mature_contribution_margin_minor": 9000},
+                )
+            with self.assertRaises(ValueError):
+                ResearchEventRecord.from_operational(
+                    operational,
+                    mapping,
+                    event_id="bad_money_key",
+                    occurred_at=TRAINING_AS_OF,
+                    offer_context={"asking_price": 15000, "category": "refurbished technology"},
+                    decisions={"selected_action": "accept", "amount_minor": 15000},
+                    outcomes={"buyer_paid": True},
+                    financial_components={"mature_contribution_margin_minor": 9000},
+                )
+            with self.assertRaises(ValueError):
+                ResearchEventRecord.from_operational(
+                    operational,
+                    mapping,
+                    event_id="bad_discount_key",
+                    occurred_at=TRAINING_AS_OF,
+                    offer_context={"asking_price_minor": 15000, "category": "refurbished technology"},
+                    decisions={"selected_action": "accept", "amount_minor": 15000},
+                    outcomes={"buyer_paid": True},
+                    financial_components={"discount": 3400},
+                )
+            valid = ResearchEventRecord.from_operational(
+                operational,
+                mapping,
+                event_id="valid_status_dates",
+                occurred_at=TRAINING_AS_OF,
+                offer_context={"asking_price_minor": 15000, "category": "refurbished technology"},
+                decisions={"selected_action": "accept", "amount_minor": 15000},
+                outcomes={
+                    "buyer_paid": True,
+                    "fulfillment_state": "fulfilled",
+                    "refund_return_maturity_date": "2026-07-22T10:00:00+00:00",
+                },
+                financial_components={"mature_contribution_margin_minor": 9000},
+            )
+            self.assertEqual(valid.outcomes["fulfillment_state"], "fulfilled")
 
         adapter = InMemoryEncryptedAtRestAdapter(key=b"marginpilot-test-encryption-key")
         with self.assertRaises(PIIScanError) as raised:

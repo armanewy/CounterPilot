@@ -79,7 +79,13 @@ class ConsentLedger:
         revoked_at: str,
         provenance: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        previous = self.latest_evidence(merchant_id=merchant_id, store_id=store_id, purpose=purpose, require_active=False)
+        previous = self.latest_evidence(
+            merchant_id=merchant_id,
+            store_id=store_id,
+            purpose=purpose,
+            require_active=False,
+            as_of=revoked_at,
+        )
         policy_version = str(previous.get("consent_policy_version") or "unknown")
         policy_hash = str(previous.get("policy_hash") or "unknown")
         return self.append(
@@ -109,11 +115,8 @@ class ConsentLedger:
     ) -> bool:
         state = False
         cutoff = parse_time(as_of or utc_now())
-        for record in self._matching_records(merchant_id=merchant_id, store_id=store_id):
+        for record in self._effective_records(merchant_id=merchant_id, store_id=store_id, purpose=purpose, cutoff=cutoff):
             payload = record["payload"]
-            granted_at = parse_time(str(payload["granted_at"]))
-            if granted_at > cutoff:
-                continue
             granted = set(payload.get("granted_purposes") or [])
             prohibited = set(payload.get("prohibited_purposes") or [])
             revoked_at = payload.get("revoked_at")
@@ -148,8 +151,9 @@ class ConsentLedger:
     ) -> dict[str, Any]:
         if require_active:
             self.require_active(merchant_id=merchant_id, store_id=store_id, purpose=purpose, as_of=as_of)
+        cutoff = parse_time(as_of or utc_now())
         latest: dict[str, Any] | None = None
-        for record in self._matching_records(merchant_id=merchant_id, store_id=store_id):
+        for record in self._effective_records(merchant_id=merchant_id, store_id=store_id, purpose=purpose, cutoff=cutoff):
             payload = record["payload"]
             if purpose not in set(payload.get("granted_purposes") or []) | set(payload.get("prohibited_purposes") or []):
                 continue
@@ -199,6 +203,23 @@ class ConsentLedger:
             if record["payload"].get("merchant_id") == merchant_id and record["payload"].get("store_id") == store_id
         ]
 
+    def _effective_records(self, *, merchant_id: str, store_id: str, purpose: str, cutoff: object) -> list[dict[str, Any]]:
+        records = []
+        for record in self._matching_records(merchant_id=merchant_id, store_id=store_id):
+            payload = record["payload"]
+            granted_at = parse_time(str(payload["granted_at"]))
+            if granted_at <= cutoff:
+                records.append(record)
+        return sorted(
+            records,
+            key=lambda record: (
+                parse_time(str(record["payload"]["granted_at"])),
+                _purpose_prohibition_sort_order(record["payload"], purpose),
+                parse_time(str(record["written_at"])),
+                str(record["record_id"]),
+            ),
+        )
+
 
 def _normalize_purposes(values: Iterable[str], field_name: str) -> tuple[str, ...]:
     if not isinstance(values, Iterable) or isinstance(values, (str, bytes)):
@@ -210,3 +231,11 @@ def _normalize_purposes(values: Iterable[str], field_name: str) -> tuple[str, ..
 def _require_nonempty(value: str, field_name: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be non-empty")
+
+
+def _purpose_prohibition_sort_order(payload: dict[str, Any], purpose: str) -> int:
+    prohibited = set(payload.get("prohibited_purposes") or [])
+    granted = set(payload.get("granted_purposes") or [])
+    revoked_at = payload.get("revoked_at")
+    relevant_revocation = revoked_at is not None and purpose in (prohibited | granted)
+    return 1 if purpose in prohibited or relevant_revocation else 0

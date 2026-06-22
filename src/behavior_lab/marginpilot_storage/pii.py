@@ -56,6 +56,15 @@ TEXT_TOKENS = {"comment", "memo", "message", "note", "notes"}
 OPERATIONAL_REFERENCE_TOKENS = {"checkout", "fulfillment", "payment", "shopify"}
 PSEUDONYM_TOKENS = {"pseudo", "pseudonym", "pseudonymous", "hashed", "tokenized"}
 HASH_TOKENS = {"hash", "hashes"}
+INTERNAL_TOKEN_CONTEXT_TOKENS = PSEUDONYM_TOKENS | HASH_TOKENS | {
+    "artifact",
+    "dataset",
+    "event",
+    "lineage",
+    "model",
+    "policy",
+    "record",
+}
 
 VALUE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
@@ -131,7 +140,7 @@ class PIIScanner:
     def _find_text(self, text: str, path: tuple[str, ...], *, context_tokens: frozenset[str]) -> PIIFinding | None:
         if _is_sensitive_url(text):
             return PIIFinding("url is not allowed in research-facing payloads", _safe_path(path))
-        if context_tokens & (PSEUDONYM_TOKENS | HASH_TOKENS) and _looks_like_internal_token(text):
+        if context_tokens & INTERNAL_TOKEN_CONTEXT_TOKENS and _looks_like_internal_token(text):
             return None
         for kind, pattern in VALUE_PATTERNS:
             if pattern.search(text):
@@ -161,6 +170,8 @@ def _is_pii_key(key: str, *, context_tokens: frozenset[str]) -> bool:
     if lower in DIRECT_PII_KEYS:
         return True
     if tokens & CONTACT_TOKENS:
+        return True
+    if tokens & TEXT_TOKENS:
         return True
     if tokens & OPERATIONAL_REFERENCE_TOKENS and tokens & {"gid", "id", "ids", "url"}:
         return True
@@ -200,5 +211,7 @@ def _is_sensitive_url(text: str) -> bool:
 def _looks_like_internal_token(text: str) -> bool:
     stripped = text.strip().lower()
     if re.fullmatch(r"mp_[a-z0-9_]+_[a-f0-9]{16,64}", stripped):
+        return True
+    if re.fullmatch(r"marginpilot_[a-z0-9_]+_[a-f0-9]{8,64}", stripped):
         return True
     return bool(re.fullmatch(r"[a-f0-9]{24,128}", stripped))

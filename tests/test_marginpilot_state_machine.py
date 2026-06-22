@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import tempfile
 import unittest
 
@@ -130,6 +131,24 @@ class MarginPilotStateMachineTests(unittest.TestCase):
             self.assertTrue(second.idempotent_replay)
             self.assertEqual(machine.inspect("merchant_a", "txn_001")["event_count"], 4)
 
+    def test_duplicate_event_id_with_new_idempotency_key_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            machine = TransactionStateMachine(tmp)
+            machine.append_event(_submit())
+            refund = _event(
+                "partially_refunded",
+                event_id="e_refund_webhook",
+                occurred_at="2026-06-22T10:15:00+00:00",
+                received_at="2026-06-22T10:03:00+00:00",
+                source="shopify_webhook",
+                idempotency_key="delivery_001",
+            )
+            machine.append_event(refund)
+            replay = dict(refund)
+            replay["idempotency_key"] = "delivery_002"
+            with self.assertRaises(MarginPilotStateError):
+                machine.append_event(replay)
+
     def test_refund_before_local_order_created_is_stored_then_reconciled(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             machine = TransactionStateMachine(tmp)
@@ -170,6 +189,28 @@ class MarginPilotStateMachineTests(unittest.TestCase):
             machine.append_event(_event("merchant_countered", event_id="e_counter_1", occurred_at="2026-06-22T10:05:00+00:00", **_actions("counter")))
             with self.assertRaises(MarginPilotStateError):
                 machine.append_event(_event("merchant_countered", event_id="e_counter_2", occurred_at="2026-06-22T10:05:01+00:00", **_actions("counter")))
+
+    def test_concurrent_terminal_decisions_are_atomically_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            machine = TransactionStateMachine(tmp)
+            machine.append_event(_submit())
+            accept = _event("merchant_accepted", event_id="e_accept", occurred_at="2026-06-22T10:05:00+00:00", **_actions("accept"))
+            decline = _event("merchant_declined", event_id="e_decline", occurred_at="2026-06-22T10:05:00+00:00", **_actions("decline"))
+
+            def append(payload: dict) -> str:
+                try:
+                    machine.append_event(payload)
+                    return "imported"
+                except MarginPilotStateError:
+                    return "rejected"
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = sorted(pool.map(append, [accept, decline]))
+
+            self.assertEqual(results, ["imported", "rejected"])
+            snapshot = machine.inspect("merchant_a", "txn_001")
+            self.assertEqual(snapshot["event_count"], 2)
+            self.assertIn(snapshot["current_state"], {"merchant_accepted", "merchant_declined"})
 
     def test_cancellation_after_payment_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

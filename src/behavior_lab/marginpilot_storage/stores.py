@@ -394,6 +394,8 @@ class ResearchEventRecord:
         for field_name in ["offer_context", "decisions", "outcomes", "financial_components", "source_lineage", "provenance"]:
             if not isinstance(getattr(self, field_name), dict):
                 raise ValueError(f"{field_name} must be an object")
+        for field_name in ["offer_context", "decisions", "outcomes", "financial_components"]:
+            _validate_research_values(getattr(self, field_name), path=field_name)
 
     def to_payload(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -592,6 +594,56 @@ def production_artifact_manifest(
 def _require_nonempty(value: str, field_name: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be non-empty")
+
+
+MONEY_KEY_TOKENS = {
+    "amount",
+    "basis",
+    "cost",
+    "discount",
+    "fee",
+    "fees",
+    "floor",
+    "fulfillment",
+    "margin",
+    "price",
+    "proceeds",
+    "refund",
+    "shipping",
+}
+
+
+def _validate_research_values(value: Any, *, path: str) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_text = str(key)
+            key_tokens = _key_tokens(key_text)
+            child_path = f"{path}.{key_text}"
+            if _is_research_money_field(key_text, key_tokens):
+                if not key_text.endswith("_minor"):
+                    raise ValueError(f"research monetary field must use integer minor units: {child_path}")
+                if isinstance(item, bool) or not isinstance(item, int):
+                    raise ValueError(f"research monetary field must be integer minor units: {child_path}")
+            _validate_research_values(item, path=child_path)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _validate_research_values(item, path=f"{path}[{index}]")
+    elif isinstance(value, float):
+        raise ValueError(f"research values may not use floats; use integer minor units where monetary: {path}")
+
+
+def _key_tokens(value: str) -> set[str]:
+    text = value.lower()
+    for separator in [".", "-", ":", "/", "\\", " "]:
+        text = text.replace(separator, "_")
+    return {token for token in text.split("_") if token}
+
+
+def _is_research_money_field(key_text: str, key_tokens: set[str]) -> bool:
+    lower = key_text.lower()
+    if lower.endswith(("_state", "_status", "_date", "_at", "_id", "_ids", "_flag")):
+        return False
+    return bool(key_tokens & MONEY_KEY_TOKENS)
 
 
 def _keystream(key: bytes, nonce: bytes, length: int) -> bytes:

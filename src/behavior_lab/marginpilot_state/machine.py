@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+import os
 from pathlib import Path
 import re
 from typing import Any
 
-from behavior_lab.core import parse_time, stable_hash
+from behavior_lab.core import parse_time, stable_hash, to_jsonable, utc_now
 from behavior_lab.ledger import ImmutableLedger
 
 
@@ -128,18 +130,44 @@ class TransactionStateMachine:
         prepared = _normalize_event(dict(event))
         key = _transaction_key(prepared)
         record_id = _record_id(prepared)
-        existing = self.ledger.find_record(record_id, MARGINPILOT_STATE_RECORD_TYPE)
-        if existing is not None:
-            if existing.get("payload") != prepared:
-                raise MarginPilotStateError(f"idempotency key already used for a different event: {prepared['idempotency_key']}")
-            snapshot = self.inspect(prepared["merchant_namespace"], prepared["transaction_id"])
-            return AppendResult(False, True, key[1], key[0], snapshot["current_state"], snapshot["pending_event_ids"])
-
-        existing_events = self._events_for(*key)
-        self._validate_new_event_against_history(prepared, existing_events)
-        self.ledger.append(MARGINPILOT_STATE_RECORD_TYPE, prepared, record_id=record_id, unique_record_id=True)
+        replayed = False
+        imported = False
+        with self.ledger.exclusive():
+            records = self.ledger._scan_unlocked()
+            self.ledger._verify_records(records)
+            existing = next(
+                (
+                    record
+                    for record in records
+                    if record.get("record_type") == MARGINPILOT_STATE_RECORD_TYPE
+                    and record.get("record_id") == record_id
+                ),
+                None,
+            )
+            if existing is not None:
+                if existing.get("payload") != prepared:
+                    raise MarginPilotStateError(f"idempotency key already used for a different event: {prepared['idempotency_key']}")
+                replayed = True
+            else:
+                existing_events = [
+                    record["payload"]
+                    for record in records
+                    if record.get("record_type") == MARGINPILOT_STATE_RECORD_TYPE
+                    and record["payload"].get("merchant_namespace") == key[0]
+                    and record["payload"].get("transaction_id") == key[1]
+                ]
+                same_event = [event for event in existing_events if event.get("event_id") == prepared["event_id"]]
+                if same_event:
+                    if same_event[0] == prepared:
+                        replayed = True
+                    else:
+                        raise MarginPilotStateError(f"event_id already exists with different payload: {prepared['event_id']}")
+                else:
+                    self._validate_new_event_against_history(prepared, existing_events)
+                    _append_prelocked(self.ledger, records, MARGINPILOT_STATE_RECORD_TYPE, prepared, record_id)
+                    imported = True
         snapshot = self.inspect(prepared["merchant_namespace"], prepared["transaction_id"])
-        return AppendResult(True, False, key[1], key[0], snapshot["current_state"], snapshot["pending_event_ids"])
+        return AppendResult(imported, replayed, key[1], key[0], snapshot["current_state"], snapshot["pending_event_ids"])
 
     def inspect(self, merchant_namespace: str, transaction_id: str) -> dict[str, Any]:
         events = self._events_for(merchant_namespace, transaction_id)
@@ -352,6 +380,30 @@ def _record_id(event: dict[str, Any]) -> str:
             "idempotency_key": event["idempotency_key"],
         }
     )
+
+
+def _append_prelocked(
+    ledger: ImmutableLedger,
+    records: list[dict[str, Any]],
+    record_type: str,
+    payload: dict[str, Any],
+    record_id: str,
+) -> None:
+    if any(record.get("record_id") == record_id for record in records):
+        raise MarginPilotStateError(f"record_id already exists: {record_id}")
+    previous = str(records[-1]["record_hash"]) if records else ledger.genesis_hash
+    body = {
+        "record_id": record_id,
+        "record_type": record_type,
+        "written_at": utc_now(),
+        "previous_hash": previous,
+        "payload": to_jsonable(payload),
+    }
+    body["record_hash"] = stable_hash(body)
+    with ledger.path.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(body, sort_keys=True, ensure_ascii=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def _money_values(value: Any) -> list[dict[str, Any]]:
