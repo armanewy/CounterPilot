@@ -22,6 +22,13 @@ This repository now implements the Month 1 transaction-surface foundation:
 - `marginpilot-ingest`
 - `marginpilot-inbox`
 - `marginpilot-audit`
+- `marginpilot-transaction-create`
+- `marginpilot-event-append`
+- `marginpilot-transaction-inspect`
+- `marginpilot-consent-grant`
+- `marginpilot-consent-revoke`
+- `marginpilot-research-export`
+- `marginpilot-run-local-fixture`
 
 The event ledger supports:
 
@@ -34,6 +41,14 @@ The event ledger supports:
 The inbox is accounting-only. It computes mature margin if sold for available
 actions and marks merchant-floor violations. It does not execute seller actions
 and does not train models.
+
+The transaction core records one negotiated commerce loop through the
+deterministic state machine documented in `docs/MARGINPILOT_STATE_MACHINE.md`.
+Operational customer data lives behind the encrypted operational adapter
+documented in `docs/MARGINPILOT_DATA_BOUNDARIES.md`; research exports contain
+pseudonymous identifiers, economic fields, consent lineage, and dataset
+lineage, not names, emails, addresses, phone numbers, checkout URLs, or
+Shopify resource IDs.
 
 ## Data Rights
 
@@ -54,6 +69,9 @@ python -m behavior_lab marginpilot-ingest --input C:\OfferLabData\marginpilot_te
 python -m behavior_lab marginpilot-ingest --input C:\OfferLabData\marginpilot_templates\offer_opened.json
 python -m behavior_lab marginpilot-inbox --merchant-id merchant_demo_refurb_tech
 python -m behavior_lab marginpilot-audit --merchant-id merchant_demo_refurb_tech
+python -m behavior_lab marginpilot-run-local-fixture --data-dir C:\OfferLabData\marginpilot_core
+python -m behavior_lab marginpilot-transaction-inspect --data-dir C:\OfferLabData\marginpilot_core --merchant-namespace merchant_demo_refurb:store_demo_shopify --transaction-id txn_marginpilot_loop_001
+python -m behavior_lab marginpilot-research-export --data-dir C:\OfferLabData\marginpilot_core --merchant-id merchant_demo_refurb --store-id store_demo_shopify
 ```
 
 ## Gates

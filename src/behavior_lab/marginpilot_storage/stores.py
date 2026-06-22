@@ -120,6 +120,89 @@ class InMemoryEncryptedAtRestAdapter:
         return json.dumps(stored, sort_keys=True).encode("utf-8")
 
 
+class LocalFileEncryptedAtRestAdapter:
+    """Local encrypted adapter for development commands.
+
+    This keeps direct operational identifiers out of research ledgers and plain
+    JSON fixtures. It is a local development adapter, not a managed production
+    key-management system.
+    """
+
+    def __init__(self, root: str | Path, *, key: bytes | str | None = None):
+        self.root = Path(root)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self._key = self._load_or_create_key(key)
+
+    def write(
+        self,
+        collection: str,
+        record_id: str,
+        plaintext: bytes,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> None:
+        safe_metadata = dict(metadata or {})
+        assert_no_pii(safe_metadata, label="encrypted adapter metadata")
+        nonce = secrets.token_bytes(16)
+        stream = _keystream(self._key, nonce, len(plaintext))
+        ciphertext = _xor(plaintext, stream)
+        tag = hmac.new(self._key, nonce + ciphertext, hashlib.sha256).hexdigest()
+        body = {
+            "ciphertext": base64.b64encode(ciphertext).decode("ascii"),
+            "metadata": safe_metadata,
+            "nonce": base64.b64encode(nonce).decode("ascii"),
+            "tag": tag,
+        }
+        path = self._path(collection, record_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(body, sort_keys=True, ensure_ascii=True) + "\n", encoding="utf-8")
+
+    def read(self, collection: str, record_id: str) -> bytes | None:
+        path = self._path(collection, record_id)
+        if not path.exists():
+            return None
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        nonce = base64.b64decode(stored["nonce"])
+        ciphertext = base64.b64decode(stored["ciphertext"])
+        expected = hmac.new(self._key, nonce + ciphertext, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, str(stored["tag"])):
+            raise BoundaryViolation("encrypted record authentication failed")
+        return _xor(ciphertext, _keystream(self._key, nonce, len(ciphertext)))
+
+    def delete(self, collection: str, record_id: str) -> bool:
+        path = self._path(collection, record_id)
+        if not path.exists():
+            return False
+        path.unlink()
+        return True
+
+    def list_record_ids(self, collection: str) -> list[str]:
+        collection_dir = self.root / _safe_path_segment(collection)
+        if not collection_dir.exists():
+            return []
+        return sorted(path.stem for path in collection_dir.glob("*.json"))
+
+    def raw_ciphertext(self, collection: str, record_id: str) -> bytes:
+        return self._path(collection, record_id).read_bytes()
+
+    def _load_or_create_key(self, key: bytes | str | None) -> bytes:
+        if key is not None:
+            if isinstance(key, str):
+                key = key.encode("utf-8")
+            if len(key) < 16:
+                raise ValueError("encryption key must be at least 16 bytes")
+            return bytes(key)
+        key_path = self.root / "local_adapter.key"
+        if key_path.exists():
+            return base64.b64decode(key_path.read_text(encoding="utf-8").strip())
+        generated = secrets.token_bytes(32)
+        key_path.write_text(base64.b64encode(generated).decode("ascii") + "\n", encoding="utf-8")
+        return generated
+
+    def _path(self, collection: str, record_id: str) -> Path:
+        return self.root / _safe_path_segment(collection) / f"{_safe_path_segment(record_id)}.json"
+
+
 @dataclass(frozen=True)
 class OperationalTransactionRecord:
     merchant_id: str
@@ -522,3 +605,7 @@ def _keystream(key: bytes, nonce: bytes, length: int) -> bytes:
 
 def _xor(left: bytes, right: bytes) -> bytes:
     return bytes(a ^ b for a, b in zip(left, right))
+
+
+def _safe_path_segment(value: str) -> str:
+    return "".join(character if character.isalnum() or character in {"_", "-"} else "_" for character in value)

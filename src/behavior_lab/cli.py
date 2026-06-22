@@ -54,6 +54,16 @@ from behavior_lab.marginpilot import (
     marginpilot_inbox,
     write_marginpilot_templates,
 )
+from behavior_lab.marginpilot_core import (
+    DEFAULT_CORE_DATA_DIR as MARGINPILOT_CORE_DEFAULT_DATA_DIR,
+    consent_grant as marginpilot_consent_grant,
+    consent_revoke as marginpilot_consent_revoke,
+    event_append as marginpilot_event_append,
+    research_export as marginpilot_research_export,
+    run_local_commerce_fixture as marginpilot_run_local_fixture,
+    transaction_create as marginpilot_transaction_create,
+    transaction_inspect as marginpilot_transaction_inspect,
+)
 from behavior_lab.offerlab import (
     ingest_offerlab_snapshots,
     profit_audit,
@@ -299,6 +309,67 @@ def command_marginpilot_inbox(args: argparse.Namespace) -> None:
 
 def command_marginpilot_audit(args: argparse.Namespace) -> None:
     _print_json(marginpilot_audit(args.data_dir, merchant_id=args.merchant_id))
+
+
+def command_marginpilot_transaction_create(args: argparse.Namespace) -> None:
+    _print_json(marginpilot_transaction_create(data_dir=args.data_dir, input_path=args.input))
+
+
+def command_marginpilot_event_append(args: argparse.Namespace) -> None:
+    _print_json(marginpilot_event_append(data_dir=args.data_dir, input_path=args.input))
+
+
+def command_marginpilot_transaction_inspect(args: argparse.Namespace) -> None:
+    _print_json(
+        marginpilot_transaction_inspect(
+            data_dir=args.data_dir,
+            merchant_namespace=args.merchant_namespace,
+            transaction_id=args.transaction_id,
+        )
+    )
+
+
+def command_marginpilot_consent_grant(args: argparse.Namespace) -> None:
+    _print_json(
+        marginpilot_consent_grant(
+            data_dir=args.data_dir,
+            merchant_id=args.merchant_id,
+            store_id=args.store_id,
+            purposes=args.purpose,
+            consent_version=args.consent_version,
+            policy_hash=args.policy_hash,
+            granted_at=args.granted_at,
+            cross_merchant_training=args.cross_merchant_training,
+        )
+    )
+
+
+def command_marginpilot_consent_revoke(args: argparse.Namespace) -> None:
+    _print_json(
+        marginpilot_consent_revoke(
+            data_dir=args.data_dir,
+            merchant_id=args.merchant_id,
+            store_id=args.store_id,
+            purpose=args.purpose,
+            revoked_at=args.revoked_at,
+        )
+    )
+
+
+def command_marginpilot_research_export(args: argparse.Namespace) -> None:
+    _print_json(
+        marginpilot_research_export(
+            data_dir=args.data_dir,
+            merchant_id=args.merchant_id,
+            store_id=args.store_id,
+            purpose=args.purpose,
+            as_of=args.as_of,
+        )
+    )
+
+
+def command_marginpilot_run_local_fixture(args: argparse.Namespace) -> None:
+    _print_json(marginpilot_run_local_fixture(data_dir=args.data_dir))
 
 
 def command_offerlab_pilot_template(args: argparse.Namespace) -> None:
@@ -847,6 +918,53 @@ def build_parser() -> argparse.ArgumentParser:
     margin_audit.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
     margin_audit.add_argument("--merchant-id")
     margin_audit.set_defaults(func=command_marginpilot_audit)
+
+    margin_tx_create = subparsers.add_parser("marginpilot-transaction-create", help="Create a local MarginPilot transaction from an offer_submitted event")
+    margin_tx_create.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))
+    margin_tx_create.add_argument("--input", help="Optional transition event JSON; defaults to the local fixture offer")
+    margin_tx_create.set_defaults(func=command_marginpilot_transaction_create)
+
+    margin_event_append = subparsers.add_parser("marginpilot-event-append", help="Append a MarginPilot transaction transition event")
+    margin_event_append.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))
+    margin_event_append.add_argument("--input", required=True)
+    margin_event_append.set_defaults(func=command_marginpilot_event_append)
+
+    margin_tx_inspect = subparsers.add_parser("marginpilot-transaction-inspect", help="Inspect a deterministic MarginPilot transaction state")
+    margin_tx_inspect.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))
+    margin_tx_inspect.add_argument("--merchant-namespace", required=True)
+    margin_tx_inspect.add_argument("--transaction-id", required=True)
+    margin_tx_inspect.set_defaults(func=command_marginpilot_transaction_inspect)
+
+    margin_consent_grant = subparsers.add_parser("marginpilot-consent-grant", help="Grant versioned purpose-specific MarginPilot ML consent")
+    margin_consent_grant.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))
+    margin_consent_grant.add_argument("--merchant-id", required=True)
+    margin_consent_grant.add_argument("--store-id", required=True)
+    margin_consent_grant.add_argument("--purpose", action="append", help="Allowed purpose; may be repeated")
+    margin_consent_grant.add_argument("--consent-version", default="marginpilot-ml-consent-v1")
+    margin_consent_grant.add_argument("--policy-hash")
+    margin_consent_grant.add_argument("--granted-at")
+    margin_consent_grant.add_argument("--cross-merchant-training", action="store_true")
+    margin_consent_grant.set_defaults(func=command_marginpilot_consent_grant)
+
+    margin_consent_revoke = subparsers.add_parser("marginpilot-consent-revoke", help="Revoke one MarginPilot consent purpose")
+    margin_consent_revoke.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))
+    margin_consent_revoke.add_argument("--merchant-id", required=True)
+    margin_consent_revoke.add_argument("--store-id", required=True)
+    margin_consent_revoke.add_argument("--purpose", required=True)
+    margin_consent_revoke.add_argument("--revoked-at")
+    margin_consent_revoke.set_defaults(func=command_marginpilot_consent_revoke)
+
+    margin_research_export = subparsers.add_parser("marginpilot-research-export", help="Export consent-gated MarginPilot research rows")
+    margin_research_export.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))
+    margin_research_export.add_argument("--merchant-id")
+    margin_research_export.add_argument("--store-id")
+    margin_research_export.add_argument("--purpose", default="merchant_specific_model_training")
+    margin_research_export.add_argument("--as-of")
+    margin_research_export.set_defaults(func=command_marginpilot_research_export)
+
+    margin_fixture = subparsers.add_parser("marginpilot-run-local-fixture", help="Run the local MarginPilot commerce-loop fixture")
+    margin_fixture.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))
+    margin_fixture.set_defaults(func=command_marginpilot_run_local_fixture)
 
     offer_pilot = subparsers.add_parser("offerlab-pilot", help="Local-only seller pilot import and audit kit")
     offer_pilot_subparsers = offer_pilot.add_subparsers(dest="offerlab_pilot_command", required=True)
