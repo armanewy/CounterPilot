@@ -93,7 +93,7 @@ class RealNberPipelineTests(unittest.TestCase):
             self.assertNotEqual(first["source_files"]["anon_bo_threads"]["sha256"], rebuilt["source_files"]["anon_bo_threads"]["sha256"])
             self.assertEqual(rebuilt["tables"]["negotiation_turns"]["rows"], 5)
 
-    def test_full_normalization_is_blocked_until_full_run_proof_exists(self) -> None:
+    def test_complete_manifest_rerun_rebuilds_deleted_partition(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             raw = Path(tmp) / "raw"
             output = Path(tmp) / "normalized"
@@ -101,8 +101,40 @@ class RealNberPipelineTests(unittest.TestCase):
             (raw / "anon_bo_lists.csv").write_text((FIXTURES / "anon_bo_lists.csv").read_text(encoding="utf-8"), encoding="utf-8")
             (raw / "anon_bo_threads.csv").write_text((FIXTURES / "anon_bo_threads.csv").read_text(encoding="utf-8"), encoding="utf-8")
 
-            with self.assertRaisesRegex(Exception, "Full NBER normalization is intentionally blocked"):
-                normalize_real_dataset(raw, output, full=True, bucket_count=3, partition_rows=2)
+            manifest = normalize_real_dataset(raw, output, limit_threads=10, bucket_count=4, partition_rows=2)
+            partition = Path(manifest["tables"]["negotiation_turns"]["partitions"][0]["path"])
+            partition.unlink()
+
+            rebuilt = normalize_real_dataset(raw, output, limit_threads=10, bucket_count=4, partition_rows=2)
+            self.assertNotIn("idempotent_rerun", rebuilt)
+            self.assertEqual(rebuilt["tables"]["negotiation_turns"]["rows"], 4)
+            self.assertTrue(Path(rebuilt["tables"]["negotiation_turns"]["partitions"][0]["path"]).exists())
+
+    def test_full_normalization_runs_unbounded_path_without_false_official_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw"
+            output = Path(tmp) / "normalized"
+            raw.mkdir()
+            (raw / "anon_bo_lists.csv").write_text((FIXTURES / "anon_bo_lists.csv").read_text(encoding="utf-8"), encoding="utf-8")
+            (raw / "anon_bo_threads.csv").write_text((FIXTURES / "anon_bo_threads.csv").read_text(encoding="utf-8"), encoding="utf-8")
+
+            manifest = normalize_real_dataset(raw, output, full=True, bucket_count=3, partition_rows=2)
+            self.assertEqual(manifest["status"], "complete")
+            self.assertTrue(manifest["command_args"]["full"])
+            self.assertIsNone(manifest["command_args"]["limit_threads"])
+            self.assertEqual(manifest["normalization_scope"], "full_unbounded_source_scan")
+            self.assertEqual(manifest["tables"]["negotiation_turns"]["rows"], 4)
+            self.assertEqual(manifest["tables"]["listings"]["rows"], 3)
+            self.assertTrue(manifest["full_release_preflight"]["passed"])
+            self.assertFalse(manifest["official_source_contract"]["matches_expected_official_sources"])
+            self.assertTrue(manifest["audited_full_release_evidence"]["streaming_full_run_passed"])
+            self.assertTrue(manifest["audited_full_release_evidence"]["full_run_checkpoint_validated"])
+            self.assertTrue(manifest["audited_full_release_evidence"]["partition_hashes_verified"])
+            self.assertFalse(manifest["audited_full_release_evidence"]["official_sources_matched"])
+            self.assertFalse(manifest["audited_full_release_evidence"]["passed"])
+
+            rerun = normalize_real_dataset(raw, output, full=True, bucket_count=3, partition_rows=2)
+            self.assertTrue(rerun["idempotent_rerun"])
 
     def test_thread_checkpoint_mismatch_rebuilds_thread_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

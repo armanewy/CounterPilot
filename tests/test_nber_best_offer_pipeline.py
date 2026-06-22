@@ -62,7 +62,7 @@ class NberBestOfferPipelineTests(unittest.TestCase):
             self.assertFalse(board["scope"]["full_release_gate_passed"])
             self.assertEqual(board["scope"]["evidence_scope"], "bounded_smoke_or_semantics")
 
-    def test_full_release_scope_accepts_only_complete_audited_gate(self) -> None:
+    def test_full_release_scope_rejects_handwritten_gate_without_official_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             raw = Path(tmp) / "raw"
             normalized = Path(tmp) / "normalized"
@@ -75,16 +75,20 @@ class NberBestOfferPipelineTests(unittest.TestCase):
                 "passed": True,
                 "replication_contract_passed": True,
                 "streaming_full_run_passed": True,
+                "official_sources_matched": True,
                 "full_run_checkpoint_validated": True,
+                "partition_hashes_verified": True,
                 "independent_audit_passed": True,
             }
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
             board = benchmark(normalized)
 
-            self.assertTrue(board["scope"]["full_release_evidence"])
-            self.assertTrue(board["scope"]["full_release_gate_passed"])
-            self.assertEqual(board["scope"]["evidence_scope"], "full_release")
+            self.assertFalse(board["scope"]["full_release_evidence"])
+            self.assertFalse(board["scope"]["full_release_gate_passed"])
+            self.assertIn("official_contract_matches", board["scope"]["full_release_gate_failures"])
+            self.assertIn("source_files_match_official_contract", board["scope"]["full_release_gate_failures"])
+            self.assertEqual(board["scope"]["evidence_scope"], "bounded_smoke_or_semantics")
 
     def test_leakage_audit_rejects_status_in_observed_history(self) -> None:
         self.assertFalse(assert_no_future_leakage([{"features": {}, "observed_history": [{"status": "accepted"}]}]))

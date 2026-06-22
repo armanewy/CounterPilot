@@ -46,6 +46,16 @@ PROTECTED_LISTING_FIELDS = [
     "excluded_reference_price_ref_price4",
     "excluded_reference_count4",
 ]
+OFFICIAL_FULL_SOURCE_EXPECTATIONS = {
+    "anon_bo_lists": {
+        "sha256": "CEDA12755878304DAA4CA43B45C72EC98A7382A1EE646E66C33F6841E5D1A646",
+        "bytes": 4_451_661_738,
+    },
+    "anon_bo_threads": {
+        "sha256": "F6FAEB797A8ED2F0C84D0E3C6E9B82F0AD2BD971DF354D57C902B478E757DEE9",
+        "bytes": 1_374_076_192,
+    },
+}
 
 
 class NberRealNormalizeError(ValueError):
@@ -98,12 +108,8 @@ def normalize_real_dataset(
 ) -> dict[str, Any]:
     if not full and limit_threads is None:
         raise NberRealNormalizeError("Use --limit-threads or --full for real NBER normalization")
-    if full:
-        raise NberRealNormalizeError(
-            "Full NBER normalization is intentionally blocked: the current real-source "
-            "normalizer is validated only for bounded --limit-threads runs. Run a full-release "
-            "preflight and implement streaming estimator execution before using --full."
-        )
+    if full and limit_threads is not None:
+        raise NberRealNormalizeError("Use either --full or --limit-threads, not both")
     start = time.perf_counter()
     raw = Path(raw_dir)
     output = Path(output_dir)
@@ -128,9 +134,24 @@ def normalize_real_dataset(
     lists_path = _find_source(raw, "anon_bo_lists.csv")
     threads_path = _find_source(raw, "anon_bo_threads.csv")
     source_hashes = {"anon_bo_lists": sha256_file(lists_path), "anon_bo_threads": sha256_file(threads_path)}
+    source_bytes = {"anon_bo_lists": lists_path.stat().st_size, "anon_bo_threads": threads_path.stat().st_size}
     header_report = _validate_source_headers(lists_path, threads_path)
     if not header_report["valid"]:
         raise NberRealNormalizeError(json.dumps(header_report, sort_keys=True))
+    full_preflight = _full_run_preflight(
+        raw=raw,
+        output=output,
+        lists_path=lists_path,
+        threads_path=threads_path,
+        source_hashes=source_hashes,
+        source_bytes=source_bytes,
+        full=full,
+        limit_threads=limit_threads,
+        bucket_count=bucket_count,
+        partition_rows=partition_rows,
+    )
+    if full and not full_preflight["passed"]:
+        raise NberRealNormalizeError(json.dumps(full_preflight, sort_keys=True))
     if manifest_path.exists():
         current = json.loads(manifest_path.read_text(encoding="utf-8"))
         if _manifest_matches_current(
@@ -216,13 +237,16 @@ def normalize_real_dataset(
         },
         "git_commit": _git_commit(),
         "command_args": args_signature,
+        "normalization_scope": "full_unbounded_source_scan" if full else "bounded_thread_limit",
         "random_seed": seed,
         "mapping_manifest_hash": mapping_hash(),
         "source_files": {
-            "anon_bo_lists": {"path": str(lists_path.resolve()), "sha256": source_hashes["anon_bo_lists"], "bytes": lists_path.stat().st_size},
-            "anon_bo_threads": {"path": str(threads_path.resolve()), "sha256": source_hashes["anon_bo_threads"], "bytes": threads_path.stat().st_size},
+            "anon_bo_lists": {"path": str(lists_path.resolve()), "sha256": source_hashes["anon_bo_lists"], "bytes": source_bytes["anon_bo_lists"]},
+            "anon_bo_threads": {"path": str(threads_path.resolve()), "sha256": source_hashes["anon_bo_threads"], "bytes": source_bytes["anon_bo_threads"]},
         },
         "header_validation": header_report,
+        "full_release_preflight": full_preflight,
+        "official_source_contract": _official_source_contract(source_hashes, source_bytes),
         "tables": {
             "negotiation_turns": {"path": str(turn_table.resolve()), "format": "parquet" if _pyarrow_available() else "jsonl", "rows": turn_rows["rows"], "partitions": turn_rows["partitions"]},
             "listings": {"path": str(listing_table.resolve()), "format": "parquet" if _pyarrow_available() else "jsonl", "rows": listing_rows["rows"], "partitions": listing_rows["partitions"]},
@@ -237,6 +261,16 @@ def normalize_real_dataset(
             "membership_index": "sqlite",
         },
         "quarantine": {"path": str(quarantine_path.resolve()), **quarantine_payload},
+        "audited_full_release_evidence": _audited_full_release_evidence(
+            full=full,
+            limit_threads=limit_threads,
+            full_preflight=full_preflight,
+            official_source_contract=_official_source_contract(source_hashes, source_bytes),
+            thread_checkpoint=thread_checkpoint,
+            thread_counts=thread_counts,
+            turn_rows=turn_rows,
+            listing_rows=listing_rows,
+        ),
         "lineage": {
             "raw_source_hashes": source_hashes,
             "split_manifest_hash": None,
@@ -535,6 +569,146 @@ def _find_source(root: Path, name: str) -> Path:
     raise NberRealNormalizeError(f"Missing {name} or {name}.gz in {root}")
 
 
+def _full_run_preflight(
+    *,
+    raw: Path,
+    output: Path,
+    lists_path: Path,
+    threads_path: Path,
+    source_hashes: dict[str, str],
+    source_bytes: dict[str, int],
+    full: bool,
+    limit_threads: int | None,
+    bucket_count: int,
+    partition_rows: int,
+) -> dict[str, Any]:
+    official_contract = _official_source_contract(source_hashes, source_bytes)
+    checks = {
+        "mode_valid": (full and limit_threads is None) or ((not full) and limit_threads is not None),
+        "bucket_count_positive": bucket_count > 0,
+        "partition_rows_positive": partition_rows > 0,
+        "raw_dir_exists": raw.exists() and raw.is_dir(),
+        "output_dir_exists": output.exists() and output.is_dir(),
+        "listing_source_readable": lists_path.exists() and lists_path.stat().st_size > 0,
+        "thread_source_readable": threads_path.exists() and threads_path.stat().st_size > 0,
+        "thread_limited_when_bounded": full or (limit_threads is not None and limit_threads > 0),
+        "uses_sqlite_membership_index": True,
+        "uses_deterministic_thread_buckets": True,
+        "avoids_in_memory_listing_id_set": True,
+    }
+    disk = _disk_preflight(output, source_bytes=source_bytes, full=full)
+    checks["disk_preflight_passed"] = bool(disk["passed"])
+    if full:
+        checks["official_source_contract_checked"] = True
+    return {
+        "schema_version": "nber_full_run_preflight.v1",
+        "scope": "full_unbounded_source_scan" if full else "bounded_thread_limit",
+        "passed": all(checks.values()),
+        "checks": checks,
+        "disk": disk,
+        "official_source_contract": official_contract,
+        "checkpoint_strategy": {
+            "thread_pass_checkpoint": "checkpoints/thread_pass.complete.json",
+            "membership_index": "_tmp/thread_listing_ids.sqlite",
+            "thread_buckets": "_tmp/thread_buckets/bucket_####.jsonl",
+            "resume_rule": "reuse only when source hashes, headers, mapping hash, command args, bucket hashes, and SQLite index content hashes match",
+        },
+    }
+
+
+def _disk_preflight(output: Path, *, source_bytes: dict[str, int], full: bool) -> dict[str, Any]:
+    usage = shutil.disk_usage(output.resolve().anchor or output.resolve())
+    compressed_bytes = int(sum(source_bytes.values()))
+    estimated_required = compressed_bytes * (4 if full else 1)
+    # Keep fixture tests practical while still recording a real disk check.
+    required_free = max(estimated_required, 64 * 1024 * 1024)
+    return {
+        "passed": usage.free >= required_free,
+        "free_bytes": usage.free,
+        "required_free_bytes": required_free,
+        "compressed_source_bytes": compressed_bytes,
+        "estimation_rule": "full requires 4x compressed source bytes for deterministic buckets, SQLite index, partition output, and temporary files; bounded smoke requires at least 64MiB",
+    }
+
+
+def _official_source_contract(source_hashes: dict[str, str], source_bytes: dict[str, int]) -> dict[str, Any]:
+    files = {}
+    for logical_name, expected in OFFICIAL_FULL_SOURCE_EXPECTATIONS.items():
+        actual_hash = source_hashes.get(logical_name)
+        actual_bytes = source_bytes.get(logical_name)
+        files[logical_name] = {
+            "expected_sha256": expected["sha256"],
+            "actual_sha256": actual_hash,
+            "sha256_matches": actual_hash == expected["sha256"],
+            "expected_bytes": expected["bytes"],
+            "actual_bytes": actual_bytes,
+            "bytes_match": actual_bytes == expected["bytes"],
+        }
+    return {
+        "schema_version": "nber_official_source_contract.v1",
+        "matches_expected_official_sources": all(item["sha256_matches"] and item["bytes_match"] for item in files.values()),
+        "files": files,
+        "research_only": True,
+        "production_export_allowed": False,
+    }
+
+
+def _audited_full_release_evidence(
+    *,
+    full: bool,
+    limit_threads: int | None,
+    full_preflight: dict[str, Any],
+    official_source_contract: dict[str, Any],
+    thread_checkpoint: Path,
+    thread_counts: dict[str, Any],
+    turn_rows: dict[str, Any],
+    listing_rows: dict[str, Any],
+) -> dict[str, Any]:
+    checkpoint_validated = thread_checkpoint.exists() and bool(thread_counts.get("bucket_manifest", {}).get("valid")) and bool(thread_counts.get("id_index_stats"))
+    partition_integrity = _partition_output_integrity(
+        turn_rows=turn_rows,
+        listing_rows=listing_rows,
+        thread_counts=thread_counts,
+    )
+    partition_hashes_verified = bool(partition_integrity["passed"])
+    streaming_full_run_passed = bool(
+        full
+        and limit_threads is None
+        and full_preflight.get("passed")
+        and checkpoint_validated
+        and partition_hashes_verified
+        and listing_rows.get("unmatched_listing_ids") == 0
+    )
+    official_sources_matched = bool(official_source_contract.get("matches_expected_official_sources"))
+    return {
+        "schema_version": "nber_full_release_evidence_gate.v1",
+        "passed": False,
+        "streaming_full_run_passed": streaming_full_run_passed,
+        "official_sources_matched": official_sources_matched,
+        "full_run_checkpoint_validated": checkpoint_validated,
+        "partition_hashes_verified": partition_hashes_verified,
+        "partition_integrity": partition_integrity,
+        "replication_contract_passed": False,
+        "independent_audit_passed": False,
+        "reason": "Normalization can prove the streaming full-run path, but replication and independent audit must be recorded by separate Wave 2 checks before this becomes full-release benchmark evidence.",
+    }
+
+
+def _partition_output_integrity(*, turn_rows: dict[str, Any], listing_rows: dict[str, Any], thread_counts: dict[str, Any]) -> dict[str, Any]:
+    manifest_like = {
+        "tables": {
+            "negotiation_turns": {"rows": turn_rows.get("rows", 0), "partitions": turn_rows.get("partitions", [])},
+            "listings": {"rows": listing_rows.get("rows", 0), "partitions": listing_rows.get("partitions", [])},
+        },
+        "source_thread_pass": {"accepted_rows": thread_counts.get("accepted_rows")},
+        "thread_linked_listing_extraction": {
+            "matched_listings": listing_rows.get("matched_listing_ids", listing_rows.get("rows", 0)),
+            "unmatched_listing_ids": listing_rows.get("unmatched_listing_ids"),
+        },
+    }
+    return _manifest_partition_integrity(manifest_like)
+
+
 def _manifest_matches_current(
     manifest: dict[str, Any],
     *,
@@ -558,7 +732,121 @@ def _manifest_matches_current(
             return False
     if manifest.get("lineage", {}).get("raw_source_hashes") != source_hashes:
         return False
+    if not _manifest_partition_integrity(manifest)["passed"]:
+        return False
     return True
+
+
+def verify_full_release_evidence(manifest: dict[str, Any]) -> dict[str, Any]:
+    evidence = manifest.get("audited_full_release_evidence", {})
+    if not isinstance(evidence, dict):
+        evidence = {}
+    official_contract = manifest.get("official_source_contract", {})
+    if not isinstance(official_contract, dict):
+        official_contract = {}
+    command_args = manifest.get("command_args", {})
+    if not isinstance(command_args, dict):
+        command_args = {}
+    preflight = manifest.get("full_release_preflight", {})
+    if not isinstance(preflight, dict):
+        preflight = {}
+    partition_integrity = _manifest_partition_integrity(manifest)
+    checks = {
+        "command_full_unbounded": command_args.get("full") is True and command_args.get("limit_threads") is None,
+        "preflight_passed": preflight.get("passed") is True,
+        "official_contract_matches": official_contract.get("matches_expected_official_sources") is True,
+        "source_files_match_official_contract": _source_files_match_official_contract(manifest),
+        "streaming_full_run_passed": evidence.get("streaming_full_run_passed") is True,
+        "official_sources_matched": evidence.get("official_sources_matched") is True,
+        "full_run_checkpoint_validated": evidence.get("full_run_checkpoint_validated") is True,
+        "partition_hashes_verified": evidence.get("partition_hashes_verified") is True,
+        "partition_integrity_verified_now": partition_integrity["passed"],
+        "replication_contract_passed": evidence.get("replication_contract_passed") is True,
+        "independent_audit_passed": evidence.get("independent_audit_passed") is True,
+        "declared_gate_passed": evidence.get("passed") is True,
+    }
+    failures = [name for name, passed in checks.items() if not passed]
+    return {
+        "schema_version": "nber_full_release_evidence_verification.v1",
+        "passed": not failures,
+        "checks": checks,
+        "failures": failures,
+        "partition_integrity": partition_integrity,
+    }
+
+
+def _source_files_match_official_contract(manifest: dict[str, Any]) -> bool:
+    source_files = manifest.get("source_files", {})
+    contract_files = manifest.get("official_source_contract", {}).get("files", {})
+    for logical_name, expected in OFFICIAL_FULL_SOURCE_EXPECTATIONS.items():
+        source_record = source_files.get(logical_name, {})
+        contract_record = contract_files.get(logical_name, {})
+        if source_record.get("sha256") != expected["sha256"]:
+            return False
+        if source_record.get("bytes") != expected["bytes"]:
+            return False
+        if contract_record.get("actual_sha256") != expected["sha256"] or contract_record.get("sha256_matches") is not True:
+            return False
+        if contract_record.get("actual_bytes") != expected["bytes"] or contract_record.get("bytes_match") is not True:
+            return False
+    return True
+
+
+def _manifest_partition_integrity(manifest: dict[str, Any]) -> dict[str, Any]:
+    tables = manifest.get("tables", {})
+    checks: dict[str, Any] = {}
+    failures: list[str] = []
+    seen_paths: set[str] = set()
+    for table_name, table in tables.items():
+        partitions = list(table.get("partitions", []))
+        table_rows = int(table.get("rows", 0))
+        partition_rows = 0
+        table_failures: list[str] = []
+        for partition in partitions:
+            path_text = str(partition.get("path", ""))
+            if not path_text:
+                table_failures.append("missing_partition_path")
+                continue
+            if path_text in seen_paths:
+                table_failures.append(f"duplicate_partition_path:{path_text}")
+            seen_paths.add(path_text)
+            path = Path(path_text)
+            if not path.exists():
+                table_failures.append(f"missing_partition:{path.name}")
+                continue
+            expected_hash = partition.get("sha256")
+            if not expected_hash or sha256_file(path) != expected_hash:
+                table_failures.append(f"partition_hash_mismatch:{path.name}")
+            try:
+                partition_rows += int(partition.get("rows", 0))
+            except (TypeError, ValueError):
+                table_failures.append(f"invalid_partition_rows:{path.name}")
+        if partition_rows != table_rows:
+            table_failures.append(f"partition_row_sum_mismatch:{partition_rows}!={table_rows}")
+        checks[table_name] = {
+            "passed": not table_failures,
+            "table_rows": table_rows,
+            "partition_row_sum": partition_rows,
+            "partitions": len(partitions),
+            "failures": table_failures,
+        }
+        failures.extend(f"{table_name}:{failure}" for failure in table_failures)
+    source_pass = manifest.get("source_thread_pass", {})
+    turn_rows = tables.get("negotiation_turns", {}).get("rows")
+    if turn_rows is not None and source_pass.get("accepted_rows") is not None and int(turn_rows) != int(source_pass["accepted_rows"]):
+        failures.append("negotiation_turns:accepted_rows_mismatch")
+    extraction = manifest.get("thread_linked_listing_extraction", {})
+    listing_rows = tables.get("listings", {}).get("rows")
+    if listing_rows is not None and extraction.get("matched_listings") is not None and int(listing_rows) != int(extraction["matched_listings"]):
+        failures.append("listings:matched_listings_mismatch")
+    if extraction.get("unmatched_listing_ids") not in {None, 0}:
+        failures.append("listings:unmatched_listing_ids_nonzero")
+    return {
+        "schema_version": "nber_partition_integrity.v1",
+        "passed": not failures and bool(tables),
+        "tables": checks,
+        "failures": failures,
+    }
 
 
 def _thread_checkpoint_signature(

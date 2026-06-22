@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from behavior_lab.datasets.nber_best_offer.normalize import read_jsonl
+from behavior_lab.datasets.nber_best_offer.real_normalize import verify_full_release_evidence
 from behavior_lab.datasets.nber_best_offer.schema import FORBIDDEN_FUTURE_FIELDS
 from behavior_lab.offerlab_models.common import validate_feature_contract
 
@@ -422,4 +423,9 @@ def _assert_real_task_execution_bounded(root: Path) -> None:
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     command_args = manifest.get("command_args", {})
     if command_args.get("full") is True or command_args.get("limit_threads") is None:
-        raise NberTaskError("Real NBER task generation is currently bounded-only; streaming full-release evaluation is not implemented")
+        evidence_report = verify_full_release_evidence(manifest)
+        if not evidence_report["passed"]:
+            raise NberTaskError(
+                "Real NBER full-release task generation requires a completed audited_full_release_evidence gate; "
+                f"run replication and independent audit before treating --full output as benchmark input; failures={evidence_report['failures']}"
+            )

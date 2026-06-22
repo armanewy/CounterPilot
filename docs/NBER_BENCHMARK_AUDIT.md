@@ -42,10 +42,16 @@ The real-release path is separate from the fixture normalizer. A bounded fixture
 run accepts the verified real headers, writes partitioned Parquet when PyArrow
 is installed, records raw hashes and mapping lineage, keeps thread rows grouped
 before partition output, extracts only thread-linked listings for the first
-benchmark, and supports resume after the thread pass. The full official release
-has not been normalized yet. The `--full` mode is intentionally blocked until a
-full-release preflight proves source, checkpoint, and estimator execution can
-run without unbounded in-memory task materialization.
+benchmark, and supports resume after the thread pass. The `--full` mode now
+runs the same streaming/checkpoint path without a thread limit, using SQLite
+membership indexing rather than a Python in-memory listing-ID set. A fixture
+full-path smoke run verifies that implementation path, but the official full
+release has not been normalized yet.
+
+Full-release benchmark use remains gated. Task construction and benchmark scope
+require verified official source hashes and byte sizes, current partition-file
+hash checks, full-run checkpoint validation, published-stat replication, and an
+independent audit. Hand-written manifest booleans are not sufficient evidence.
 
 ## Interpretation
 
@@ -53,8 +59,8 @@ After a completed scoped benchmark run, this benchmark can support a statement l
 
 > Observable Best Offer variables predict negotiation outcomes better than simple baselines under chronological and seller-disjoint tests.
 
-The current fixture and bounded real-source smoke runs do not yet support a
-full-release performance claim.
+The current fixture, bounded real-source smoke runs, and fixture full-path smoke
+run do not yet support a full-release performance claim.
 
 It cannot support:
 

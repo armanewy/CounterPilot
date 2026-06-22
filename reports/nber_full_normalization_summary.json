@@ -1,11 +1,32 @@
 {
-  "schema_version": "nber_full_normalization_summary.v1",
-  "status": "blocked",
-  "blocked_at_utc_date": "2026-06-21",
-  "git_commit": "c1079166a676cd336a913c2a9ddc5f431727f7dc",
+  "schema_version": "nber_full_normalization_summary.v2",
+  "status": "implementation_path_ready_official_full_run_pending",
+  "updated_utc_date": "2026-06-21",
   "command": "python -m behavior_lab nber-best-offer normalize-real --raw-dir $OFFERLAB_DATA_ROOT/raw/nber_best_offer --output-dir $OFFERLAB_DATA_ROOT/processed/nber_best_offer_full --full",
-  "blocker": "Full NBER normalization is intentionally blocked until full-release source/checkpoint preflight and streaming estimator execution are implemented and audited.",
-  "source_files": {
+  "implementation_gate": {
+    "passed": true,
+    "scope": "fixture full-path smoke plus targeted regression tests",
+    "notes": [
+      "--full now runs the streaming/checkpoint path with no thread limit",
+      "full mode and --limit-threads are mutually exclusive",
+      "complete-manifest reruns revalidate output partition files before returning idempotent_rerun",
+      "task and benchmark use require verified full-release evidence rather than manifest booleans alone"
+    ]
+  },
+  "official_evidence_gate": {
+    "passed": false,
+    "reason": "The official full NBER release has not been normalized, replication-checked, and independently audited in this patch pass.",
+    "required_manifest_fields": [
+      "streaming_full_run_passed",
+      "official_sources_matched",
+      "full_run_checkpoint_validated",
+      "partition_hashes_verified",
+      "replication_contract_passed",
+      "independent_audit_passed",
+      "passed"
+    ]
+  },
+  "source_files_expected": {
     "anon_bo_lists.csv.gz": {
       "path": "$OFFERLAB_DATA_ROOT/raw/nber_best_offer/anon_bo_lists.csv.gz",
       "bytes": 4451661738,
@@ -17,12 +38,7 @@
       "sha256": "F6FAEB797A8ED2F0C84D0E3C6E9B82F0AD2BD971DF354D57C902B478E757DEE9"
     }
   },
-  "disk": {
-    "drive": "C",
-    "free_bytes": 284591312896,
-    "used_bytes": 713884770304
-  },
-  "rows": {
+  "official_full_run_rows": {
     "source_rows_read": 0,
     "normalized_rows_written": 0,
     "quarantined_rows": 0,
@@ -31,29 +47,24 @@
     "duplicate_identifiers": null,
     "unmatched_listing_ids": null
   },
-  "replication_check_on_prior_100k": {
-    "bounded_structure_passed": true,
-    "full_replication_passed": false,
-    "passed": false,
-    "fatal_failures": 0,
-    "fatal_unevaluated": 21,
-    "manifest_hash": "6DE96D4DE6E1379D4D11E5B8E243697774345C737E007B066F3551EE0D43E288",
-    "targets_hash": "2DC4CD2644E356B836F863B9C5C99ABB9FB06E5C4F51E0877039EDFB3B14676F"
-  },
-  "bounded_100k_real_run": {
-    "normalized_dir": "$OFFERLAB_DATA_ROOT/processed/nber_best_offer_100k",
-    "limit_threads": 100000,
-    "negotiation_turn_rows": 430628,
-    "thread_linked_listing_rows": 231922,
-    "distinct_threads": 100000,
+  "fixture_full_path_smoke": {
+    "full": true,
+    "limit_threads": null,
+    "negotiation_turn_rows": 4,
+    "thread_linked_listing_rows": 3,
     "unmatched_listing_ids": 0,
-    "quarantine_counts": {},
-    "leakage_audit_passed": true,
-    "split_audit_passed": true,
-    "benchmark_smoke_command": "python -m behavior_lab nber-best-offer benchmark --normalized-dir $OFFERLAB_DATA_ROOT/processed/nber_best_offer_100k",
-    "benchmark_smoke_artifact_archived": false,
-    "evidence_scope": "bounded semantics/protocol validation only"
+    "full_release_preflight_passed": true,
+    "official_sources_matched": false,
+    "streaming_full_run_passed": true,
+    "audited_full_release_evidence_passed": false,
+    "idempotent_rerun_verified": true,
+    "deleted_partition_rebuild_verified": true
   },
-  "gate_passed": false,
-  "next_allowed_step": "Task-semantics tests, benchmark-protocol freezing, and red-team tests may proceed. Implement and independently audit full-release preflight plus streaming task/model execution before any unbounded real NBER model benchmark."
+  "validation": {
+    "targeted_commands": [
+      "python -m pytest tests\\nber_real\\test_real_nber_pipeline.py tests\\test_nber_best_offer_pipeline.py -q -p no:cacheprovider"
+    ],
+    "targeted_tests_passed": true
+  },
+  "next_allowed_step": "Run the actual official full normalization outside the repository under OFFERLAB_DATA_ROOT, then run replication-check and independent audit before benchmark integration."
 }

@@ -10,6 +10,7 @@ from behavior_lab.benchmarks.metrics import classification_accuracy, multiclass_
 from behavior_lab.benchmarks.splits import assert_disjoint_groups, chronological_group_purged_split, group_disjoint_split
 from behavior_lab.core import stable_hash
 from behavior_lab.datasets.nber_best_offer.baselines import CategoryMajorityClassifier, MajorityClassifier, MedianRegressor, OfferRatioThresholdClassifier
+from behavior_lab.datasets.nber_best_offer.real_normalize import verify_full_release_evidence
 from behavior_lab.datasets.nber_best_offer.tasks import assert_no_future_leakage, build_tasks
 from behavior_lab.offerlab_models.common import validate_feature_contract
 
@@ -126,8 +127,8 @@ def _benchmark_scope(normalized_dir: str | Path) -> dict[str, Any]:
     args = manifest.get("command_args", {})
     full = bool(args.get("full"))
     limit_threads = args.get("limit_threads")
-    full_gate = manifest.get("audited_full_release_evidence", {})
-    full_gate_passed = _audited_full_release_gate_passed(full_gate)
+    full_gate = verify_full_release_evidence(manifest)
+    full_gate_passed = bool(full_gate["passed"])
     full_release_evidence = bool(full and limit_threads is None and full_gate_passed)
     return {
         "source_dataset_ids": manifest.get("source_dataset_ids", ["nber_ebay_best_offer"]),
@@ -136,23 +137,11 @@ def _benchmark_scope(normalized_dir: str | Path) -> dict[str, Any]:
         "commercial_training_allowed": bool(manifest.get("commercial_training_allowed", False)),
         "full_release_evidence": full_release_evidence,
         "full_release_gate_passed": full_gate_passed,
+        "full_release_gate_failures": list(full_gate["failures"]),
         "limit_threads": limit_threads,
         "evidence_scope": "full_release" if full_release_evidence else "bounded_smoke_or_semantics",
         "hidden_evaluation_policy": "development leaderboards only; hidden rows reserved for explicit one-shot benchmark protocol",
     }
-
-
-def _audited_full_release_gate_passed(value: Any) -> bool:
-    if not isinstance(value, dict):
-        return False
-    required = [
-        "passed",
-        "replication_contract_passed",
-        "streaming_full_run_passed",
-        "full_run_checkpoint_validated",
-        "independent_audit_passed",
-    ]
-    return all(value.get(field) is True for field in required)
 
 
 def _redacted_dataset_ref(normalized_dir: str | Path) -> str:
