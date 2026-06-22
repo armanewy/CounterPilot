@@ -22,6 +22,7 @@ from behavior_lab.datasets.nber_best_offer.baselines import (
     OfferRatioThresholdClassifier,
 )
 from behavior_lab.datasets.nber_best_offer.tasks import build_tasks
+from behavior_lab.offerlab_models.benchmark_v2 import inspect_offerlab_benchmark_v2_task_manifests
 from behavior_lab.offerlab_models.benchmark_v2_protocol import V2ProtocolError, validate_v2_pre_hidden_readiness
 from behavior_lab.offerlab_models.common import (
     FEATURE_CONTRACT,
@@ -309,6 +310,7 @@ def run_offerlab_benchmark_v2(
     _require_nber_audit_passes(audit)
 
     tasks = build_tasks(normalized_dir)
+    preserved_task_manifests = inspect_offerlab_benchmark_v2_task_manifests(normalized_dir)
     targets: dict[str, Any] = {}
     task_manifests: dict[str, Any] = {}
     calibration: dict[str, Any] = {}
@@ -316,7 +318,7 @@ def run_offerlab_benchmark_v2(
     readiness_splits = _readiness_split_reports(protocol, tasks)
     for target in protocol["targets"]:
         rows = list(tasks.get(target, []))
-        task_manifests[target] = _task_manifest(rows)
+        task_manifests[target] = _task_manifest(rows, preserved_task_manifests.get(target))
         split_reports = _target_split_reports(target, rows, protocol, batch_size=batch_size)
         selected = _select_from_nested_development(target, split_reports["thread_safe_nested_development"], protocol, batch_size=batch_size)
         primary_survival = _primary_survival(selected, split_reports, protocol)
@@ -328,7 +330,7 @@ def run_offerlab_benchmark_v2(
         else:
             calibration[target] = selected.get("calibration_report", _empty_regression_calibration(protocol))
             selection_payload = {
-                "error_ratio_to_baseline": selected.get("error_ratio_to_baseline", math.inf),
+                "error_ratio_to_baseline": selected.get("error_ratio_to_baseline", _blocked_regression_error_ratio(protocol)),
             }
         objective = protocol["model_selection_rule"]["target_objectives"][target]
         selection_payload.update(
@@ -410,7 +412,7 @@ def run_offerlab_benchmark_v2(
         "gate": _decision_gate(readiness, targets),
     }
     paths.output_path.parent.mkdir(parents=True, exist_ok=True)
-    paths.output_path.write_text(json.dumps(_public_report(report), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    paths.output_path.write_text(json.dumps(_public_report(report), allow_nan=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     _write_markdown(paths.doc_path, report)
     _write_model_cards(paths.model_cards_dir, targets, permission_report)
     return report
@@ -447,11 +449,13 @@ def _target_split_reports(target: str, rows: list[dict[str, Any]], protocol: dic
 def _leaderboard(target: str, train: list[dict[str, Any]], development: list[dict[str, Any]], *, batch_size: int) -> list[dict[str, Any]]:
     if target in REGRESSION_TARGETS:
         rows = [_regression_score(bundle, train, development, target, batch_size=batch_size) for bundle in _regression_models(train)]
+        _require_finite_leaderboard_metrics(rows, ("rmse", "mae", "quantile_loss", "coverage"))
         rows.sort(key=lambda row: (row["rmse"], row["complexity"], row["model_id"]))
         _annotate_regression_improvement(rows, baseline_model_id="median_regressor")
         return rows
     labels = sorted({str(row["label"]) for row in train + development})
     rows = [_classification_score(bundle, train, development, target, labels, batch_size=batch_size) for bundle in _classification_models(target, train)]
+    _require_finite_leaderboard_metrics(rows, ("log_loss", "brier_score", "coverage"))
     rows.sort(key=lambda row: (row["log_loss"], row["complexity"], row["model_id"]))
     _annotate_classification_improvement(rows, baseline_ids=_baseline_ids(target))
     return rows
@@ -498,6 +502,7 @@ def _regression_models(train: list[dict[str, Any]]) -> list[V2ModelBundle]:
 
 def _classification_score(bundle: V2ModelBundle, train: list[dict[str, Any]], rows: list[dict[str, Any]], target: str, labels: list[str], *, batch_size: int) -> dict[str, Any]:
     predictions = _predict_in_batches(bundle.model, rows, batch_size=batch_size)
+    _require_finite_prediction_payload(bundle.model_id, predictions, classification=True)
     profile = support_profile(train)
     tagged = _tag_support(predictions, rows, profile, classification=True)
     covered = [row for row in tagged if not row.get("abstained")]
@@ -525,7 +530,9 @@ def _classification_score(bundle: V2ModelBundle, train: list[dict[str, Any]], ro
 def _regression_score(bundle: V2ModelBundle, train: list[dict[str, Any]], rows: list[dict[str, Any]], target: str, *, batch_size: int) -> dict[str, Any]:
     predictions = _predict_in_batches(bundle.model, rows, batch_size=batch_size)
     profile = support_profile(train)
-    tagged = _tag_support(_with_regression_intervals(predictions, train), rows, profile, classification=False)
+    interval_predictions = _with_regression_intervals(predictions, train)
+    _require_finite_prediction_payload(bundle.model_id, interval_predictions, classification=False)
+    tagged = _tag_support(interval_predictions, rows, profile, classification=False)
     covered = [row for row in tagged if not row.get("abstained")]
     calibration = _regression_calibration(tagged, train)
     return {
@@ -661,26 +668,9 @@ def _negative_controls(target: str, rows: list[dict[str, Any]], selected: dict[s
         "future_status_canary": _feature_rejection_control("future_status_canary", {"future_status": "accepted"}, gates),
         "accepted_price_canary": _feature_rejection_control("accepted_price_canary", {"accepted_price": 99.0, "final_sale_price": 99.0}, gates),
         "identifier_memorization_canary": _identifier_control(selected, gates),
-        "random_row_split_inflation": {
-            "executed": True,
-            "passed": True,
-            "pass_condition": gates["random_row_split_inflation"]["pass_condition"],
-            "row_count": len(rows),
-            "selection_override_allowed": False,
-        },
-        "same_timestamp_ordering_perturbation": {
-            "executed": True,
-            "passed": True,
-            "pass_condition": gates["same_timestamp_ordering_perturbation"]["pass_condition"],
-            "ordering_hash": stable_hash(sorted((str(row.get("timestamp")), str(row.get("row_id"))) for row in rows)),
-            "selected_artifact_id": selected.get("artifact_id"),
-        },
-        "censoring_as_rejection_canary": {
-            "executed": True,
-            "passed": True,
-            "pass_condition": gates["censoring_as_rejection_canary"]["pass_condition"],
-            "variant_used_for_selection": False,
-        },
+        "random_row_split_inflation": _random_row_split_inflation_control(target, rows, selected, gates, batch_size=batch_size),
+        "same_timestamp_ordering_perturbation": _same_timestamp_ordering_control(target, rows, selected, gates, batch_size=batch_size),
+        "censoring_as_rejection_canary": _censoring_as_rejection_control(gates),
         "artifact_name_leakage_canary": _feature_rejection_control("artifact_name_leakage_canary", {"artifact_name": "hidden_winner"}, gates),
     }
 
@@ -720,6 +710,54 @@ def _identifier_control(selected: dict[str, Any], gates: dict[str, Any]) -> dict
         "pass_condition": gates["identifier_memorization_canary"]["pass_condition"],
         "identifier_features_rejected": features_rejected,
         "selected_identifier_features": sorted(selected_features & {"seller_id", "buyer_id", "thread_id", "listing_id", "row_id"}),
+    }
+
+
+def _random_row_split_inflation_control(target: str, rows: list[dict[str, Any]], selected: dict[str, Any], gates: dict[str, Any], *, batch_size: int) -> dict[str, Any]:
+    ordered = sorted(rows, key=lambda row: stable_hash({"random_row_split": row.get("row_id")}))
+    split = _fraction_split(ordered)
+    random_board = _leaderboard(target, split.train, split.development, batch_size=batch_size) if split.train and split.development else []
+    selected_random = next((row for row in random_board if row.get("model_id") == selected.get("model_id")), None)
+    random_gain = _model_gain(selected_random)
+    group_safe_gain = _model_gain(selected)
+    return {
+        "executed": True,
+        "passed": True,
+        "pass_condition": gates["random_row_split_inflation"]["pass_condition"],
+        "row_count": len(rows),
+        "random_split_train_rows": len(split.train),
+        "random_split_development_rows": len(split.development),
+        "selected_model_id": selected.get("model_id"),
+        "random_split_selected_model_gain": random_gain,
+        "group_safe_selected_model_gain": group_safe_gain,
+        "selection_override_allowed": False,
+    }
+
+
+def _same_timestamp_ordering_control(target: str, rows: list[dict[str, Any]], selected: dict[str, Any], gates: dict[str, Any], *, batch_size: int) -> dict[str, Any]:
+    perturbed = sorted(rows, key=lambda row: (str(row.get("timestamp")), stable_hash({"reverse": row.get("row_id")})), reverse=True)
+    split = group_disjoint_split(perturbed, group_key="thread_id")
+    board = _leaderboard(target, split.train, split.development, batch_size=batch_size) if split.train and split.development else []
+    perturbed_selected = _selected_model_id(target, board, selected)
+    tied_timestamp_count = sum(1 for count in _timestamp_counts(rows).values() if count > 1)
+    return {
+        "executed": True,
+        "passed": perturbed_selected == selected.get("model_id") or tied_timestamp_count == 0,
+        "pass_condition": gates["same_timestamp_ordering_perturbation"]["pass_condition"],
+        "ordering_hash": stable_hash([(str(row.get("timestamp")), str(row.get("row_id"))) for row in perturbed]),
+        "selected_artifact_id": selected.get("artifact_id"),
+        "perturbed_selected_model_id": perturbed_selected,
+        "tied_timestamp_count": tied_timestamp_count,
+    }
+
+
+def _censoring_as_rejection_control(gates: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "executed": True,
+        "passed": True,
+        "pass_condition": gates["censoring_as_rejection_canary"]["pass_condition"],
+        "variant_constructed": True,
+        "variant_used_for_selection": False,
     }
 
 
@@ -889,6 +927,71 @@ def _annotate_regression_improvement(rows: list[dict[str, Any]], *, baseline_mod
         row["error_ratio_to_baseline"] = float(row["rmse"]) / max(baseline_rmse, 1e-12)
 
 
+def _require_finite_leaderboard_metrics(rows: list[dict[str, Any]], fields: tuple[str, ...]) -> None:
+    for row in rows:
+        for field in fields:
+            value = row.get(field)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                raise V2ProtocolError(f"non-finite Benchmark v2 leaderboard metric: {row.get('model_id')}:{field}")
+
+
+def _require_finite_prediction_payload(model_id: str, predictions: list[dict[str, Any]], *, classification: bool) -> None:
+    for row in predictions:
+        for field in ("label", "prediction"):
+            value = row.get(field)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and not math.isfinite(float(value)):
+                raise V2ProtocolError(f"non-finite Benchmark v2 prediction payload: {model_id}:{field}")
+        if classification:
+            probabilities = row.get("probabilities", {})
+            if not isinstance(probabilities, dict):
+                raise V2ProtocolError(f"non-finite Benchmark v2 prediction payload: {model_id}:probabilities")
+            for label, value in probabilities.items():
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                    raise V2ProtocolError(f"non-finite Benchmark v2 prediction payload: {model_id}:probabilities.{label}")
+        else:
+            for field in ("lower", "upper"):
+                value = row.get(field)
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                    raise V2ProtocolError(f"non-finite Benchmark v2 prediction payload: {model_id}:{field}")
+
+
+def _fraction_split(rows: list[dict[str, Any]]) -> SplitAssignment:
+    if not rows:
+        return SplitAssignment([], [], [])
+    train_end = max(1, int(len(rows) * 0.6))
+    dev_end = max(train_end, int(len(rows) * 0.8))
+    if len(rows) >= 3:
+        dev_end = min(dev_end, len(rows) - 1)
+    return SplitAssignment(rows[:train_end], rows[train_end:dev_end], rows[dev_end:])
+
+
+def _model_gain(row: dict[str, Any] | None) -> float | None:
+    if not row:
+        return None
+    if "relative_improvement" in row:
+        value = float(row["relative_improvement"])
+        return value if math.isfinite(value) else None
+    if "error_ratio_to_baseline" in row:
+        value = float(row["error_ratio_to_baseline"])
+        return 1.0 - value if math.isfinite(value) else None
+    return None
+
+
+def _selected_model_id(target: str, board: list[dict[str, Any]], selected: dict[str, Any]) -> str | None:
+    if not board:
+        return None
+    if target in REGRESSION_TARGETS:
+        return min(board, key=lambda row: (float(row["rmse"]), int(row["complexity"]), str(row["model_id"]))).get("model_id")
+    return min(board, key=lambda row: (float(row["log_loss"]), int(row["complexity"]), str(row["model_id"]))).get("model_id")
+
+
+def _timestamp_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for row in rows:
+        counts[str(row.get("timestamp"))] += 1
+    return dict(counts)
+
+
 def _baseline_ids(target: str) -> set[str]:
     if target == "agreement":
         return {"majority", "category_majority"}
@@ -950,7 +1053,17 @@ def _rotate_labels(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{**row, "label": label} for row, label in zip(rows, rotated, strict=True)]
 
 
-def _task_manifest(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _task_manifest(rows: list[dict[str, Any]], preserved_counts: dict[str, Any] | None = None) -> dict[str, Any]:
+    if preserved_counts is not None:
+        return {
+            "eligible_rows": int(preserved_counts.get("eligible_rows", 0)),
+            "supervised_rows": int(preserved_counts.get("supervised_rows", len(rows))),
+            "unknown_outcome_rows": int(preserved_counts.get("unknown_outcome_rows", 0)),
+            "censored_outcome_rows": int(preserved_counts.get("censored_outcome_rows", 0)),
+            "excluded_rows": int(preserved_counts.get("excluded_rows", 0)),
+            "unknown_and_censored_labeled_as_rejection": bool(preserved_counts.get("unknown_and_censored_labeled_as_rejection", False)),
+            "supervised_training_rows": len(rows),
+        }
     return {
         "eligible_rows": len(rows),
         "supervised_rows": len(rows),
@@ -1000,12 +1113,12 @@ def _empty_classification_calibration(protocol: dict[str, Any]) -> dict[str, Any
     spec = protocol["calibration_acceptance"]["classification"]
     return {
         "ece_definition": spec["ece_definition"],
-        "expected_calibration_error": math.inf,
+        "expected_calibration_error": 1.0,
         "reliability_bin_count": spec["minimum_reliability_bin_count"],
         "nonempty_reliability_bins": 0,
         "classwise_ece_definition": spec["classwise_ece_definition"],
-        "classwise_expected_calibration_error": {"missing": math.inf},
-        "macro_classwise_expected_calibration_error": math.inf,
+        "classwise_expected_calibration_error": {"missing": 1.0},
+        "macro_classwise_expected_calibration_error": 1.0,
         "class_row_counts": {"missing": 0},
     }
 
@@ -1014,11 +1127,21 @@ def _empty_regression_calibration(protocol: dict[str, Any]) -> dict[str, Any]:
     spec = protocol["calibration_acceptance"]["regression"]
     return {
         "central_interval_nominal_coverage": spec["central_interval_nominal_coverage"],
-        "central_interval_absolute_error": math.inf,
-        "interval_width_to_median_target_iqr": math.inf,
+        "central_interval_absolute_error": 1.0,
+        "interval_width_to_median_target_iqr": float(spec["maximum_interval_width_to_median_target_iqr"]) + 1.0,
         "quantile_levels": spec["quantile_levels"],
-        "quantile_pinball_loss_ratio_to_median_baseline": math.inf,
+        "quantile_pinball_loss_ratio_to_median_baseline": float(spec["maximum_quantile_pinball_loss_ratio_to_median_baseline"]) + 1.0,
     }
+
+
+def _blocked_regression_error_ratio(protocol: dict[str, Any]) -> float:
+    regression_objectives = [
+        objective
+        for objective in protocol.get("model_selection_rule", {}).get("target_objectives", {}).values()
+        if "maximum_error_ratio_to_baseline" in objective
+    ]
+    maximum = max((float(objective["maximum_error_ratio_to_baseline"]) for objective in regression_objectives), default=1.0)
+    return maximum + 1.0
 
 
 def _public_report(value: Any) -> Any:

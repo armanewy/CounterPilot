@@ -16,7 +16,7 @@ from behavior_lab.core import stable_hash, utc_now
 from behavior_lab.datasets.nber_best_offer.real_normalize import sha256_file, verify_full_release_evidence
 from behavior_lab.datasets.nber_best_offer.tasks import agreement_label
 from behavior_lab.offerlab_models.benchmark_v2_protocol import validate_v2_hidden_exclusion
-from behavior_lab.offerlab_models.common import FEATURE_CONTRACT, FORBIDDEN_MODEL_FIELDS, validate_feature_contract
+from behavior_lab.offerlab_models.common import FEATURE_CONTRACT, FORBIDDEN_MODEL_FIELDS, _hidden_case_tokens, validate_feature_contract
 
 
 DEFAULT_PROTOCOL = Path("datasets/manifests/offerlab_benchmark_v2.yaml")
@@ -143,6 +143,20 @@ def build_offerlab_benchmark_v2(
     _write_atomic_json(manifest_path, report)
     (output_dir / "manifest.json.sha256").write_text(f"{sha256_file(manifest_path)}  manifest.json\n", encoding="utf-8")
     return report
+
+
+def inspect_offerlab_benchmark_v2_task_manifests(normalized_dir: str | Path) -> dict[str, dict[str, int | bool]]:
+    """Return Benchmark v2 task counts without writing splits or hidden lockboxes."""
+
+    root = Path(normalized_dir)
+    manifest = _read_json(root / "manifest.json")
+    conn = sqlite3.connect(":memory:")
+    try:
+        _init_db(conn)
+        _index_listings(conn, root, manifest)
+        return _construct_cases(conn, root, manifest)
+    finally:
+        conn.close()
 
 
 def read_v2_task_rows(
@@ -640,19 +654,24 @@ def _write_fresh_hidden_lockbox(
         kept_tokens: list[str] = []
         excluded_overlap_rows = 0
         hidden_ids = chronological["assignments"]["hidden"]
-        for row_id, token in conn.execute(
-            f"SELECT row_id, case_token FROM cases WHERE row_id IN ({_placeholders(hidden_ids)}) ORDER BY row_id",
+        for row_id, token, public_json in conn.execute(
+            f"SELECT row_id, case_token, public_json FROM cases WHERE row_id IN ({_placeholders(hidden_ids)}) ORDER BY row_id",
             hidden_ids,
         ) if hidden_ids else []:
-            if token in excluded_tokens:
+            row_tokens = _compatible_hidden_tokens(token, json.loads(public_json))
+            if row_tokens & excluded_tokens:
                 excluded_overlap_rows += 1
                 continue
             kept_ids.append(row_id)
-            kept_tokens.append(token)
+            kept_tokens.extend(sorted(row_tokens))
+        if not kept_ids:
+            raise BenchmarkV2Error(
+                f"fresh hidden lockbox for {target} has no candidates after v1 hidden-case exclusion"
+            )
         validation = validate_v2_hidden_exclusion(
             v2_manifest=protocol,
             v1_final_manifest=v1_final_manifest,
-            candidate_hidden_case_tokens=kept_tokens or [f"empty-candidate:{target}"],
+            candidate_hidden_case_tokens=kept_tokens,
             external_v1_hidden_case_tokens=external_v1_hidden_tokens,
         )
         payload = {
@@ -837,6 +856,12 @@ def _v1_manifest_hidden_tokens(v1_final_manifest: dict[str, Any]) -> set[str]:
     token_block = v1_final_manifest.get("hidden_lockbox", {}).get("case_tokens", {})
     tokens = token_block.get("tokens", []) if isinstance(token_block, dict) else []
     return {str(token).strip() for token in tokens if str(token).strip()}
+
+
+def _compatible_hidden_tokens(case_token: str, public_row: dict[str, Any]) -> set[str]:
+    tokens = {str(case_token).strip()}
+    tokens.update(_hidden_case_tokens([public_row]))
+    return {token for token in tokens if token}
 
 
 def _split_boundaries(count: int) -> tuple[int, int]:

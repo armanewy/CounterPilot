@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 import _bootstrap  # noqa: F401,E402
 
 from behavior_lab.datasets.nber_best_offer.real_normalize import sha256_file
+from behavior_lab.offerlab_models.common import _hidden_case_tokens
 from behavior_lab.offerlab_models.benchmark_v2 import (
     BenchmarkV2Paths,
     build_offerlab_benchmark_v2,
@@ -170,6 +171,74 @@ class OfferLabBenchmarkV2BuildTests(unittest.TestCase):
             second_lockbox = json.loads((root / "second" / "fresh_hidden_lockbox" / "seller_next_action.json").read_text(encoding="utf-8"))
             self.assertEqual(second_lockbox["excluded_overlap_rows"], 1)
             self.assertNotIn(overlap_row, second_lockbox["assignments"]["hidden"])
+
+    def test_v1_shaped_hidden_token_overlap_is_excluded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normalized = _write_normalized(root / "normalized")
+            tokens = root / "v1_tokens.json"
+            tokens.write_text(json.dumps({"tokens": ["spent-v1"]}), encoding="utf-8")
+            build_offerlab_benchmark_v2(
+                BenchmarkV2Paths(
+                    normalized_dir=normalized,
+                    output_dir=root / "first",
+                    external_v1_hidden_tokens_path=tokens,
+                ),
+                require_full_release=False,
+            )
+            lockbox = json.loads((root / "first" / "fresh_hidden_lockbox" / "seller_next_action.json").read_text(encoding="utf-8"))
+            overlap_row = lockbox["assignments"]["hidden"][0]
+            public_rows = _read_public_rows(root / "first", "seller_next_action")
+            v1_compatible_token = _hidden_case_tokens([public_rows[overlap_row]])[0]
+            tokens.write_text(json.dumps({"tokens": [v1_compatible_token]}), encoding="utf-8")
+
+            build_offerlab_benchmark_v2(
+                BenchmarkV2Paths(
+                    normalized_dir=normalized,
+                    output_dir=root / "second",
+                    external_v1_hidden_tokens_path=tokens,
+                ),
+                require_full_release=False,
+            )
+
+            second_lockbox = json.loads((root / "second" / "fresh_hidden_lockbox" / "seller_next_action.json").read_text(encoding="utf-8"))
+            self.assertEqual(second_lockbox["excluded_overlap_rows"], 1)
+            self.assertNotIn(overlap_row, second_lockbox["assignments"]["hidden"])
+
+    def test_fresh_hidden_lockbox_refuses_empty_candidates_after_v1_exclusion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normalized = _write_normalized(root / "normalized")
+            tokens = root / "v1_tokens.json"
+            tokens.write_text(json.dumps({"tokens": ["spent-v1"]}), encoding="utf-8")
+            build_offerlab_benchmark_v2(
+                BenchmarkV2Paths(
+                    normalized_dir=normalized,
+                    output_dir=root / "first",
+                    external_v1_hidden_tokens_path=tokens,
+                ),
+                require_full_release=False,
+            )
+            lockbox = json.loads((root / "first" / "fresh_hidden_lockbox" / "seller_next_action.json").read_text(encoding="utf-8"))
+            public_rows = _read_public_rows(root / "first", "seller_next_action")
+            all_hidden_tokens = sorted(
+                {
+                    token
+                    for row_id in lockbox["assignments"]["hidden"]
+                    for token in _hidden_case_tokens([public_rows[row_id]])
+                }
+            )
+            tokens.write_text(json.dumps({"tokens": all_hidden_tokens}), encoding="utf-8")
+
+            with self.assertRaisesRegex(Exception, "no candidates"):
+                build_offerlab_benchmark_v2(
+                    BenchmarkV2Paths(
+                        normalized_dir=normalized,
+                        output_dir=root / "second",
+                        external_v1_hidden_tokens_path=tokens,
+                    ),
+                    require_full_release=False,
+                )
 
 
 def _write_normalized(root: Path) -> Path:

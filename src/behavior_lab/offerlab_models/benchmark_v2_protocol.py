@@ -217,7 +217,7 @@ def _validate_model_selection(v2_manifest: dict[str, Any], readiness_report: dic
                 raise V2ProtocolError(f"model selection {key} mismatch for {target}")
         if selection.get("fit_on_training_only") is not True:
             raise V2ProtocolError(f"model was not fit on training only for {target}")
-        if selection.get("hidden_results_used") is True:
+        if selection.get("hidden_results_used") is not False:
             raise V2ProtocolError(f"hidden results used for model selection on {target}")
         if selection.get("primary_split_survival") != objective.get("required_primary_split_survival"):
             raise V2ProtocolError(f"primary split survival mismatch for {target}")

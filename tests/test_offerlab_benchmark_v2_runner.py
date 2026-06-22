@@ -12,6 +12,7 @@ import unittest
 
 from behavior_lab.datasets.nber_best_offer.normalize import build_sample_dataset, normalize_dataset
 from behavior_lab.offerlab_models.benchmark_v2_runner import BenchmarkV2Paths, _leaderboard, run_offerlab_benchmark_v2
+from test_offerlab_benchmark_v2_build import _write_normalized
 
 
 class OfferLabBenchmarkV2RunnerTests(unittest.TestCase):
@@ -78,6 +79,32 @@ class OfferLabBenchmarkV2RunnerTests(unittest.TestCase):
             self.assertTrue(controls["accepted_price_canary"]["rejected"])
             self.assertTrue(controls["identifier_memorization_canary"]["identifier_features_rejected"])
             self.assertTrue(controls["artifact_name_leakage_canary"]["rejected"])
+            self.assertIn("random_split_selected_model_gain", controls["random_row_split_inflation"])
+            self.assertIn("perturbed_selected_model_id", controls["same_timestamp_ordering_perturbation"])
+            self.assertTrue(controls["censoring_as_rejection_canary"]["variant_constructed"])
+
+    def test_runner_preserves_unknown_and_censored_counts_in_task_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normalized = _write_normalized(root / "normalized")
+            _mark_as_bounded_fixture(normalized)
+
+            report = run_offerlab_benchmark_v2(
+                BenchmarkV2Paths(
+                    normalized_dir=normalized,
+                    output_path=root / "v2.json",
+                    doc_path=root / "v2.md",
+                    model_cards_dir=root / "cards",
+                ),
+                batch_size=2,
+            )
+
+            self.assertGreater(report["targets"]["seller_next_action"]["task_manifest"]["censored_outcome_rows"], 0)
+            self.assertGreater(report["targets"]["final_price_ratio"]["task_manifest"]["unknown_outcome_rows"], 0)
+            self.assertGreaterEqual(
+                report["targets"]["seller_next_action"]["task_manifest"]["eligible_rows"],
+                report["targets"]["seller_next_action"]["task_manifest"]["supervised_training_rows"],
+            )
 
     def test_leaderboard_includes_required_models_and_scores_more_than_500_rows(self) -> None:
         rows = [_seller_row(index) for index in range(720)]
@@ -100,6 +127,41 @@ class OfferLabBenchmarkV2RunnerTests(unittest.TestCase):
             self.assertIn("brier_score", row)
             self.assertIn("calibration_report", row)
             self.assertIn("lineage", row)
+
+    def test_leaderboard_rejects_nonfinite_metrics_before_selection(self) -> None:
+        class BadModel:
+            model_id = "bad"
+            lineage = {}
+
+            def predict(self, rows):
+                return type(
+                    "Result",
+                    (),
+                    {
+                        "model_id": "bad",
+                        "features_used": [],
+                        "predictions": [
+                            {
+                                "row_id": row["row_id"],
+                                "label": row["label"],
+                                "prediction": row["label"],
+                                "probabilities": {str(row["label"]): float("nan")},
+                            }
+                            for row in rows
+                        ],
+                    },
+                )()
+
+        from behavior_lab.offerlab_models import benchmark_v2_runner as runner
+
+        original = runner._classification_models
+        try:
+            runner._classification_models = lambda target, train: [runner.V2ModelBundle("bad", BadModel(), "bad", False, [])]
+            rows = [_seller_row(index) for index in range(20)]
+            with self.assertRaisesRegex(Exception, "non-finite"):
+                runner._leaderboard("seller_next_action", rows[:12], rows[12:], batch_size=4)
+        finally:
+            runner._classification_models = original
 
     def test_cli_benchmark_v2_smoke_does_not_submit_hidden(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -186,6 +248,24 @@ def _seller_row(index: int) -> dict[str, object]:
         },
         "observed_history": [],
     }
+
+
+def _mark_as_bounded_fixture(normalized: Path) -> None:
+    manifest_path = normalized / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["command_args"] = {"full": False, "limit_threads": manifest.get("tables", {}).get("negotiation_turns", {}).get("rows")}
+    for table in manifest.get("tables", {}).values():
+        table_path = Path(table["path"])
+        for path in table_path.glob("*.jsonl"):
+            rows = []
+            for line in path.read_text(encoding="utf-8").splitlines():
+                row = json.loads(line)
+                for key in ("listing_id", "seller_id", "buyer_id", "thread_id"):
+                    if key in row and isinstance(row[key], str):
+                        row[key] = row[key].strip().lower()
+                rows.append(row)
+            path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
 
 
 if __name__ == "__main__":

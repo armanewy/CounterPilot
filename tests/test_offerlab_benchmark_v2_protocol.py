@@ -159,6 +159,11 @@ class OfferLabBenchmarkV2ProtocolTests(unittest.TestCase):
         with self.assertRaisesRegex(V2ProtocolError, "hidden results used"):
             validate_v2_pre_hidden_readiness(v2_manifest=manifest, readiness_report=report)
 
+        report = _valid_v2_readiness_report(manifest)
+        del report["model_selection"]["seller_next_action"]["hidden_results_used"]
+        with self.assertRaisesRegex(V2ProtocolError, "hidden results used"):
+            validate_v2_pre_hidden_readiness(v2_manifest=manifest, readiness_report=report)
+
     def test_v2_pre_hidden_validator_rejects_nan_and_infinite_metrics(self) -> None:
         manifest = json.loads(V2_MANIFEST.read_text(encoding="utf-8"))
         mutations = [
