@@ -39,6 +39,7 @@ from behavior_lab.datasets.criteo_uplift.uplift import simple_uplift_report
 from behavior_lab.datasets.nber_best_offer.acquire import fetch_codebook, fetch_full
 from behavior_lab.datasets.nber_best_offer.audit import audit as nber_audit
 from behavior_lab.datasets.nber_best_offer.audit import benchmark as nber_benchmark
+from behavior_lab.datasets.nber_best_offer.full_listing_pass import build_full_listing_restrictions, inspect_full_listing_restrictions
 from behavior_lab.datasets.nber_best_offer.inventory import inventory_path
 from behavior_lab.datasets.nber_best_offer.normalize import build_sample_dataset, normalize_dataset
 from behavior_lab.datasets.nber_best_offer.real_normalize import finalize_full_release_evidence, full_normalization_status, inspect_real_source_schema, normalize_real_dataset
@@ -458,6 +459,23 @@ def command_nber_full_status(args: argparse.Namespace) -> None:
     _print_json(full_normalization_status(output_dir))
 
 
+def command_nber_build_full_listing_restrictions(args: argparse.Namespace) -> None:
+    raw_dir = args.raw_dir or str(Path(os.environ.get("OFFERLAB_DATA_ROOT", r"C:\OfferLabData")) / "raw" / "nber_best_offer")
+    _print_json(
+        build_full_listing_restrictions(
+            raw_dir,
+            args.output_dir,
+            partitions=args.partitions,
+            resume=not args.no_resume,
+            require_official_sources=args.require_official_sources,
+        )
+    )
+
+
+def command_nber_inspect_full_listing_restrictions(args: argparse.Namespace) -> None:
+    _print_json(inspect_full_listing_restrictions(args.output_dir))
+
+
 def command_nber_replication_check(args: argparse.Namespace) -> None:
     if args.normalized_dir:
         _print_json(replication_check(args.normalized_dir, targets_path=args.targets))
@@ -652,6 +670,24 @@ def build_parser() -> argparse.ArgumentParser:
     nber_full_status = nber_subparsers.add_parser("full-status", help="Report full NBER normalization progress, checkpoints, and manifest integrity")
     nber_full_status.add_argument("--output-dir", default=None, help="Defaults to OFFERLAB_DATA_ROOT/processed/nber_best_offer_full")
     nber_full_status.set_defaults(func=command_nber_full_status)
+
+    nber_build_full_listing = nber_subparsers.add_parser(
+        "build-full-listing-restrictions",
+        help="Build the full source-listing L1/L2 restriction table",
+    )
+    nber_build_full_listing.add_argument("--raw-dir", default=None, help="Defaults to OFFERLAB_DATA_ROOT/raw/nber_best_offer")
+    nber_build_full_listing.add_argument("--output-dir", default=None, help="Defaults to OFFERLAB_DATA_ROOT/processed/nber_best_offer_full/listing_restrictions")
+    nber_build_full_listing.add_argument("--partitions", type=_positive, default=128)
+    nber_build_full_listing.add_argument("--no-resume", action="store_true", help="Rebuild even when a verified manifest exists")
+    nber_build_full_listing.add_argument("--require-official-sources", action="store_true", help="Require the pinned official listing source hash and byte count")
+    nber_build_full_listing.set_defaults(func=command_nber_build_full_listing_restrictions)
+
+    nber_inspect_full_listing = nber_subparsers.add_parser(
+        "inspect-full-listing-restrictions",
+        help="Verify the full source-listing L1/L2 restriction table",
+    )
+    nber_inspect_full_listing.add_argument("--output-dir", default=None, help="Defaults to OFFERLAB_DATA_ROOT/processed/nber_best_offer_full/listing_restrictions")
+    nber_inspect_full_listing.set_defaults(func=command_nber_inspect_full_listing_restrictions)
 
     nber_replication = nber_subparsers.add_parser("replication-check", help="Validate or run the frozen NBER replication contract")
     nber_replication.add_argument("--normalized-dir", help="Run checks against a normalized real-source manifest")
