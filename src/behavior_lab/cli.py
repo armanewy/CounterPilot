@@ -306,8 +306,7 @@ def command_offerlab_models_benchmark_v2(args: argparse.Namespace) -> None:
                 protocol_path=Path(args.protocol),
             ),
             batch_size=args.batch_size,
-            seed=args.seed,
-            submit_hidden=args.submit_hidden,
+            allow_hidden_submission=args.submit_hidden,
         )
     )
 
@@ -739,7 +738,6 @@ def build_parser() -> argparse.ArgumentParser:
     offer_models_benchmark_v2_runner.add_argument("--model-cards-dir", default="docs/model_cards/offerlab_benchmark_v2")
     offer_models_benchmark_v2_runner.add_argument("--protocol", default="datasets/manifests/offerlab_benchmark_v2.yaml")
     offer_models_benchmark_v2_runner.add_argument("--batch-size", type=_positive, default=10_000)
-    offer_models_benchmark_v2_runner.add_argument("--seed", type=int, default=20240621)
     offer_models_benchmark_v2_runner.add_argument("--submit-hidden", action="store_true")
     offer_models_benchmark_v2_runner.set_defaults(func=command_offerlab_models_benchmark_v2)
 
