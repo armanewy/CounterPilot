@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "contract_id": "nber_best_offer_final_publication_contract_v1",
+  "contract_version": "2020_qje_final_released_code_v1",
+  "created_utc": "2026-06-22",
+  "scope": "Final 2020 QJE publication and released-code replication contract for NBER Best Offer Sequential Bargaining.",
+  "authority_order": [
+    "final_released_analysis_code",
+    "final_online_appendix",
+    "final_2020_qje_publication",
+    "earlier_2018_nber_working_paper",
+    "existing_project_targets"
+  ],
+  "source_artifacts": [
+    {
+      "id": "final_2020_qje_publication",
+      "description": "Final QJE publication, Sequential Bargaining in the Field.",
+      "local_path": "C:\\OfferLabData\\source_docs\\best-offer-sequential-bargaining.html"
+    },
+    {
+      "id": "final_online_appendix",
+      "description": "Final online appendix/released data landing page.",
+      "local_path": "C:\\OfferLabData\\source_docs\\data-appendix-w24306-bargaining.html"
+    },
+    {
+      "id": "earlier_2018_nber_working_paper",
+      "description": "Earlier NBER working paper w24306.",
+      "local_path": "C:\\OfferLabData\\source_docs\\w24306.pdf",
+      "sha256": "5E12E4DAC6DE91570013B6AC34B8757D17237DF783ABB58A6E40D23B77A1227B"
+    },
+    {
+      "id": "released_code_paper_sample_do",
+      "description": "Final released Stata sample construction code.",
+      "local_path": "C:\\OfferLabData\\source_docs\\paper_sample.do",
+      "sha256": "9AFD57C2DC711EB00B6709CA4A6CAB335505EC6B3966E1F76EF4BCA16A9D3F97"
+    },
+    {
+      "id": "released_code_summary_stats_main_do",
+      "description": "Final released Stata Table I descriptive statistics code.",
+      "local_path": "C:\\OfferLabData\\source_docs\\summary_stats_main.do",
+      "sha256": "56FD56F3F0D5DB82970BEBF2AF6C698C43D345CB63A357BF172DFF75F8C81184"
+    }
+  ],
+  "final_publication_targets": {
+    "source_listings": 98307281,
+    "final_listings": 88386471,
+    "sellers": 1197397,
+    "buyers": 4701301,
+    "threads": 25453072,
+    "T1_offer_above_listing_violations": 386096,
+    "T2_buyer_violations": 3518,
+    "T2_seller_violations": 0,
+    "T3_missing_counter_violations": 1451,
+    "T4_accepted_not_last_violations": 1109,
+    "T5_duplicate_timestamp_violations": 4273,
+    "missing_used_values": 27678157,
+    "used_nonmissing_denominator": 60708314,
+    "sellers_with_missing_feedback": 51992,
+    "seller_feedback_nonmissing_denominator": 1145405
+  },
+  "working_paper_targets": {
+    "main_sample_listings_without_T5": 88388220,
+    "T2_buyer_violations": 3529,
+    "T2_seller_violations": 0,
+    "T3_missing_counter_violations": 1453,
+    "T4_accepted_not_last_violations": 1111,
+    "T5_duplicate_timestamp_violations": null
+  },
+  "version_difference_table": [
+    {
+      "topic": "L1 price ceiling",
+      "final_2020_contract": "Listing price above 1000 is excluded.",
+      "working_paper_or_project_trap": "Some prose says 0.99 <= listing price <= 1000.",
+      "resolution": "released_code_paper_sample_do line 37 uses only start_price_usd > 1000."
+    },
+    {
+      "topic": "L2 sale price check",
+      "final_2020_contract": "Sold item_price above start_price_usd is excluded when item_price is nonmissing.",
+      "working_paper_or_project_trap": "No target-version conflict found.",
+      "resolution": "released_code_paper_sample_do line 40."
+    },
+    {
+      "topic": "T1 offer amount check",
+      "final_2020_contract": "Any offer above listing price invalidates the listing.",
+      "working_paper_or_project_trap": "No target-version conflict found.",
+      "resolution": "released_code_paper_sample_do lines 58-60."
+    },
+    {
+      "topic": "T2 buyer offer cap",
+      "final_2020_contract": "3518 listing-level buyer violations.",
+      "working_paper_or_project_trap": "Earlier contract/project targets use 3529.",
+      "resolution": "final publication and final released-code replication use 3518."
+    },
+    {
+      "topic": "T2 seller offer cap",
+      "final_2020_contract": "0 listing-level seller violations.",
+      "working_paper_or_project_trap": "No target-version conflict found.",
+      "resolution": "final and working-paper values agree."
+    },
+    {
+      "topic": "T3 missing counter",
+      "final_2020_contract": "1451 listing-level violations.",
+      "working_paper_or_project_trap": "Earlier contract/project targets use 1453.",
+      "resolution": "final publication contract supersedes working-paper count."
+    },
+    {
+      "topic": "T4 accepted not last",
+      "final_2020_contract": "1109 listing-level violations.",
+      "working_paper_or_project_trap": "Earlier contract/project targets use 1111.",
+      "resolution": "final publication contract supersedes working-paper count."
+    },
+    {
+      "topic": "T5 duplicate timestamp",
+      "final_2020_contract": "4273 listing-level duplicate timestamp violations.",
+      "working_paper_or_project_trap": "Earlier working-paper target set has no T5.",
+      "resolution": "released_code_paper_sample_do lines 83-94 adds T5 to sample construction."
+    },
+    {
+      "topic": "main sample listing count",
+      "final_2020_contract": "88386471 retained listings after L1-L2 and T1-T5 union.",
+      "working_paper_or_project_trap": "Earlier contract/project target uses 88388220.",
+      "resolution": "final released-code sample includes T5 and final-publication denominator."
+    },
+    {
+      "topic": "identity and missing-value denominators",
+      "final_2020_contract": "1197397 sellers, 4701301 buyers, 25453072 threads, 27678157 missing Used values, and 51992 sellers missing feedback.",
+      "working_paper_or_project_trap": "Earlier target manifest uses no-T5 denominators for several Table I rows.",
+      "resolution": "final Table I audit must calculate denominators after final sample_id_list construction."
+    }
+  ],
+  "lower_listing_price_boundary": {
+    "final_contract": "No lower listing-price boundary is imposed by final released sample code.",
+    "prose_contradiction": "Publication prose mentions 0.99 <= listing price <= 1000, but Table I minimum is 0.01.",
+    "released_code_evidence": "paper_sample.do line 37: gen crit_1k = (start_price_usd > 1000)",
+    "implementation_rule": "Do not impose a 0.99 lower bound unless a future codebook-controlled source proves it was used by final sample_id_list construction."
+  },
+  "stale_repository_values": [
+    {
+      "path": "datasets/manifests/nber_replication_targets.yaml",
+      "line": 149,
+      "value": "88388220",
+      "classification": "working_paper_or_legacy_no_t5_target"
+    },
+    {
+      "path": "datasets/manifests/nber_replication_targets.yaml",
+      "line": 258,
+      "value": "3529",
+      "classification": "working_paper_or_legacy_t2_buyer_target"
+    },
+    {
+      "path": "datasets/manifests/nber_replication_targets.yaml",
+      "line": 289,
+      "value": "1453",
+      "classification": "working_paper_or_legacy_t3_target"
+    },
+    {
+      "path": "datasets/manifests/nber_replication_targets.yaml",
+      "line": 291,
+      "value": "1111",
+      "classification": "working_paper_or_legacy_t4_target"
+    },
+    {
+      "path": "datasets/manifests/nber_replication_targets.yaml",
+      "line": 354,
+      "value": "88,388,220",
+      "classification": "working_paper_or_legacy_no_t5_denominator_comment"
+    },
+    {
+      "path": "tests/test_nber_replication_targets.py",
+      "line": 78,
+      "value": "88388220",
+      "classification": "legacy_contract_test"
+    },
+    {
+      "path": "docs/research/NBER_REPLICATION_CONTRACT.md",
+      "line": 74,
+      "value": "88,388,220",
+      "classification": "legacy_contract_document"
+    },
+    {
+      "path": "docs/research/NBER_REPLICATION_CONTRACT.md",
+      "line": 78,
+      "value": "3,529",
+      "classification": "legacy_contract_document"
+    },
+    {
+      "path": "docs/research/NBER_REPLICATION_CONTRACT.md",
+      "line": 79,
+      "value": "1,453 and 1,111",
+      "classification": "legacy_contract_document"
+    }
+  ],
+  "gate_rule": "The final-publication evidence gate must use final_publication_targets exactly. Legacy working-paper targets may remain only when explicitly labelled and excluded from the final gate."
+}
