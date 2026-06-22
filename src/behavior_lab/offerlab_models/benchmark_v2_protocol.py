@@ -164,9 +164,9 @@ def _validate_calibration(v2_manifest: dict[str, Any], readiness_report: dict[st
                 raise V2ProtocolError(f"wrong ECE definition for {target}")
             if _finite_number(report.get("expected_calibration_error"), "expected_calibration_error", target) > _finite_number(classification_spec.get("expected_calibration_error_max"), "expected_calibration_error_max", target):
                 raise V2ProtocolError(f"ECE threshold failed for {target}")
-            if _finite_number(report.get("reliability_bin_count"), "reliability_bin_count", target) < _finite_number(classification_spec.get("minimum_reliability_bin_count"), "minimum_reliability_bin_count", target):
+            if _finite_int(report.get("reliability_bin_count"), "reliability_bin_count", target) < _finite_int(classification_spec.get("minimum_reliability_bin_count"), "minimum_reliability_bin_count", target):
                 raise V2ProtocolError(f"not enough reliability bins for {target}")
-            if _finite_number(report.get("nonempty_reliability_bins"), "nonempty_reliability_bins", target) < _finite_number(classification_spec.get("minimum_nonempty_reliability_bins"), "minimum_nonempty_reliability_bins", target):
+            if _finite_int(report.get("nonempty_reliability_bins"), "nonempty_reliability_bins", target) < _finite_int(classification_spec.get("minimum_nonempty_reliability_bins"), "minimum_nonempty_reliability_bins", target):
                 raise V2ProtocolError(f"not enough reliability bins for {target}")
             if report.get("classwise_ece_definition") != classification_spec.get("classwise_ece_definition"):
                 raise V2ProtocolError(f"wrong classwise ECE definition for {target}")
@@ -221,6 +221,7 @@ def _validate_model_selection(v2_manifest: dict[str, Any], readiness_report: dic
             raise V2ProtocolError(f"hidden results used for model selection on {target}")
         if selection.get("primary_split_survival") != objective.get("required_primary_split_survival"):
             raise V2ProtocolError(f"primary split survival mismatch for {target}")
+        support_coverage = _finite_number(selection.get("support_coverage"), "support_coverage", target)
         if "minimum_relative_improvement" in objective:
             if _finite_number(selection.get("relative_improvement"), "relative_improvement", target) < _finite_number(objective["minimum_relative_improvement"], "minimum_relative_improvement", target):
                 raise V2ProtocolError(f"minimum improvement failed for {target}")
@@ -228,7 +229,7 @@ def _validate_model_selection(v2_manifest: dict[str, Any], readiness_report: dic
             if _finite_number(selection.get("error_ratio_to_baseline"), "error_ratio_to_baseline", target) > _finite_number(objective["maximum_error_ratio_to_baseline"], "maximum_error_ratio_to_baseline", target):
                 raise V2ProtocolError(f"baseline error-ratio gate failed for {target}")
         if "minimum_support_coverage" in objective:
-            if _finite_number(selection.get("support_coverage"), "support_coverage", target) < _finite_number(objective["minimum_support_coverage"], "minimum_support_coverage", target):
+            if support_coverage < _finite_number(objective["minimum_support_coverage"], "minimum_support_coverage", target):
                 raise V2ProtocolError(f"support coverage gate failed for {target}")
 
 
@@ -240,3 +241,11 @@ def _finite_number(value: Any, field: str, target: str) -> float:
     if isinstance(value, bool) or not isinstance(value, Real) or not isfinite(float(value)):
         raise V2ProtocolError(f"{field} is not a finite number for {target}")
     return float(value)
+
+
+def _finite_int(value: Any, field: str, target: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise V2ProtocolError(f"{field} is not an integer for {target}")
+    if not isfinite(float(value)):
+        raise V2ProtocolError(f"{field} is not a finite number for {target}")
+    return value

@@ -306,6 +306,23 @@ class OfferLabBenchmarkV2ProtocolTests(unittest.TestCase):
         with self.assertRaisesRegex(V2ProtocolError, "not an integer"):
             validate_v2_pre_hidden_readiness(v2_manifest=manifest, readiness_report=report)
 
+    def test_v2_pre_hidden_validator_requires_finite_support_coverage_for_every_target(self) -> None:
+        manifest = json.loads(V2_MANIFEST.read_text(encoding="utf-8"))
+        for target in manifest["targets"]:
+            with self.subTest(target=target):
+                report = _valid_v2_readiness_report(manifest)
+                report["model_selection"][target]["support_coverage"] = float("nan")
+                with self.assertRaisesRegex(V2ProtocolError, "support_coverage is not a finite number"):
+                    validate_v2_pre_hidden_readiness(v2_manifest=manifest, readiness_report=report)
+
+    def test_v2_pre_hidden_validator_requires_integer_reliability_counts(self) -> None:
+        manifest = json.loads(V2_MANIFEST.read_text(encoding="utf-8"))
+        report = _valid_v2_readiness_report(manifest)
+        report["calibration"]["seller_next_action"]["reliability_bin_count"] = 10.5
+
+        with self.assertRaisesRegex(V2ProtocolError, "reliability_bin_count is not an integer"):
+            validate_v2_pre_hidden_readiness(v2_manifest=manifest, readiness_report=report)
+
 
 def _valid_v2_readiness_report(manifest: dict) -> dict:
     splits = {}
