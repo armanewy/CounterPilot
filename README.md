@@ -224,7 +224,7 @@ python -m behavior_lab offerlab-pilot audit PILOT_ID
 python -m behavior_lab offerlab-pilot shadow-report PILOT_ID
 ```
 
-OfferLab does not call eBay or execute seller actions yet. It records normalized snapshots, produces a read-only profit audit and shadow report, and abstains from recommendation when seller cost basis, fee data, action diversity, traffic freshness, or comparable mature outcomes are insufficient. See [`docs/OFFERLAB.md`](docs/OFFERLAB.md).
+OfferLab does not call eBay or execute seller actions yet. It records normalized snapshots, produces a read-only profit audit and shadow report, and abstains from recommendation when seller cost basis, fee data, shipping-cost evidence, action diversity, traffic freshness, or comparable mature outcomes are insufficient. See [`docs/OFFERLAB.md`](docs/OFFERLAB.md).
 
 ## OfferLab Evidence Waves
 

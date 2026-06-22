@@ -50,7 +50,7 @@ The report contains:
 4. Proposed guarded policy.
 5. Prospective test plan.
 
-It also includes a data-quality score based on seller cost-basis coverage, actual eBay fee coverage, mature return-window coverage, and traffic freshness.
+It also includes a data-quality score based on seller cost-basis coverage, actual eBay fee coverage, shipping-cost coverage, mature return-window coverage, and traffic freshness.
 
 ## Seller Pilot Kit
 
@@ -68,7 +68,7 @@ Supported pilot files are CSV, JSON/JSONL, and Parquet when `pyarrow` or `pandas
 
 Seller data must stay outside this repository. Import refuses input directories or ledger roots inside the repo. Every imported version records source file hashes, row hashes, the schema version, and the explicit source-column-to-canonical-column mapping. Unknown source columns are rejected unless they are explicitly mapped in `pilot_manifest.json`.
 
-The read-only audit reports the offer funnel, acceptance and payment rates, response latency, realized price versus asking price, mature contribution margin, cancellation and return effects, category and inventory-age breakdowns, data-quality gaps, and whether shadow evaluation is possible. The readiness gate requires sufficient mature outcomes, cost coverage, fee coverage, return-window coverage, and decision-history coverage. Missing cost basis is reported and never imputed.
+The read-only audit reports the offer funnel, acceptance and payment rates, response latency, realized price versus asking price, mature contribution margin, cancellation and return effects, category and inventory-age breakdowns, data-quality gaps, and whether shadow evaluation is possible. The readiness gate requires sufficient mature outcomes, cost coverage, fee coverage, shipping-cost coverage, return-window coverage, and decision-history coverage. Missing cost basis or shipping evidence is reported and never imputed.
 
 The shadow report is still local-only and read-only. It reconstructs profit and loss from the imported seller ledger, compares historical policy behavior descriptively, gives abstention reasons, lists counterexamples, and proposes a safest prospective shadow experiment. It does not claim causal lift from historical differences and does not execute seller actions. It requires at least two meaningful observed seller actions before proposing a shadow policy.
 
