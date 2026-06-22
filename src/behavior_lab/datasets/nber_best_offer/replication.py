@@ -715,6 +715,7 @@ def _replication_payload(
         "schema_version": "nber_replication_check.v1",
         "normalized_dir": str(root.resolve()),
         "manifest_hash": sha256_file(root / "manifest.json"),
+        "normalization_manifest_hash": manifest.get("lineage", {}).get("normalization_manifest_payload_hash") or manifest.get("lineage", {}).get("normalization_manifest_hash"),
         "normalization_manifest_payload_hash": manifest.get("lineage", {}).get("normalization_manifest_payload_hash"),
         "targets_hash": sha256_file(target_path),
         "replication_scope": scope,

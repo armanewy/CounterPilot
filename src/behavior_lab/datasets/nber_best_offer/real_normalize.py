@@ -420,7 +420,15 @@ def finalize_full_release_evidence(output_dir: str | Path, *, independent_audit_
     evidence = manifest.setdefault("audited_full_release_evidence", {})
     replication_artifact = manifest.get("replication_checks")
     if not isinstance(replication_artifact, dict) or not _replication_artifact_verification(manifest, evidence)["passed"]:
-        replication_artifact = _run_replication_artifact(output, manifest_hash=payload_hash)
+        candidate = _replication_artifact_from_existing_file(output / "replication_check.json")
+        if candidate is not None:
+            evidence["replication_contract_artifact"] = {"path": candidate["path"], "sha256": candidate["sha256"]}
+            if _replication_artifact_verification(manifest, evidence)["passed"]:
+                replication_artifact = candidate
+            else:
+                replication_artifact = _run_replication_artifact(output, manifest_hash=payload_hash)
+        else:
+            replication_artifact = _run_replication_artifact(output, manifest_hash=payload_hash)
     audit_path = Path(independent_audit_artifact)
     if not audit_path.exists():
         raise NberRealNormalizeError(f"Missing independent audit artifact: {audit_path}")
@@ -478,6 +486,26 @@ def _manifest_payload_hash_for_evidence(manifest: dict[str, Any]) -> str:
     if current:
         return str(current)
     return _reconstruct_pre_evidence_payload_hash(manifest)
+
+
+def _replication_artifact_from_existing_file(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return {
+        "schema_version": "nber_replication_artifact.v1",
+        "path": str(path.resolve()),
+        "sha256": sha256_file(path),
+        "passed": bool(payload.get("passed")),
+        "full_replication_passed": bool(payload.get("full_replication_passed")),
+        "fatal_failures": len(payload.get("fatal_failures", [])),
+        "fatal_unevaluated": len(payload.get("fatal_unevaluated", [])),
+    }
 
 
 def _read_artifact_payload(artifact: Any) -> dict[str, Any]:
