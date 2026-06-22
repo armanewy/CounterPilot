@@ -67,6 +67,8 @@ from behavior_lab.offerlab_models.benchmark_v2 import BenchmarkV2Paths as Benchm
 from behavior_lab.offerlab_models.benchmark_v2 import build_offerlab_benchmark_v2
 from behavior_lab.offerlab_models.benchmark_v2_runner import BenchmarkV2Paths as BenchmarkV2RunnerPaths
 from behavior_lab.offerlab_models.benchmark_v2_runner import run_offerlab_benchmark_v2
+from behavior_lab.offerlab_models.benchmark_v2_integration import BenchmarkV2IntegrationPaths
+from behavior_lab.offerlab_models.benchmark_v2_integration import run_offerlab_benchmark_v2_integration
 from behavior_lab.research_api import ResearchAPI
 from behavior_lab.runner import BatchConfig, SyntheticBatchRunner
 from behavior_lab.stress import LabStressTester
@@ -329,6 +331,30 @@ def command_offerlab_models_benchmark_v2(args: argparse.Namespace) -> None:
             ),
             batch_size=args.batch_size,
             allow_hidden_submission=args.submit_hidden,
+        )
+    )
+
+
+def command_offerlab_models_benchmark_v2_integrate(args: argparse.Namespace) -> None:
+    _print_json(
+        run_offerlab_benchmark_v2_integration(
+            BenchmarkV2IntegrationPaths(
+                normalized_dir=Path(args.normalized_dir),
+                benchmark_dir=Path(args.benchmark_dir),
+                output_path=Path(args.output),
+                preregistration_path=Path(args.preregistration),
+                pre_hidden_output_path=Path(args.pre_hidden_output),
+                doc_path=Path(args.doc),
+                pre_hidden_doc_path=Path(args.pre_hidden_doc),
+                model_cards_dir=Path(args.model_cards_dir),
+                protocol_path=Path(args.protocol),
+                v1_final_manifest_path=Path(args.v1_final_manifest),
+                external_v1_hidden_tokens_path=Path(args.external_v1_hidden_tokens) if args.external_v1_hidden_tokens else None,
+            ),
+            batch_size=args.batch_size,
+            partition_rows=args.partition_rows,
+            allow_bounded_test_input=args.allow_bounded_test_input,
+            submit_hidden=args.submit_hidden,
         )
     )
 
@@ -784,6 +810,23 @@ def build_parser() -> argparse.ArgumentParser:
     offer_models_benchmark_v2_runner.add_argument("--batch-size", type=_positive, default=10_000)
     offer_models_benchmark_v2_runner.add_argument("--submit-hidden", action="store_true")
     offer_models_benchmark_v2_runner.set_defaults(func=command_offerlab_models_benchmark_v2)
+    offer_models_benchmark_v2_integrate = offer_models_subparsers.add_parser("benchmark-v2-integrate", help="Run the Benchmark v2 integration gate and preregistration artifact")
+    offer_models_benchmark_v2_integrate.add_argument("--normalized-dir", required=True)
+    offer_models_benchmark_v2_integrate.add_argument("--benchmark-dir", required=True)
+    offer_models_benchmark_v2_integrate.add_argument("--output", default="reports/offerlab_benchmark_v2.json")
+    offer_models_benchmark_v2_integrate.add_argument("--preregistration", default="reports/offerlab_benchmark_v2_preregistration.json")
+    offer_models_benchmark_v2_integrate.add_argument("--pre-hidden-output", default="reports/offerlab_benchmark_v2_pre_hidden.json")
+    offer_models_benchmark_v2_integrate.add_argument("--doc", default="docs/runs/OFFERLAB_BENCHMARK_V2_INTEGRATION.md")
+    offer_models_benchmark_v2_integrate.add_argument("--pre-hidden-doc", default="docs/runs/OFFERLAB_BENCHMARK_V2_PRE_HIDDEN.md")
+    offer_models_benchmark_v2_integrate.add_argument("--model-cards-dir", default="docs/model_cards/offerlab_benchmark_v2")
+    offer_models_benchmark_v2_integrate.add_argument("--protocol", default="datasets/manifests/offerlab_benchmark_v2.yaml")
+    offer_models_benchmark_v2_integrate.add_argument("--v1-final-manifest", default="reports/offerlab_benchmark_v1_final_manifest.json")
+    offer_models_benchmark_v2_integrate.add_argument("--external-v1-hidden-tokens")
+    offer_models_benchmark_v2_integrate.add_argument("--partition-rows", type=_positive, default=50_000)
+    offer_models_benchmark_v2_integrate.add_argument("--batch-size", type=_positive, default=10_000)
+    offer_models_benchmark_v2_integrate.add_argument("--submit-hidden", action="store_true")
+    offer_models_benchmark_v2_integrate.add_argument("--allow-bounded-test-input", action="store_true", help=argparse.SUPPRESS)
+    offer_models_benchmark_v2_integrate.set_defaults(func=command_offerlab_models_benchmark_v2_integrate)
 
     demo = subparsers.add_parser("demo", help="Run all waves end-to-end with campaign-safe lockboxes")
     demo.add_argument("--data-dir", default=".demo")
