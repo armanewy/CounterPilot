@@ -14,13 +14,15 @@ python -m tools.ebay_api_probe.cli `
   --output reports/ebay_sandbox_role_probe.json
 ```
 
-## Manual Setup Required
+## Required Preexisting Sandbox Fixture
 
-- Create three eBay Sandbox users: seller, bidder, unrelated observer.
-- Create one fixed-price listing with Best Offer enabled.
-- Place at least two offers and one counteroffer.
-- End or allow the listing to end.
+- Three eBay Sandbox users must already exist: seller, bidder, unrelated observer.
+- One fixed-price listing with Best Offer enabled must already exist.
+- At least two offers and one counteroffer must already exist.
+- Active and ended listing observations must already be available.
 - Run `GetBestOffers` as seller, bidder, and unrelated observer while active and after end.
+
+This repository does not authorize creating sandbox users, creating listings, placing offers, making counteroffers, ending listings, or otherwise mutating eBay state. Those actions require a separate explicit authorization outside this read-only probe.
 
 ## Data Retention Rule
 
@@ -29,4 +31,3 @@ Only retain the redacted field matrix, status code, API acknowledgment, warning/
 ## Gate
 
 Sandbox role visibility is not evaluated. Current result: `blocked_missing_sandbox_credentials_and_manual_listing_setup`.
-
