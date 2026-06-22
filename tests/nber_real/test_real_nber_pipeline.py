@@ -9,7 +9,15 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests"))
 import _bootstrap  # noqa: F401,E402
 
-from behavior_lab.datasets.nber_best_offer.real_normalize import OFFICIAL_FULL_SOURCE_EXPECTATIONS, _normalize_listing_row, normalize_real_dataset, verify_full_release_evidence
+from behavior_lab.datasets.nber_best_offer.real_normalize import (
+    OFFICIAL_FULL_SOURCE_EXPECTATIONS,
+    _artifact_binds_to_manifest,
+    _independent_audit_artifact_verification,
+    _normalize_listing_row,
+    normalize_real_dataset,
+    sha256_file,
+    verify_full_release_evidence,
+)
 from behavior_lab.datasets.nber_best_offer.replication import replication_check, validate_replication_targets
 from behavior_lab.datasets.nber_best_offer.source_schema import (
     REAL_LISTING_COLUMNS,
@@ -180,6 +188,53 @@ class RealNberPipelineTests(unittest.TestCase):
             self.assertIn("source_files_verified_now", report["failures"])
             self.assertIn("replication_artifact_verified", report["failures"])
             self.assertIn("independent_audit_artifact_verified", report["failures"])
+
+    def test_full_release_artifacts_require_exact_manifest_binding_and_scope(self) -> None:
+        manifest = {
+            "lineage": {
+                "normalization_manifest_hash": "manifest-hash",
+                "raw_source_hashes": {"anon_bo_lists": "lists", "anon_bo_threads": "threads"},
+            }
+        }
+        self.assertFalse(_artifact_binds_to_manifest(manifest, {"raw_source_hashes": manifest["lineage"]["raw_source_hashes"]}))
+        self.assertFalse(_artifact_binds_to_manifest(manifest, {"source_hashes": manifest["lineage"]["raw_source_hashes"]}))
+        self.assertTrue(_artifact_binds_to_manifest(manifest, {"normalization_manifest_hash": "manifest-hash"}))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_path = Path(tmp) / "audit.json"
+            artifact_path.write_text(
+                json.dumps(
+                    {
+                        "passed": True,
+                        "independent_audit_passed": True,
+                        "normalization_manifest_hash": "manifest-hash",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            missing_scope = _independent_audit_artifact_verification(
+                manifest,
+                {"independent_audit_artifact": {"path": str(artifact_path), "sha256": sha256_file(artifact_path)}},
+            )
+            self.assertFalse(missing_scope["passed"])
+            self.assertIn("scope_not_full_release", missing_scope["failures"])
+
+            artifact_path.write_text(
+                json.dumps(
+                    {
+                        "passed": True,
+                        "independent_audit_passed": True,
+                        "scope": "full_release",
+                        "normalization_manifest_hash": "manifest-hash",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            scoped = _independent_audit_artifact_verification(
+                manifest,
+                {"independent_audit_artifact": {"path": str(artifact_path), "sha256": sha256_file(artifact_path)}},
+            )
+            self.assertTrue(scoped["passed"], scoped["failures"])
 
     def test_thread_checkpoint_mismatch_rebuilds_thread_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

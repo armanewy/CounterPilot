@@ -12,7 +12,8 @@
       "complete-manifest reruns revalidate output partition files before returning idempotent_rerun",
       "task and benchmark use require verified full-release evidence rather than manifest booleans alone",
       "official source files are rechecked from disk against expected bytes and SHA-256",
-      "replication and independent audit evidence require JSON artifact paths with matching SHA-256 hashes"
+      "replication and independent audit evidence require JSON artifact paths with matching SHA-256 hashes and the current normalization_manifest_hash",
+      "independent audit evidence must declare scope full_release"
     ]
   },
   "official_evidence_gate": {

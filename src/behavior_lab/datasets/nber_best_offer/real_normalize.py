@@ -865,7 +865,7 @@ def _independent_audit_artifact_verification(manifest: dict[str, Any], evidence:
         required_zero_fields=[],
     )
     payload = report.get("payload", {})
-    if isinstance(payload, dict) and payload.get("scope") not in {None, "full_release"}:
+    if not isinstance(payload, dict) or payload.get("scope") != "full_release":
         report["passed"] = False
         report.setdefault("failures", []).append("scope_not_full_release")
     report.pop("payload", None)
@@ -925,15 +925,6 @@ def _json_artifact_verification(
 
 
 def _artifact_binds_to_manifest(manifest: dict[str, Any], payload: dict[str, Any]) -> bool:
-    source_hashes = manifest.get("lineage", {}).get("raw_source_hashes") or {
-        key: value.get("sha256")
-        for key, value in dict(manifest.get("source_files", {})).items()
-        if isinstance(value, dict)
-    }
-    if payload.get("raw_source_hashes") == source_hashes:
-        return True
-    if payload.get("source_hashes") == source_hashes:
-        return True
     manifest_hash = manifest.get("lineage", {}).get("normalization_manifest_hash")
     if manifest_hash and payload.get("normalization_manifest_hash") == manifest_hash:
         return True

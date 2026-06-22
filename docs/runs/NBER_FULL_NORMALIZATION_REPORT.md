@@ -31,7 +31,8 @@ full_unbounded_source_scan`.
 - Full-release evidence verification rechecks official source files from disk
   against the expected byte sizes and SHA-256 hashes.
 - Replication and independent-audit claims must point to JSON artifacts with
-  recorded artifact hashes; manifest booleans alone are not accepted.
+  recorded artifact hashes and the current normalization manifest hash;
+  manifest booleans alone are not accepted.
 
 ## Evidence Gate
 
@@ -49,7 +50,10 @@ all of these are true:
 Task generation and benchmark scope both require that stricter evidence gate
 before an unbounded full manifest can be used as full-release evidence. The
 gate verifies the source files, partition files, replication artifact, and
-independent audit artifact at evaluation time.
+independent audit artifact at evaluation time. Replication and independent
+audit artifacts must bind to `lineage.normalization_manifest_hash`; matching
+only raw source hashes is not enough. Independent audit artifacts must also
+declare `scope: "full_release"`.
 
 ## Data Checked
 

@@ -53,6 +53,8 @@ require verified official source hashes and byte sizes, current partition-file
 hash checks, full-run checkpoint validation, published-stat replication, and an
 independent audit. Verification rechecks source files from disk and requires
 hash-bound JSON artifacts for the replication and independent audit results.
+Those artifacts must bind to the current normalization manifest hash, and the
+independent audit artifact must explicitly declare full-release scope.
 Hand-written manifest booleans are not sufficient evidence.
 
 ## Interpretation
