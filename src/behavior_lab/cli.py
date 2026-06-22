@@ -52,6 +52,8 @@ from behavior_lab.marginpilot import (
     ingest_marginpilot_events,
     marginpilot_audit,
     marginpilot_inbox,
+    marginpilot_rule_simulation,
+    marginpilot_utility_report,
     write_marginpilot_templates,
 )
 from behavior_lab.marginpilot_core import (
@@ -309,6 +311,19 @@ def command_marginpilot_inbox(args: argparse.Namespace) -> None:
 
 def command_marginpilot_audit(args: argparse.Namespace) -> None:
     _print_json(marginpilot_audit(args.data_dir, merchant_id=args.merchant_id))
+
+
+def command_marginpilot_utility_report(args: argparse.Namespace) -> None:
+    _print_json(marginpilot_utility_report(args.data_dir, merchant_id=args.merchant_id))
+
+
+def command_marginpilot_rule_simulation(args: argparse.Namespace) -> None:
+    rule: dict[str, Any] = {}
+    if args.rule_file:
+        rule = json.loads(Path(args.rule_file).read_text(encoding="utf-8"))
+    elif args.rule:
+        rule = json.loads(args.rule)
+    _print_json(marginpilot_rule_simulation(args.data_dir, merchant_id=args.merchant_id, rule=rule))
 
 
 def command_marginpilot_transaction_create(args: argparse.Namespace) -> None:
@@ -918,6 +933,18 @@ def build_parser() -> argparse.ArgumentParser:
     margin_audit.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
     margin_audit.add_argument("--merchant-id")
     margin_audit.set_defaults(func=command_marginpilot_audit)
+
+    margin_utility = subparsers.add_parser("marginpilot-utility-report", help="Summarize offer funnel, mature margin, refunds, concessions, and unpaid accepted offers")
+    margin_utility.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_utility.add_argument("--merchant-id")
+    margin_utility.set_defaults(func=command_marginpilot_utility_report)
+
+    margin_rule = subparsers.add_parser("marginpilot-rule-sim", help="Replay a fixed merchant rule against historical contexts without causal claims")
+    margin_rule.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_rule.add_argument("--merchant-id")
+    margin_rule.add_argument("--rule", help="JSON rule body")
+    margin_rule.add_argument("--rule-file", help="Path to JSON rule body")
+    margin_rule.set_defaults(func=command_marginpilot_rule_simulation)
 
     margin_tx_create = subparsers.add_parser("marginpilot-transaction-create", help="Create a local MarginPilot transaction from an offer_submitted event")
     margin_tx_create.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))

@@ -440,6 +440,113 @@ def marginpilot_audit(data_dir: str | Path = DEFAULT_DATA_DIR, *, merchant_id: s
     }
 
 
+def marginpilot_utility_report(data_dir: str | Path = DEFAULT_DATA_DIR, *, merchant_id: str | None = None) -> dict[str, Any]:
+    events = _events(data_dir, merchant_id=merchant_id)
+    threads = _offer_threads(events)
+    decided_threads = [thread for thread in threads if thread["decision"] is not None]
+    matured_threads = [thread for thread in threads if thread["outcome"] is not None]
+    paid_threads = [thread for thread in matured_threads if _mature_paid(thread["outcome"]["outcome"])]
+    nonreturned_paid_threads = [thread for thread in paid_threads if not bool(thread["outcome"]["outcome"].get("returned"))]
+    accepted_threads = [thread for thread in decided_threads if _is_accepting_decision(thread["decision"])]
+    unpaid_accepted = [thread for thread in accepted_threads if not _thread_has_paid_outcome(thread)]
+    accepted_paid_threads = [thread for thread in accepted_threads if thread["outcome"] is not None and _mature_paid(thread["outcome"]["outcome"])]
+    mature_margins = [float(thread["outcome"]["outcome"]["mature_contribution_margin"]) for thread in paid_threads]
+    accepted_mature_margins = [float(thread["outcome"]["outcome"]["mature_contribution_margin"]) for thread in accepted_paid_threads]
+    final_sales = [float(thread["outcome"]["outcome"].get("final_sale_price") or 0.0) for thread in paid_threads]
+    accepted_final_sales = [float(thread["outcome"]["outcome"].get("final_sale_price") or 0.0) for thread in accepted_paid_threads]
+    refunds = [float(thread["outcome"]["outcome"].get("refund_amount") or 0.0) for thread in matured_threads]
+    accepted_refunds = [float(thread["outcome"]["outcome"].get("refund_amount") or 0.0) for thread in accepted_paid_threads]
+    concessions = [_concession_row(thread) for thread in decided_threads]
+    concessions = [row for row in concessions if row is not None]
+    return {
+        "schema_version": "marginpilot_merchant_utility_report.v1",
+        "product_id": MARGINPILOT_PRODUCT_ID,
+        "merchant_id": merchant_id,
+        "ledger": str((Path(data_dir) / "ledger.jsonl").resolve()),
+        "model_training": "not_run",
+        "automation_allowed": False,
+        "causal_claim": False,
+        "offer_volume_and_acceptance_funnel": {
+            "offers_opened": len(threads),
+            "merchant_responded": len(decided_threads),
+            "accepted_or_countered": len(accepted_threads),
+            "mature_outcomes": len(matured_threads),
+            "paid_mature_outcomes": len(paid_threads),
+            "paid_nonreturned_mature_outcomes": len(nonreturned_paid_threads),
+            "returned": sum(1 for thread in matured_threads if bool(thread["outcome"]["outcome"].get("returned"))),
+            "cancelled": sum(1 for thread in matured_threads if bool(thread["outcome"]["outcome"].get("cancelled"))),
+        },
+        "mature_margin_per_accepted_offer": [_mature_margin_row(thread) for thread in accepted_paid_threads],
+        "margin_by_product_and_inventory_age": _margin_by_product_and_age(paid_threads),
+        "amount_conceded_vs_asking": {
+            "rows": concessions,
+            "average_concession": _mean([row["amount_conceded"] for row in concessions]),
+            "average_concession_rate": _mean([row["concession_rate"] for row in concessions]),
+        },
+        "time_from_offer_to_payment": _time_to_payment_summary(paid_threads),
+        "unpaid_accepted_offers": [_unpaid_row(thread) for thread in unpaid_accepted],
+        "refund_return_adjusted_margin": {
+            "gross_paid_sales": round(sum(final_sales), 2),
+            "refunds": round(sum(refunds), 2),
+            "mature_contribution_margin": round(sum(mature_margins), 2),
+            "return_count": sum(1 for thread in matured_threads if bool(thread["outcome"]["outcome"].get("returned"))),
+            "paid_outcome_count": len(paid_threads),
+        },
+        "merchant_value_statement": _merchant_value_statement(accepted_final_sales, accepted_mature_margins, accepted_refunds),
+    }
+
+
+def marginpilot_rule_simulation(
+    data_dir: str | Path = DEFAULT_DATA_DIR,
+    *,
+    rule: dict[str, Any] | None = None,
+    merchant_id: str | None = None,
+) -> dict[str, Any]:
+    rule_body = _normalize_rule(rule or {})
+    threads = [thread for thread in _offer_threads(_events(data_dir, merchant_id=merchant_id)) if thread["offer"] is not None]
+    rows = []
+    for thread in threads:
+        simulated = _simulate_rule_for_thread(thread, rule_body)
+        actual = _normalize_action(thread["decision"]["selected_action"]) if thread["decision"] is not None else None
+        outcome = thread["outcome"]["outcome"] if thread["outcome"] is not None else {}
+        actions_match = _actions_match(actual, simulated)
+        actual_margin = outcome.get("mature_contribution_margin") if actions_match and outcome.get("return_window_matured") else None
+        rows.append(
+            {
+                "offer_id": thread["offer"]["offer_id"],
+                "listing_id": thread["offer"]["listing_id"],
+                "actual_selected_action": actual,
+                "simulated_action": simulated,
+                "actions_match": actions_match,
+                "observed_mature_margin": actual_margin,
+                "observed_outcome_reused": actual_margin is not None,
+                "observed_outcome_reuse_reason": "actual_action_matched_simulated_rule" if actual_margin is not None else "not_reused_for_counterfactual_action",
+            }
+        )
+    comparable = [row for row in rows if row["observed_mature_margin"] is not None]
+    matched = [row for row in comparable if row["actions_match"]]
+    return {
+        "schema_version": "marginpilot_rule_simulation.v1",
+        "product_id": MARGINPILOT_PRODUCT_ID,
+        "merchant_id": merchant_id,
+        "rule": rule_body,
+        "not_causal": True,
+        "causal_claim": False,
+        "model_training": "not_run",
+        "automation_allowed": False,
+        "rows": rows,
+        "summary": {
+            "eligible_offers": len(rows),
+            "observed_mature_rows": len(comparable),
+            "action_counts": _action_counts(row["simulated_action"] for row in rows),
+            "matched_actual_actions": len(matched),
+            "mismatched_actions": sum(1 for row in rows if row["actual_selected_action"] is not None and not row["actions_match"]),
+            "observed_margin_when_actions_matched": round(sum(float(row["observed_mature_margin"]) for row in matched), 2),
+        },
+        "interpretation": "This replays a fixed rule against historical contexts. It is not a causal estimate of what would have happened.",
+    }
+
+
 def _events(data_dir: str | Path, *, merchant_id: str | None) -> list[dict[str, Any]]:
     ledger = ImmutableLedger(Path(data_dir) / "ledger.jsonl")
     events = ledger.payloads(MARGINPILOT_RECORD_TYPE)
@@ -531,6 +638,253 @@ def _thread_integrity(events: list[dict[str, Any]]) -> dict[str, Any]:
         "decisions_checked": sum(len(items) for items in decisions.values()),
         "outcomes_checked": sum(len(items) for items in outcomes.values()),
     }
+
+
+def _offer_threads(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    offers: dict[tuple[str, str], dict[str, Any]] = {}
+    decisions: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    outcomes: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for event in events:
+        if event["event_type"] == "offer_opened":
+            offers[_merchant_offer_key(event)] = event
+        elif event["event_type"] == "merchant_decision":
+            decisions[_merchant_offer_key(event)].append(event)
+        elif event["event_type"] == "outcome_matured":
+            outcomes[_merchant_offer_key(event)].append(event)
+    threads = []
+    for key, offer in sorted(offers.items(), key=lambda item: (str(item[1]["occurred_at"]), item[0])):
+        decision = _latest_event(decisions.get(key, []))
+        outcome = _latest_event(outcomes.get(key, []))
+        threads.append({"key": key, "offer": offer, "decision": decision, "outcome": outcome})
+    return threads
+
+
+def _latest_event(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not events:
+        return None
+    return sorted(events, key=lambda event: parse_time(str(event["occurred_at"])))[-1]
+
+
+def _is_accepting_decision(decision: dict[str, Any] | None) -> bool:
+    action = _decision_action(decision)
+    return action in {"accept", "counter_at_amount", "free_shipping_counter", "bundle_counter"}
+
+
+def _decision_action(decision: dict[str, Any] | None) -> str | None:
+    if decision is None:
+        return None
+    return str(decision.get("selected_action", {}).get("action"))
+
+
+def _thread_has_paid_outcome(thread: dict[str, Any]) -> bool:
+    outcome = thread["outcome"]["outcome"] if thread.get("outcome") is not None else {}
+    return bool(outcome.get("buyer_paid")) and bool(outcome.get("return_window_matured")) and not bool(outcome.get("cancelled"))
+
+
+def _mature_margin_row(thread: dict[str, Any]) -> dict[str, Any]:
+    offer = thread["offer"]
+    decision = thread["decision"]
+    outcome = thread["outcome"]["outcome"]
+    return {
+        "offer_id": offer["offer_id"],
+        "listing_id": offer["listing_id"],
+        "category": offer["pre_decision_context"].get("category"),
+        "selected_action": _decision_action(decision),
+        "final_sale_price": float(outcome["final_sale_price"]),
+        "refund_amount": float(outcome.get("refund_amount") or 0.0),
+        "returned": bool(outcome.get("returned")),
+        "mature_contribution_margin": float(outcome["mature_contribution_margin"]),
+    }
+
+
+def _margin_by_product_and_age(threads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[tuple[str, str], list[float]] = defaultdict(list)
+    for thread in threads:
+        context = thread["offer"]["pre_decision_context"]
+        key = str(context.get("comparable_inventory_key") or context.get("sku") or thread["offer"]["listing_id"])
+        age_bucket = _age_bucket(context.get("inventory_age_days"))
+        groups[(key, age_bucket)].append(float(thread["outcome"]["outcome"]["mature_contribution_margin"]))
+    rows = []
+    for (product_key, age_bucket), margins in sorted(groups.items()):
+        rows.append(
+            {
+                "product_key": product_key,
+                "inventory_age_bucket": age_bucket,
+                "paid_outcomes": len(margins),
+                "total_mature_margin": round(sum(margins), 2),
+                "average_mature_margin": round(sum(margins) / len(margins), 2),
+            }
+        )
+    return rows
+
+
+def _age_bucket(value: Any) -> str:
+    if value is None:
+        return "unknown"
+    days = float(value)
+    if days <= 7:
+        return "0-7"
+    if days <= 30:
+        return "8-30"
+    if days <= 60:
+        return "31-60"
+    return "61+"
+
+
+def _concession_row(thread: dict[str, Any]) -> dict[str, Any] | None:
+    offer = thread["offer"]
+    decision = thread["decision"]
+    if decision is None:
+        return None
+    context = offer["pre_decision_context"]
+    selected = _normalize_action(decision["selected_action"])
+    amount = _action_amount(selected, context)
+    if amount is None:
+        return None
+    asking = float(context["asking_price"])
+    conceded = max(asking - amount, 0.0)
+    return {
+        "offer_id": offer["offer_id"],
+        "listing_id": offer["listing_id"],
+        "selected_action": selected["action"],
+        "asking_price": asking,
+        "selected_amount": round(amount, 2),
+        "amount_conceded": round(conceded, 2),
+        "concession_rate": round(conceded / asking, 4) if asking > 0 else 0.0,
+    }
+
+
+def _time_to_payment_summary(threads: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = []
+    for thread in threads:
+        outcome = thread["outcome"]["outcome"]
+        seconds: float | None = None
+        source = "unavailable"
+        if isinstance(outcome.get("paid_at"), str):
+            seconds = (parse_time(str(outcome["paid_at"])) - parse_time(str(thread["offer"]["occurred_at"]))).total_seconds()
+            source = "paid_at"
+        elif outcome.get("inventory_days_until_sale") is not None:
+            seconds = float(outcome["inventory_days_until_sale"]) * 86400
+            source = "inventory_days_until_sale"
+        if seconds is not None:
+            rows.append(
+                {
+                    "offer_id": thread["offer"]["offer_id"],
+                    "seconds": round(seconds, 2),
+                    "days": round(seconds / 86400, 3),
+                    "source": source,
+                }
+            )
+    return {
+        "rows": rows,
+        "average_seconds": _mean([row["seconds"] for row in rows]),
+        "average_days": _mean([row["days"] for row in rows]),
+    }
+
+
+def _unpaid_row(thread: dict[str, Any]) -> dict[str, Any]:
+    offer = thread["offer"]
+    decision = thread["decision"]
+    outcome = thread["outcome"]["outcome"] if thread["outcome"] is not None else {}
+    return {
+        "offer_id": offer["offer_id"],
+        "listing_id": offer["listing_id"],
+        "selected_action": _decision_action(decision),
+        "selected_amount": _normalize_action(decision["selected_action"])["amount"] if decision is not None else None,
+        "has_mature_outcome": thread["outcome"] is not None,
+        "buyer_paid": bool(outcome.get("buyer_paid")),
+        "cancelled": bool(outcome.get("cancelled")),
+    }
+
+
+def _merchant_value_statement(final_sales: list[float], mature_margins: list[float], refunds: list[float]) -> str:
+    if not final_sales:
+        return "No accepted offers have mature paid outcomes yet."
+    return (
+        f"I accepted ${sum(final_sales):,.2f} in paid offers, "
+        f"but only ${sum(mature_margins):,.2f} matured into contribution margin "
+        f"after ${sum(refunds):,.2f} of refunds."
+    )
+
+
+def _normalize_rule(rule: dict[str, Any]) -> dict[str, Any]:
+    rule_type = str(rule.get("rule_type") or "counter_percent_above_offer")
+    if rule_type not in {"counter_percent_above_offer", "accept_if_margin_then_counter", "decline_below_margin_floor"}:
+        raise MarginPilotError(f"unknown fixed rule type: {rule_type!r}")
+    normalized = {
+        "rule_type": rule_type,
+        "counter_markup_pct": float(rule.get("counter_markup_pct", 0.08)),
+        "max_counter_to_asking_ratio": float(rule.get("max_counter_to_asking_ratio", 1.0)),
+        "min_margin_buffer": float(rule.get("min_margin_buffer", 0.0)),
+    }
+    if normalized["counter_markup_pct"] < 0:
+        raise MarginPilotError("counter_markup_pct may not be negative")
+    if normalized["max_counter_to_asking_ratio"] <= 0:
+        raise MarginPilotError("max_counter_to_asking_ratio must be positive")
+    if normalized["min_margin_buffer"] < 0:
+        raise MarginPilotError("min_margin_buffer may not be negative")
+    return normalized
+
+
+def _simulate_rule_for_thread(thread: dict[str, Any], rule: dict[str, Any]) -> dict[str, Any]:
+    offer = thread["offer"]
+    context = offer["pre_decision_context"]
+    available = [_normalize_action(action) for action in offer["available_actions"]]
+    buyer_offer = float(context["buyer_offer_amount"])
+    floor = float(context["merchant_floor_mature_margin"]) + float(rule["min_margin_buffer"])
+    accept_margin = _mature_margin_if_sold(buyer_offer, {"action": "accept", "amount": buyer_offer}, context) if context.get("cost_basis") is not None else None
+    if rule["rule_type"] in {"accept_if_margin_then_counter", "decline_below_margin_floor"} and accept_margin is not None and accept_margin >= floor:
+        return _available_or_abstain({"action": "accept", "amount": buyer_offer}, available)
+    if rule["rule_type"] == "decline_below_margin_floor" and accept_margin is not None and accept_margin < floor:
+        return _available_or_abstain({"action": "decline", "amount": None}, available)
+    counter = min(float(context["asking_price"]) * float(rule["max_counter_to_asking_ratio"]), buyer_offer * (1.0 + float(rule["counter_markup_pct"])))
+    counter = round(counter, 2)
+    if context.get("cost_basis") is not None:
+        counter_margin = _mature_margin_if_sold(counter, {"action": "counter_at_amount", "amount": counter}, context)
+        if counter_margin < floor:
+            return _available_or_abstain({"action": "decline", "amount": None}, available)
+    return _available_or_abstain({"action": "counter_at_amount", "amount": counter}, available)
+
+
+def _available_or_abstain(candidate: dict[str, Any], available: list[dict[str, Any]]) -> dict[str, Any]:
+    action = candidate["action"]
+    amount = candidate.get("amount")
+    if action in {"decline", "wait"} and any(item["action"] == action for item in available):
+        return {"action": action, "amount": None, "available": True}
+    same_action = [item for item in available if item["action"] == action]
+    if not same_action:
+        return {"action": "abstain", "amount": None, "available": False}
+    if amount is None:
+        return {"action": action, "amount": None, "available": True}
+    closest = min(same_action, key=lambda item: abs(float(item["amount"] or 0.0) - float(amount)))
+    return {"action": action, "amount": closest["amount"], "available": True}
+
+
+def _action_counts(actions: Any) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for action in actions:
+        if isinstance(action, dict):
+            key = str(action.get("action"))
+        else:
+            key = str(action)
+        counts[key] += 1
+    return dict(sorted(counts.items()))
+
+
+def _actions_match(actual: dict[str, Any] | None, simulated: dict[str, Any]) -> bool:
+    if actual is None:
+        return False
+    if actual["action"] != simulated["action"]:
+        return False
+    if actual.get("amount") is None or simulated.get("amount") is None:
+        return actual.get("amount") is None and simulated.get("amount") is None
+    return abs(float(actual["amount"]) - float(simulated["amount"])) <= 0.01
+
+
+def _mean(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return round(sum(float(value) for value in values) / len(values), 4)
 
 
 def _action_signature(action: dict[str, Any]) -> tuple[str, float | None]:

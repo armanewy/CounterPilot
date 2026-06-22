@@ -22,6 +22,8 @@ This repository now implements the Month 1 transaction-surface foundation:
 - `marginpilot-ingest`
 - `marginpilot-inbox`
 - `marginpilot-audit`
+- `marginpilot-utility-report`
+- `marginpilot-rule-sim`
 - `marginpilot-transaction-create`
 - `marginpilot-event-append`
 - `marginpilot-transaction-inspect`
@@ -41,6 +43,13 @@ The event ledger supports:
 The inbox is accounting-only. It computes mature margin if sold for available
 actions and marks merchant-floor violations. It does not execute seller actions
 and does not train models.
+
+The Wave 3 utility report is also non-learning. It summarizes offer volume,
+acceptance funnel, mature margin per accepted offer, margin by product and
+inventory age, amount conceded versus asking price, time from offer to payment,
+unpaid accepted offers, and refund/return-adjusted margin. The fixed-rule
+simulator answers "what would this simple rule have selected historically?"
+using observed contexts only. It is not a causal estimate.
 
 The transaction core records one negotiated commerce loop through the
 deterministic state machine documented in `docs/MARGINPILOT_STATE_MACHINE.md`.
@@ -69,6 +78,8 @@ python -m behavior_lab marginpilot-ingest --input C:\OfferLabData\marginpilot_te
 python -m behavior_lab marginpilot-ingest --input C:\OfferLabData\marginpilot_templates\offer_opened.json
 python -m behavior_lab marginpilot-inbox --merchant-id merchant_demo_refurb_tech
 python -m behavior_lab marginpilot-audit --merchant-id merchant_demo_refurb_tech
+python -m behavior_lab marginpilot-utility-report --merchant-id merchant_demo_refurb_tech
+python -m behavior_lab marginpilot-rule-sim --merchant-id merchant_demo_refurb_tech --rule '{"rule_type":"counter_percent_above_offer","counter_markup_pct":0.08}'
 python -m behavior_lab marginpilot-run-local-fixture --data-dir C:\OfferLabData\marginpilot_core
 python -m behavior_lab marginpilot-transaction-inspect --data-dir C:\OfferLabData\marginpilot_core --merchant-namespace merchant_demo_refurb:store_demo_shopify --transaction-id txn_marginpilot_loop_001
 python -m behavior_lab marginpilot-research-export --data-dir C:\OfferLabData\marginpilot_core --merchant-id merchant_demo_refurb --store-id store_demo_shopify

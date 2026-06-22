@@ -14,6 +14,8 @@ from behavior_lab.marginpilot import (
     ingest_marginpilot_events,
     marginpilot_audit,
     marginpilot_inbox,
+    marginpilot_rule_simulation,
+    marginpilot_utility_report,
     sample_marginpilot_events,
     validate_marginpilot_event,
     write_marginpilot_templates,
@@ -84,6 +86,81 @@ class MarginPilotTests(unittest.TestCase):
             self.assertEqual(audit["mature_contribution_margin"]["total"], 171.66)
             self.assertFalse(audit["data_rights"]["cross_merchant_pooling_authorized"])
             self.assertEqual(audit["current_stage"], "transaction_surface")
+
+    def test_utility_report_summarizes_reconciled_merchant_economics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            events = sample_marginpilot_events()
+            source = Path(tmp) / "events.jsonl"
+            _write_jsonl(source, list(events.values()))
+            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+
+            report = marginpilot_utility_report(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
+
+            self.assertFalse(report["causal_claim"])
+            self.assertEqual(report["model_training"], "not_run")
+            funnel = report["offer_volume_and_acceptance_funnel"]
+            self.assertEqual(funnel["offers_opened"], 1)
+            self.assertEqual(funnel["accepted_or_countered"], 1)
+            self.assertEqual(funnel["paid_nonreturned_mature_outcomes"], 1)
+            self.assertEqual(report["refund_return_adjusted_margin"]["gross_paid_sales"], 760.0)
+            self.assertEqual(report["refund_return_adjusted_margin"]["mature_contribution_margin"], 171.66)
+            self.assertEqual(report["amount_conceded_vs_asking"]["average_concession"], 140.0)
+            self.assertEqual(report["time_from_offer_to_payment"]["average_days"], 4.3)
+            self.assertIn("matured into contribution margin", report["merchant_value_statement"])
+
+    def test_fixed_rule_simulation_is_historical_and_not_causal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            events = sample_marginpilot_events()
+            source = Path(tmp) / "events.jsonl"
+            _write_jsonl(source, list(events.values()))
+            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+
+            simulation = marginpilot_rule_simulation(
+                Path(tmp) / "data",
+                merchant_id="merchant_demo_refurb_tech",
+                rule={"rule_type": "counter_percent_above_offer", "counter_markup_pct": 0.0556},
+            )
+
+            self.assertTrue(simulation["not_causal"])
+            self.assertFalse(simulation["causal_claim"])
+            self.assertEqual(simulation["model_training"], "not_run")
+            self.assertEqual(simulation["summary"]["eligible_offers"], 1)
+            self.assertEqual(simulation["summary"]["action_counts"], {"counter_at_amount": 1})
+            self.assertEqual(simulation["summary"]["matched_actual_actions"], 1)
+            self.assertTrue(simulation["rows"][0]["observed_outcome_reused"])
+
+    def test_utility_report_does_not_label_declined_outcomes_as_accepted_margin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            events = sample_marginpilot_events()
+            events["merchant_decision"]["selected_action"] = {"action": "decline"}
+            source = Path(tmp) / "events.jsonl"
+            _write_jsonl(source, list(events.values()))
+            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+
+            report = marginpilot_utility_report(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
+
+            self.assertEqual(report["offer_volume_and_acceptance_funnel"]["accepted_or_countered"], 0)
+            self.assertEqual(report["mature_margin_per_accepted_offer"], [])
+            self.assertEqual(report["merchant_value_statement"], "No accepted offers have mature paid outcomes yet.")
+
+    def test_rule_simulation_does_not_reuse_outcome_when_actions_differ(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            events = sample_marginpilot_events()
+            events["merchant_decision"]["selected_action"] = {"action": "decline"}
+            source = Path(tmp) / "events.jsonl"
+            _write_jsonl(source, list(events.values()))
+            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+
+            simulation = marginpilot_rule_simulation(
+                Path(tmp) / "data",
+                merchant_id="merchant_demo_refurb_tech",
+                rule={"rule_type": "counter_percent_above_offer", "counter_markup_pct": 0.0556},
+            )
+
+            self.assertFalse(simulation["rows"][0]["actions_match"])
+            self.assertFalse(simulation["rows"][0]["observed_outcome_reused"])
+            self.assertIsNone(simulation["rows"][0]["observed_mature_margin"])
+            self.assertEqual(simulation["rows"][0]["observed_outcome_reuse_reason"], "not_reused_for_counterfactual_action")
 
     def test_inbox_scopes_consent_and_decisions_by_merchant(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
