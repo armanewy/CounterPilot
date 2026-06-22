@@ -59,6 +59,7 @@ from behavior_lab.offerlab_pilot import (
     audit_pilot,
     import_pilot,
     inspect_input as inspect_pilot_input,
+    shadow_report_pilot,
     write_template as write_pilot_template,
 )
 from behavior_lab.offerlab_models import run_sample_research_suite
@@ -290,6 +291,10 @@ def command_offerlab_pilot_import(args: argparse.Namespace) -> None:
 
 def command_offerlab_pilot_audit(args: argparse.Namespace) -> None:
     _print_json(audit_pilot(args.pilot_id, data_root=args.data_root))
+
+
+def command_offerlab_pilot_shadow_report(args: argparse.Namespace) -> None:
+    _print_json(shadow_report_pilot(args.pilot_id, data_root=args.data_root, output_path=args.output))
 
 
 def command_offerlab_models_sample(args: argparse.Namespace) -> None:
@@ -777,6 +782,11 @@ def build_parser() -> argparse.ArgumentParser:
     offer_pilot_audit.add_argument("pilot_id", metavar="PILOT_ID")
     offer_pilot_audit.add_argument("--data-root", help="External seller pilot ledger root; defaults to C:\\OfferLabData\\seller_pilots")
     offer_pilot_audit.set_defaults(func=command_offerlab_pilot_audit)
+    offer_pilot_shadow = offer_pilot_subparsers.add_parser("shadow-report", help="Build an isolated read-only seller-pilot shadow report")
+    offer_pilot_shadow.add_argument("pilot_id", metavar="PILOT_ID")
+    offer_pilot_shadow.add_argument("--data-root", help="External seller pilot ledger root; defaults to C:\\OfferLabData\\seller_pilots")
+    offer_pilot_shadow.add_argument("--output", help="Optional JSON output path for the shadow report")
+    offer_pilot_shadow.set_defaults(func=command_offerlab_pilot_shadow_report)
 
     offer_models = subparsers.add_parser("offerlab-models", help="Run research-only OfferLab model leaderboards")
     offer_models_subparsers = offer_models.add_subparsers(dest="offerlab_models_command", required=True)

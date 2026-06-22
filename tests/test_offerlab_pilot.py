@@ -16,6 +16,7 @@ from behavior_lab.offerlab_pilot import (
     audit_pilot,
     import_pilot,
     inspect_input,
+    shadow_report_pilot,
     write_template,
 )
 
@@ -215,6 +216,43 @@ class OfferLabPilotTests(unittest.TestCase):
             self.assertFalse(audit["readiness_gate"]["passed"])
             self.assertTrue(audit["data_quality_gaps"]["never_imputed_costs"])
 
+    def test_shadow_report_answers_commercial_questions_without_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as input_tmp, tempfile.TemporaryDirectory() as data_tmp:
+            source = Path(input_tmp)
+            _pilot_files(source)
+            import_pilot(source, data_root=data_tmp, pilot_id="shadow_pilot")
+
+            report = shadow_report_pilot("shadow_pilot", data_root=data_tmp)
+
+            self.assertTrue(report["read_only"])
+            self.assertFalse(report["executes_seller_actions"])
+            self.assertFalse(report["requires_api_access"])
+            self.assertFalse(report["causal_claim"])
+            self.assertFalse(report["production_export_allowed"])
+            self.assertNotIn("ledger", report)
+            self.assertEqual(report["shadow_recommendations"]["action"], "abstain")
+            self.assertIn("fewer than two meaningful seller actions", " ".join(report["shadow_recommendations"]["reasons"]))
+            self.assertIn("is_data_complete_enough_to_study", report["answers"])
+            self.assertIn("which_decisions_are_frequent_enough_to_model", report["answers"])
+            self.assertIn("is_there_enough_economic_value_at_stake", report["answers"])
+            self.assertIn("prospective_shadow_policy_to_test", report["answers"])
+            self.assertIn("safest_single_randomized_experiment", report["answers"])
+            self.assertEqual(report["candidate_experiment_designs"][0]["type"], "read_only_data_completion")
+            self.assertIn("accepted", {row["decision_type"] for row in report["mature_margin_by_decision_type"]})
+
+    def test_shadow_report_writes_optional_output(self) -> None:
+        with tempfile.TemporaryDirectory() as input_tmp, tempfile.TemporaryDirectory() as data_tmp:
+            source = Path(input_tmp)
+            _pilot_files(source)
+            import_pilot(source, data_root=data_tmp, pilot_id="shadow_output")
+            output = Path(data_tmp) / "shadow_report.json"
+
+            report = shadow_report_pilot("shadow_output", data_root=data_tmp, output_path=output)
+
+            persisted = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(report["report_hash"], persisted["report_hash"])
+            self.assertFalse(persisted["executes_seller_actions"])
+
     def test_import_rejects_bad_currency(self) -> None:
         with tempfile.TemporaryDirectory() as input_tmp, tempfile.TemporaryDirectory() as data_tmp:
             source = Path(input_tmp)
@@ -266,6 +304,35 @@ class OfferLabPilotTests(unittest.TestCase):
             )
             self.assertEqual(json.loads(imported.stdout)["pilot_id"], "cli_pilot")
             self.assertEqual(json.loads(audited.stdout)["offer_funnel"]["mature_margin_count"], 30)
+
+    def test_cli_offerlab_pilot_shadow_report_smoke(self) -> None:
+        with tempfile.TemporaryDirectory() as input_tmp, tempfile.TemporaryDirectory() as data_tmp:
+            source = Path(input_tmp)
+            _pilot_files(source)
+            import_pilot(source, data_root=data_tmp, pilot_id="cli_shadow")
+            env = dict(os.environ)
+            env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+            output = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "behavior_lab",
+                    "offerlab-pilot",
+                    "shadow-report",
+                    "cli_shadow",
+                    "--data-root",
+                    data_tmp,
+                    "--output",
+                    str(Path(data_tmp) / "shadow.json"),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            payload = json.loads(output.stdout)
+            self.assertEqual(payload["shadow_recommendations"]["action"], "abstain")
+            self.assertTrue((Path(data_tmp) / "shadow.json").exists())
 
 
 if __name__ == "__main__":

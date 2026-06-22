@@ -524,6 +524,74 @@ def audit_pilot(pilot_id: str, *, data_root: str | Path | None = None) -> dict[s
     }
 
 
+def shadow_report_pilot(pilot_id: str, *, data_root: str | Path | None = None, output_path: str | Path | None = None) -> dict[str, Any]:
+    root = Path(data_root) if data_root is not None else default_data_root()
+    audit = audit_pilot(pilot_id, data_root=root)
+    latest_import, by_dataset = _latest_pilot_rows(pilot_id, root)
+    margin_rows = _decision_margin_rows(by_dataset)
+    decision_breakdown = _decision_margin_breakdown(margin_rows)
+    decision_counts = {
+        decision: sum(1 for row in by_dataset["offers"] if _seller_decision(row) == decision)
+        for decision in sorted({_seller_decision(row) for row in by_dataset["offers"]})
+    }
+    meaningful_actions = sorted(decision for decision, count in decision_counts.items() if decision != "unknown" and count >= 10)
+    completeness = {
+        "counts": audit["counts"],
+        "readiness_gate": audit["readiness_gate"],
+        "cost_coverage": audit["readiness_gate"]["observed"]["cost_coverage"],
+        "fee_coverage": audit["readiness_gate"]["observed"]["fee_coverage"],
+        "decision_history_coverage": audit["readiness_gate"]["observed"]["decision_history_coverage"],
+        "return_window_coverage": audit["readiness_gate"]["observed"]["return_window_coverage"],
+        "mature_margin_outcomes": audit["readiness_gate"]["observed"]["mature_margin_outcomes"],
+        "meaningful_available_actions": meaningful_actions,
+        "meaningful_action_count": len(meaningful_actions),
+    }
+    shadow_gate = _shadow_policy_gate(completeness)
+    abstention_reasons = _shadow_abstention_reasons(completeness, shadow_gate)
+    report = {
+        "schema_version": "offerlab_seller_pilot_shadow_report.v1",
+        "pilot_id": pilot_id,
+        "generated_at": utc_now(),
+        "latest_import_hash": latest_import["import_hash"],
+        "read_only": True,
+        "executes_seller_actions": False,
+        "requires_api_access": False,
+        "production_export_allowed": False,
+        "causal_claim": False,
+        "historical_policy_claim": "descriptive_only_not_causal",
+        "data_completeness": completeness,
+        "profit_and_loss_reconstruction": {
+            "mature_contribution_margin": audit["mature_contribution_margin"],
+            "realized_price_vs_asking": audit["realized_price_vs_asking"],
+            "cancellation_return_effects": audit["cancellation_return_effects"],
+            "data_quality_gaps": audit["data_quality_gaps"],
+        },
+        "mature_margin_by_decision_type": decision_breakdown,
+        "historical_policy_comparison": {
+            "decision_counts": decision_counts,
+            "decision_types_observed": sorted(decision_counts),
+            "comparison_basis": "mature outcomes linked to observed seller responses",
+            "causal_lift_claimed": False,
+            "warning": "Historical response differences are confounded by buyer, listing, and inventory selection.",
+        },
+        "shadow_recommendations": {
+            "action": "prepare_shadow_policy" if shadow_gate["passed"] else "abstain",
+            "reasons": [] if shadow_gate["passed"] else abstention_reasons,
+            "candidate_policy": _candidate_shadow_policy(decision_breakdown, meaningful_actions) if shadow_gate["passed"] else None,
+            "confidence_intervals": _decision_confidence_intervals(decision_breakdown),
+        },
+        "counterexamples": _counterexamples(margin_rows),
+        "candidate_experiment_designs": _candidate_experiment_designs(shadow_gate, meaningful_actions),
+        "answers": _commercial_questions(audit, completeness, shadow_gate, meaningful_actions),
+    }
+    report["report_hash"] = stable_hash({key: value for key, value in report.items() if key != "generated_at"})
+    if output_path is not None:
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(report, allow_nan=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return report
+
+
 def _canonical_columns(dataset: str) -> list[str]:
     return sorted(REQUIRED_COLUMNS[dataset] | OPTIONAL_COLUMNS[dataset])
 
@@ -893,6 +961,230 @@ def _margin_breakdown(rows: list[dict[str, Any]], key: str) -> list[dict[str, An
             }
         )
     return output
+
+
+def _latest_pilot_rows(pilot_id: str, root: Path) -> tuple[dict[str, Any], dict[str, list[dict[str, Any]]]]:
+    ledger = ImmutableLedger(root / pilot_id / "ledger.jsonl")
+    imports = ledger.payloads(PILOT_IMPORT_RECORD_TYPE)
+    if not imports:
+        raise OfferLabPilotError(f"No imports found for pilot_id {pilot_id!r}")
+    latest_import = imports[-1]
+    rows = [
+        record
+        for record in ledger.payloads(PILOT_ROW_RECORD_TYPE)
+        if record.get("pilot_id") == pilot_id and record.get("import_id") == latest_import["import_id"]
+    ]
+    by_dataset: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        by_dataset[str(row["dataset"])].append(row["canonical"])
+    ledger.verify_hash_chain()
+    return latest_import, by_dataset
+
+
+def _decision_margin_rows(by_dataset: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    listings = {str(row["listing_id"]): row for row in by_dataset["listings"]}
+    orders = by_dataset["orders"]
+    offers = by_dataset["offers"]
+    returns = by_dataset["returns_refunds"]
+    fees_by_order = _sum_by(by_dataset["fees"], "order_id", "fee_amount")
+    shipping_by_order = _sum_by(by_dataset["shipping_costs"], "order_id", "shipping_cost_amount")
+    refunds_by_order = _sum_by(returns, "order_id", "refund_amount")
+    cost_by_listing = _latest_costs(by_dataset["cost_basis"])
+    offers_by_id = {str(row.get("offer_id")): row for row in offers if row.get("offer_id")}
+    offers_by_listing: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for offer in offers:
+        offers_by_listing[str(offer.get("listing_id"))].append(offer)
+    output = []
+    for order in orders:
+        if not (_buyer_paid(order) and _order_completed(order) and _return_window_matured(order, returns)):
+            continue
+        listing_id = str(order.get("listing_id"))
+        order_id = str(order.get("order_id"))
+        cost = cost_by_listing.get(listing_id)
+        fee = fees_by_order.get(order_id)
+        if cost is None or fee is None:
+            continue
+        sale_price = _float_or_none(order.get("sale_price_amount"))
+        if sale_price is None:
+            continue
+        offer = offers_by_id.get(str(order.get("offer_id")))
+        if offer is None:
+            listing_offers = offers_by_listing.get(listing_id, [])
+            offer = listing_offers[0] if len(listing_offers) == 1 else {}
+        quantity = int(order.get("quantity") or 1)
+        refund = refunds_by_order.get(order_id, 0.0)
+        shipping = shipping_by_order.get(order_id, 0.0)
+        margin = sale_price - fee - shipping - refund - (cost * quantity)
+        listing = listings.get(listing_id, {})
+        asking = _float_or_none(listing.get("asking_price_amount"))
+        output.append(
+            {
+                "order_id_hash": stable_hash(order_id),
+                "listing_id_hash": stable_hash(listing_id),
+                "decision_type": _seller_decision(offer),
+                "category": listing.get("category") or "unknown",
+                "mature_contribution_margin": round(margin, 2),
+                "realized_to_asking_ratio": round(sale_price / asking, 4) if asking else None,
+            }
+        )
+    return output
+
+
+def _seller_decision(offer: dict[str, Any]) -> str:
+    response = str(offer.get("seller_response") or offer.get("offer_state") or "unknown").strip().lower()
+    if response in {"accept", "accepted", "seller_accepted"}:
+        return "accepted"
+    if response in {"decline", "declined", "rejected"}:
+        return "declined"
+    if response in {"counter", "countered", "counter_offer"}:
+        return "countered"
+    return response or "unknown"
+
+
+def _decision_margin_breakdown(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[str(row["decision_type"])].append(row)
+    output = []
+    for decision, items in sorted(grouped.items()):
+        margins = [float(row["mature_contribution_margin"]) for row in items]
+        output.append(
+            {
+                "decision_type": decision,
+                "mature_outcomes": len(items),
+                "average_mature_contribution_margin": _average(margins),
+                "median_mature_contribution_margin": round(median(margins), 4) if margins else None,
+                "total_mature_contribution_margin": round(sum(margins), 2),
+                "negative_margin_outcomes": sum(1 for value in margins if value < 0),
+                "mean_margin_ci95": _mean_ci(margins),
+            }
+        )
+    return output
+
+
+def _shadow_policy_gate(completeness: dict[str, Any]) -> dict[str, Any]:
+    readiness = completeness["readiness_gate"]
+    checks = {
+        **readiness["checks"],
+        "at_least_two_meaningful_actions": completeness["meaningful_action_count"] >= 2,
+        "minimum_commercial_sample": completeness["mature_margin_outcomes"] >= 30,
+    }
+    return {
+        "passed": all(checks.values()),
+        "checks": checks,
+        "observed": {
+            **readiness["observed"],
+            "meaningful_action_count": completeness["meaningful_action_count"],
+        },
+        "thresholds": {
+            **readiness["thresholds"],
+            "minimum_meaningful_actions": 2,
+            "minimum_commercial_sample": 30,
+        },
+    }
+
+
+def _shadow_abstention_reasons(completeness: dict[str, Any], gate: dict[str, Any]) -> list[str]:
+    labels = {
+        "sufficient_mature_outcomes": "not enough mature buyer-initiated offer outcomes",
+        "cost_coverage": "cost-basis coverage is below threshold",
+        "fee_coverage": "fee coverage is below threshold",
+        "decision_history_coverage": "decision-history coverage is below threshold",
+        "return_window_coverage": "return-window maturity coverage is below threshold",
+        "at_least_two_meaningful_actions": "fewer than two meaningful seller actions are observed often enough",
+        "minimum_commercial_sample": "commercial sample is too small for a shadow policy",
+    }
+    return [labels.get(name, name) for name, passed in gate["checks"].items() if not passed]
+
+
+def _candidate_shadow_policy(decision_breakdown: list[dict[str, Any]], meaningful_actions: list[str]) -> dict[str, Any] | None:
+    eligible = [row for row in decision_breakdown if row["decision_type"] in meaningful_actions]
+    if not eligible:
+        return None
+    best = max(eligible, key=lambda row: (float(row.get("average_mature_contribution_margin") or -1e12), int(row.get("mature_outcomes") or 0)))
+    return {
+        "policy_type": "shadow_only_ranked_decision_rule",
+        "primary_decision_type": best["decision_type"],
+        "objective": "mature_contribution_margin",
+        "deployment_allowed": False,
+        "requires_prospective_shadow_validation": True,
+        "abstain_when_cost_or_fee_missing": True,
+    }
+
+
+def _decision_confidence_intervals(decision_breakdown: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        row["decision_type"]: {
+            "mature_outcomes": row["mature_outcomes"],
+            "mean_margin_ci95": row["mean_margin_ci95"],
+        }
+        for row in decision_breakdown
+    }
+
+
+def _counterexamples(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    negative = [row for row in rows if float(row["mature_contribution_margin"]) < 0]
+    low = sorted(rows, key=lambda row: float(row["mature_contribution_margin"]))[:5]
+    examples = negative[:5] if negative else low
+    return [
+        {
+            "listing_id_hash": row["listing_id_hash"],
+            "decision_type": row["decision_type"],
+            "category": row["category"],
+            "mature_contribution_margin": row["mature_contribution_margin"],
+            "reason": "negative_margin" if float(row["mature_contribution_margin"]) < 0 else "lowest_observed_margin",
+        }
+        for row in examples
+    ]
+
+
+def _candidate_experiment_designs(gate: dict[str, Any], meaningful_actions: list[str]) -> list[dict[str, Any]]:
+    if not gate["passed"]:
+        return [
+            {
+                "design_id": "data_repair_before_shadow_policy",
+                "type": "read_only_data_completion",
+                "action": "collect missing costs, fees, returns, and decision history before recommending policy changes",
+                "seller_action_mutation": False,
+                "why_safest": "The current data cannot support a prospective shadow policy without avoidable accounting gaps.",
+            }
+        ]
+    return [
+        {
+            "design_id": "shadow_randomized_offer_policy",
+            "type": "prospective_shadow_randomization",
+            "unit": "buyer_initiated_offer",
+            "candidate_actions": meaningful_actions,
+            "primary_metric": "mature_contribution_margin",
+            "guardrails": ["seller_approves_all_real_actions", "abstain_when_cost_or_fee_missing", "no_auto_send"],
+            "seller_action_mutation": False,
+            "why_safest": "The policy can be scored in shadow mode before any seller-facing action changes.",
+        }
+    ]
+
+
+def _commercial_questions(audit: dict[str, Any], completeness: dict[str, Any], gate: dict[str, Any], meaningful_actions: list[str]) -> dict[str, Any]:
+    value_at_stake = float(audit["mature_contribution_margin"].get("total") or 0.0)
+    repeated_structure = bool(audit["breakdowns"].get("by_category") or audit["breakdowns"].get("by_inventory_age"))
+    return {
+        "is_data_complete_enough_to_study": gate["passed"],
+        "which_decisions_are_frequent_enough_to_model": meaningful_actions,
+        "is_there_enough_economic_value_at_stake": value_at_stake > 0 and completeness["mature_margin_outcomes"] >= 30,
+        "prospective_shadow_policy_to_test": "abstain_until_data_gate_passes" if not gate["passed"] else "ranked decision rule over observed seller responses",
+        "safest_single_randomized_experiment": _candidate_experiment_designs(gate, meaningful_actions)[0]["design_id"],
+        "has_repeated_inventory_or_category_structure": repeated_structure,
+    }
+
+
+def _mean_ci(values: list[float]) -> dict[str, Any]:
+    if not values:
+        return {"mean": None, "lower": None, "upper": None, "n": 0}
+    avg = sum(values) / len(values)
+    if len(values) == 1:
+        return {"mean": round(avg, 4), "lower": round(avg, 4), "upper": round(avg, 4), "n": 1}
+    variance = sum((value - avg) ** 2 for value in values) / (len(values) - 1)
+    half_width = 1.96 * math.sqrt(variance) / math.sqrt(len(values))
+    return {"mean": round(avg, 4), "lower": round(avg - half_width, 4), "upper": round(avg + half_width, 4), "n": len(values)}
 
 
 def _inventory_age_bucket(row: dict[str, Any] | None) -> str:
