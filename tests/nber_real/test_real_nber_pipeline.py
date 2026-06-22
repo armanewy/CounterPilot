@@ -349,6 +349,24 @@ class RealNberPipelineTests(unittest.TestCase):
         self.assertTrue(_artifact_binds_to_manifest(manifest, {"normalization_manifest_hash": "payload-manifest-hash"}))
         self.assertFalse(_artifact_binds_to_manifest(manifest, {"normalization_manifest_hash": "outer-manifest-hash"}))
 
+    def test_failed_replication_artifact_can_still_bind_for_finalization(self) -> None:
+        from behavior_lab.datasets.nber_best_offer.real_normalize import _existing_replication_artifact_binds
+
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_path = Path(tmp) / "replication_check.json"
+            artifact_path.write_text(
+                json.dumps(
+                    {
+                        "passed": False,
+                        "full_replication_passed": False,
+                        "normalization_manifest_hash": "payload-manifest-hash",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            artifact = {"path": str(artifact_path), "sha256": sha256_file(artifact_path)}
+            self.assertTrue(_existing_replication_artifact_binds(artifact, "payload-manifest-hash"))
+
     def test_thread_checkpoint_mismatch_rebuilds_thread_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             raw = Path(tmp) / "raw"

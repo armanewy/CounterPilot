@@ -421,12 +421,9 @@ def finalize_full_release_evidence(output_dir: str | Path, *, independent_audit_
     replication_artifact = manifest.get("replication_checks")
     if not isinstance(replication_artifact, dict) or not _replication_artifact_verification(manifest, evidence)["passed"]:
         candidate = _replication_artifact_from_existing_file(output / "replication_check.json")
-        if candidate is not None:
+        if candidate is not None and _existing_replication_artifact_binds(candidate, payload_hash):
             evidence["replication_contract_artifact"] = {"path": candidate["path"], "sha256": candidate["sha256"]}
-            if _replication_artifact_verification(manifest, evidence)["passed"]:
-                replication_artifact = candidate
-            else:
-                replication_artifact = _run_replication_artifact(output, manifest_hash=payload_hash)
+            replication_artifact = candidate
         else:
             replication_artifact = _run_replication_artifact(output, manifest_hash=payload_hash)
     audit_path = Path(independent_audit_artifact)
@@ -506,6 +503,11 @@ def _replication_artifact_from_existing_file(path: Path) -> dict[str, Any] | Non
         "fatal_failures": len(payload.get("fatal_failures", [])),
         "fatal_unevaluated": len(payload.get("fatal_unevaluated", [])),
     }
+
+
+def _existing_replication_artifact_binds(artifact: dict[str, Any], payload_hash: str) -> bool:
+    payload = _read_artifact_payload({"path": artifact.get("path"), "sha256": artifact.get("sha256")})
+    return payload.get("normalization_manifest_hash") == payload_hash
 
 
 def _read_artifact_payload(artifact: Any) -> dict[str, Any]:
