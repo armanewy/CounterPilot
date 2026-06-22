@@ -129,6 +129,13 @@ class MoneyLedgerEntry:
             raise MoneyLedgerError("paper entries cannot use real evidence states")
         if self.designation == "real" and self.evidence_state == "paper_decision":
             raise MoneyLedgerError("real entries cannot use paper_decision evidence state")
+        negative_cost_fields = [
+            field_name
+            for field_name in MATERIAL_ENTRY_COST_FIELDS
+            if isinstance(getattr(self, field_name), (int, float)) and float(getattr(self, field_name)) < 0
+        ]
+        if negative_cost_fields:
+            raise MoneyLedgerError(f"cost fields may not be negative: {negative_cost_fields}")
         if not self.action_alternatives:
             raise MoneyLedgerError("action_alternatives may not be empty")
         if self.selected_action not in self.action_alternatives:

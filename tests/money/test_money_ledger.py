@@ -114,6 +114,17 @@ class MoneyLedgerTests(unittest.TestCase):
             replace(_entry(), fees=None)
         with self.assertRaises(MoneyLedgerError):
             replace(_entry(), fees=None, conservative_expected_net_value=None)
+        for field_name in (
+            "fees",
+            "slippage",
+            "shipping",
+            "holding_costs",
+            "return_refund_allowance",
+            "research_api_cost",
+        ):
+            with self.subTest(field_name=field_name):
+                with self.assertRaises(MoneyLedgerError):
+                    replace(_entry(), **{field_name: -0.01})
         with self.assertRaises(MoneyLedgerError):
             replace(_entry(), evidence_state="manually_approved_real", designation="real")
         with self.assertRaises(MoneyLedgerError):
