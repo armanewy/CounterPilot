@@ -53,6 +53,7 @@ from behavior_lab.marginpilot import (
     marginpilot_audit,
     marginpilot_inbox,
     marginpilot_rule_simulation,
+    marginpilot_shadow_recommend,
     marginpilot_utility_report,
     write_marginpilot_templates,
 )
@@ -324,6 +325,24 @@ def command_marginpilot_rule_simulation(args: argparse.Namespace) -> None:
     elif args.rule:
         rule = json.loads(args.rule)
     _print_json(marginpilot_rule_simulation(args.data_dir, merchant_id=args.merchant_id, rule=rule))
+
+
+def command_marginpilot_shadow_recommend(args: argparse.Namespace) -> None:
+    config: dict[str, Any] = {}
+    if args.config_file:
+        config = json.loads(Path(args.config_file).read_text(encoding="utf-8"))
+    elif args.config:
+        config = json.loads(args.config)
+    _print_json(
+        marginpilot_shadow_recommend(
+            args.data_dir,
+            merchant_id=args.merchant_id,
+            offer_id=args.offer_id,
+            config=config,
+            generated_at=args.generated_at,
+            append=not args.no_append,
+        )
+    )
 
 
 def command_marginpilot_transaction_create(args: argparse.Namespace) -> None:
@@ -945,6 +964,16 @@ def build_parser() -> argparse.ArgumentParser:
     margin_rule.add_argument("--rule", help="JSON rule body")
     margin_rule.add_argument("--rule-file", help="Path to JSON rule body")
     margin_rule.set_defaults(func=command_marginpilot_rule_simulation)
+
+    margin_shadow = subparsers.add_parser("marginpilot-shadow-recommend", help="Record a transparent shadow recommendation for one open offer")
+    margin_shadow.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_shadow.add_argument("--merchant-id", required=True)
+    margin_shadow.add_argument("--offer-id", required=True)
+    margin_shadow.add_argument("--config", help="JSON shadow-policy config")
+    margin_shadow.add_argument("--config-file", help="Path to JSON shadow-policy config")
+    margin_shadow.add_argument("--generated-at")
+    margin_shadow.add_argument("--no-append", action="store_true", help="Preview without appending the shadow recommendation event")
+    margin_shadow.set_defaults(func=command_marginpilot_shadow_recommend)
 
     margin_tx_create = subparsers.add_parser("marginpilot-transaction-create", help="Create a local MarginPilot transaction from an offer_submitted event")
     margin_tx_create.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))

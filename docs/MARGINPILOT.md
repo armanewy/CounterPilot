@@ -24,6 +24,7 @@ This repository now implements the Month 1 transaction-surface foundation:
 - `marginpilot-audit`
 - `marginpilot-utility-report`
 - `marginpilot-rule-sim`
+- `marginpilot-shadow-recommend`
 - `marginpilot-transaction-create`
 - `marginpilot-event-append`
 - `marginpilot-transaction-inspect`
@@ -50,6 +51,13 @@ inventory age, amount conceded versus asking price, time from offer to payment,
 unpaid accepted offers, and refund/return-adjusted margin. The fixed-rule
 simulator answers "what would this simple rule have selected historically?"
 using observed contexts only. It is not a causal estimate.
+
+Wave 4 adds shadow recommendations from transparent merchant rules only. A
+shadow recommendation is appended before the merchant decision, records the
+available actions and evidence, and never executes a seller action. It abstains
+when cost basis is missing, comparable mature outcomes are too sparse, traffic
+is stale, return maturity is incomplete, or customer-targeting features such as
+location proxies are present.
 
 The transaction core records one negotiated commerce loop through the
 deterministic state machine documented in `docs/MARGINPILOT_STATE_MACHINE.md`.
@@ -80,6 +88,7 @@ python -m behavior_lab marginpilot-inbox --merchant-id merchant_demo_refurb_tech
 python -m behavior_lab marginpilot-audit --merchant-id merchant_demo_refurb_tech
 python -m behavior_lab marginpilot-utility-report --merchant-id merchant_demo_refurb_tech
 python -m behavior_lab marginpilot-rule-sim --merchant-id merchant_demo_refurb_tech --rule '{"rule_type":"counter_percent_above_offer","counter_markup_pct":0.08}'
+python -m behavior_lab marginpilot-shadow-recommend --merchant-id merchant_demo_refurb_tech --offer-id offer_current_001 --config '{"minimum_comparable_mature_outcomes":5,"floor_buffer":10.0}'
 python -m behavior_lab marginpilot-run-local-fixture --data-dir C:\OfferLabData\marginpilot_core
 python -m behavior_lab marginpilot-transaction-inspect --data-dir C:\OfferLabData\marginpilot_core --merchant-namespace merchant_demo_refurb:store_demo_shopify --transaction-id txn_marginpilot_loop_001
 python -m behavior_lab marginpilot-research-export --data-dir C:\OfferLabData\marginpilot_core --merchant-id merchant_demo_refurb --store-id store_demo_shopify

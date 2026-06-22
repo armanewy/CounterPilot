@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-from behavior_lab.core import parse_time, stable_hash
+from behavior_lab.core import parse_time, stable_hash, utc_now
 from behavior_lab.ledger import ImmutableLedger
 
 
@@ -17,7 +17,7 @@ MARGINPILOT_SCHEMA_VERSION = "marginpilot_event.v1"
 MARGINPILOT_RECORD_TYPE = "marginpilot_event"
 DEFAULT_DATA_DIR = Path(r"C:\OfferLabData\marginpilot")
 
-EVENT_TYPES = {"merchant_consent", "offer_opened", "merchant_decision", "outcome_matured"}
+EVENT_TYPES = {"merchant_consent", "offer_opened", "shadow_recommendation", "merchant_decision", "outcome_matured"}
 SURFACES = {"product_page_offer", "cart_offer", "quote_request", "merchant_entered"}
 ACTION_TYPES = {
     "accept",
@@ -28,6 +28,30 @@ ACTION_TYPES = {
     "bundle_counter",
 }
 MERCHANT_DECISIONS = ACTION_TYPES | {"manual_other"}
+SHADOW_ACTION_TYPES = ACTION_TYPES | {"abstain"}
+SHADOW_SENSITIVE_FEATURE_TOKENS = {
+    "age",
+    "city",
+    "country",
+    "disability",
+    "domain",
+    "email",
+    "ethnicity",
+    "gender",
+    "income",
+    "location",
+    "nationality",
+    "postal",
+    "race",
+    "region",
+    "religion",
+    "sex",
+    "sexual",
+    "state",
+    "veteran",
+    "wealth",
+    "zip",
+}
 PII_KEYS = {
     "buyer_name",
     "customer_name",
@@ -315,6 +339,8 @@ def validate_marginpilot_event(event: dict[str, Any]) -> dict[str, Any]:
         _validate_consent(event)
     elif event_type == "offer_opened":
         _validate_offer_opened(event)
+    elif event_type == "shadow_recommendation":
+        _validate_shadow_recommendation(event)
     elif event_type == "merchant_decision":
         _validate_merchant_decision(event)
     elif event_type == "outcome_matured":
@@ -547,6 +573,47 @@ def marginpilot_rule_simulation(
     }
 
 
+def marginpilot_shadow_recommend(
+    data_dir: str | Path = DEFAULT_DATA_DIR,
+    *,
+    merchant_id: str,
+    offer_id: str,
+    config: dict[str, Any] | None = None,
+    generated_at: str | None = None,
+    append: bool = True,
+) -> dict[str, Any]:
+    data_root = Path(data_dir)
+    generated_at = generated_at or utc_now()
+    parse_time(generated_at)
+    config_body = _normalize_shadow_config(config or {})
+    events = _events(data_root, merchant_id=merchant_id)
+    threads = _offer_threads(events)
+    target = next((thread for thread in threads if thread["offer"]["offer_id"] == offer_id), None)
+    if target is None:
+        raise MarginPilotError(f"offer_id not found for shadow recommendation: {offer_id}")
+    if target["decision"] is not None:
+        if append:
+            raise MarginPilotError("shadow recommendations must be generated before merchant decision")
+        recommendation = _shadow_abstain(target, generated_at, config_body, ["merchant_decision_already_recorded"], comparable_threads=[])
+    else:
+        recommendation = _build_shadow_recommendation(target, threads, generated_at, config_body)
+    if append:
+        event = _shadow_recommendation_event(recommendation, target)
+        ledger = ImmutableLedger(data_root / "ledger.jsonl")
+        record_id = f"marginpilot_{merchant_id}_shadow_recommendation_{event['event_id']}"
+        existing_shadow = _existing_shadow_recommendation(events, merchant_id=merchant_id, offer_id=offer_id)
+        if existing_shadow is not None:
+            if existing_shadow["recommendation"].get("recommendation_id") != recommendation["recommendation_id"]:
+                raise MarginPilotError("shadow recommendation already exists for this offer with a different policy config")
+            return existing_shadow["recommendation"]
+        existing = ledger.find_record(record_id, MARGINPILOT_RECORD_TYPE)
+        if existing is None:
+            ledger.append(MARGINPILOT_RECORD_TYPE, with_event_hash(validate_marginpilot_event(event)), record_id=record_id, unique_record_id=True)
+        elif existing.get("payload") != with_event_hash(validate_marginpilot_event(event)):
+            raise MarginPilotError(f"Existing shadow recommendation {record_id!r} differs from generated event")
+    return recommendation
+
+
 def _events(data_dir: str | Path, *, merchant_id: str | None) -> list[dict[str, Any]]:
     ledger = ImmutableLedger(Path(data_dir) / "ledger.jsonl")
     events = ledger.payloads(MARGINPILOT_RECORD_TYPE)
@@ -657,6 +724,257 @@ def _offer_threads(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         outcome = _latest_event(outcomes.get(key, []))
         threads.append({"key": key, "offer": offer, "decision": decision, "outcome": outcome})
     return threads
+
+
+def _existing_shadow_recommendation(events: list[dict[str, Any]], *, merchant_id: str, offer_id: str) -> dict[str, Any] | None:
+    matches = [
+        event
+        for event in events
+        if event["event_type"] == "shadow_recommendation"
+        and event.get("merchant_id") == merchant_id
+        and event.get("offer_id") == offer_id
+    ]
+    latest = _latest_event(matches)
+    return latest if latest is not None else None
+
+
+def _normalize_shadow_config(config: dict[str, Any]) -> dict[str, Any]:
+    body = {
+        "floor_buffer": float(config.get("floor_buffer", 10.0)),
+        "minimum_comparable_mature_outcomes": int(config.get("minimum_comparable_mature_outcomes", 5)),
+        "traffic_max_age_hours": float(config.get("traffic_max_age_hours", 168.0)),
+    }
+    if body["floor_buffer"] < 0:
+        raise MarginPilotError("floor_buffer may not be negative")
+    if body["minimum_comparable_mature_outcomes"] < 1:
+        raise MarginPilotError("minimum_comparable_mature_outcomes must be positive")
+    if body["traffic_max_age_hours"] <= 0:
+        raise MarginPilotError("traffic_max_age_hours must be positive")
+    return body
+
+
+def _build_shadow_recommendation(target: dict[str, Any], threads: list[dict[str, Any]], generated_at: str, config: dict[str, Any]) -> dict[str, Any]:
+    offer = target["offer"]
+    context = offer["pre_decision_context"]
+    reasons = _shadow_abstention_reasons(target, generated_at, config)
+    comparable_threads = _comparable_mature_threads(target, threads)
+    if len(comparable_threads) < int(config["minimum_comparable_mature_outcomes"]):
+        reasons.append("too_few_comparable_mature_outcomes")
+    if reasons:
+        return _shadow_abstain(target, generated_at, config, reasons, comparable_threads=comparable_threads)
+    available = [_normalize_action(action) for action in offer["available_actions"]]
+    buyer_offer = float(context["buyer_offer_amount"])
+    floor = float(context["merchant_floor_mature_margin"]) + float(config["floor_buffer"])
+    accept_margin = _mature_margin_if_sold(buyer_offer, {"action": "accept", "amount": buyer_offer}, context)
+    candidates = _shadow_candidates(available, context, comparable_threads)
+    if accept_margin >= floor and any(action["action"] == "accept" for action in available):
+        selected = {"action": "accept", "amount": buyer_offer, "reason": "accept_margin_clears_floor_buffer"}
+    else:
+        profitable_counters = [
+            candidate
+            for candidate in candidates
+            if candidate["action"] in {"counter_at_amount", "free_shipping_counter", "bundle_counter"}
+            and candidate["projected_mature_margin"] is not None
+            and candidate["projected_mature_margin"] >= floor
+            and candidate["projected_mature_margin"] > accept_margin
+            and candidate["historically_supported"]
+        ]
+        if profitable_counters:
+            best = max(profitable_counters, key=lambda item: (item["projected_mature_margin"], item["amount"] or 0.0))
+            selected = {"action": best["action"], "amount": best["amount"], "reason": "counter_margin_beats_accept_now_inside_supported_range"}
+        else:
+            selected = {"action": "abstain", "amount": None, "reason": "no_supported_action_clears_margin_rule"}
+    return _shadow_payload(
+        target,
+        generated_at,
+        config,
+        comparable_threads,
+        recommendation=selected,
+        candidates=candidates,
+        accept_margin=accept_margin,
+        floor_with_buffer=floor,
+        abstention_reasons=[] if selected["action"] != "abstain" else [selected["reason"]],
+    )
+
+
+def _shadow_abstention_reasons(target: dict[str, Any], generated_at: str, config: dict[str, Any]) -> list[str]:
+    offer = target["offer"]
+    context = offer["pre_decision_context"]
+    reasons: list[str] = []
+    if context.get("cost_basis") is None:
+        reasons.append("cost_basis_missing")
+    if _contains_shadow_sensitive_feature(context):
+        reasons.append("sensitive_or_customer_targeting_feature_present")
+    traffic_observed_at = context.get("traffic_observed_at")
+    if isinstance(traffic_observed_at, str):
+        age_hours = (parse_time(generated_at) - parse_time(traffic_observed_at)).total_seconds() / 3600
+        if age_hours > float(config["traffic_max_age_hours"]):
+            reasons.append("traffic_stale")
+    if target["outcome"] is not None and not bool(target["outcome"]["outcome"].get("return_window_matured")):
+        reasons.append("return_maturity_incomplete")
+    return reasons
+
+
+def _shadow_abstain(target: dict[str, Any], generated_at: str, config: dict[str, Any], reasons: list[str], *, comparable_threads: list[dict[str, Any]]) -> dict[str, Any]:
+    context = target["offer"]["pre_decision_context"]
+    accept_margin = None
+    if context.get("cost_basis") is not None:
+        accept_margin = _mature_margin_if_sold(float(context["buyer_offer_amount"]), {"action": "accept", "amount": float(context["buyer_offer_amount"])}, context)
+    return _shadow_payload(
+        target,
+        generated_at,
+        config,
+        comparable_threads,
+        recommendation={"action": "abstain", "amount": None, "reason": reasons[0] if reasons else "abstain"},
+        candidates=[],
+        accept_margin=accept_margin,
+        floor_with_buffer=float(context["merchant_floor_mature_margin"]) + float(config["floor_buffer"]),
+        abstention_reasons=sorted(set(reasons)),
+    )
+
+
+def _shadow_payload(
+    target: dict[str, Any],
+    generated_at: str,
+    config: dict[str, Any],
+    comparable_threads: list[dict[str, Any]],
+    *,
+    recommendation: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    accept_margin: float | None,
+    floor_with_buffer: float,
+    abstention_reasons: list[str],
+) -> dict[str, Any]:
+    offer = target["offer"]
+    body = {
+        "schema_version": "marginpilot_shadow_recommendation.v1",
+        "recommendation_id": "shadow_" + stable_hash(
+            {
+                "config": config,
+                "merchant_id": offer["merchant_id"],
+                "offer_event_hash": offer.get("event_hash") or event_hash(offer),
+                "offer_id": offer["offer_id"],
+            }
+        )[:24],
+        "merchant_id": offer["merchant_id"],
+        "offer_id": offer["offer_id"],
+        "listing_id": offer["listing_id"],
+        "generated_at": generated_at,
+        "system_mode": "shadow_only",
+        "automation_allowed": False,
+        "model_training": "not_run",
+        "no_customer_targeting": True,
+        "executed_action": None,
+        "recommendation": recommendation,
+        "abstention_reasons": abstention_reasons,
+        "available_actions_snapshot": list(offer["available_actions"]),
+        "candidate_actions": candidates,
+        "evidence": {
+            "comparable_mature_outcomes": len(comparable_threads),
+            "historical_selected_amount_range": _historical_amount_range(comparable_threads),
+            "accept_now_projected_margin": round(accept_margin, 2) if accept_margin is not None else None,
+            "floor_with_buffer": round(floor_with_buffer, 2),
+            "return_maturity_required": True,
+        },
+        "constraints": {
+            "minimum_comparable_mature_outcomes": int(config["minimum_comparable_mature_outcomes"]),
+            "floor_buffer": float(config["floor_buffer"]),
+            "protected_attributes_used": False,
+            "customer_identity_used": False,
+        },
+    }
+    _reject_pii(body)
+    return body
+
+
+def _shadow_recommendation_event(recommendation: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": MARGINPILOT_SCHEMA_VERSION,
+        "event_type": "shadow_recommendation",
+        "event_id": str(recommendation["recommendation_id"]),
+        "merchant_id": recommendation["merchant_id"],
+        "offer_id": recommendation["offer_id"],
+        "occurred_at": recommendation["generated_at"],
+        "recommendation": recommendation,
+        "provenance": {
+            "source": "marginpilot_shadow_recommend",
+            "offer_event_hash": target["offer"].get("event_hash"),
+            "sequence": "recommendation_generated_before_merchant_decision",
+        },
+    }
+
+
+def _comparable_mature_threads(target: dict[str, Any], threads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    target_context = target["offer"]["pre_decision_context"]
+    target_key = target_context.get("comparable_inventory_key") or target_context.get("category")
+    comparable = []
+    for thread in threads:
+        if thread is target or thread["outcome"] is None or thread["decision"] is None:
+            continue
+        context = thread["offer"]["pre_decision_context"]
+        key = context.get("comparable_inventory_key") or context.get("category")
+        if key != target_key:
+            continue
+        if not _mature_paid(thread["outcome"]["outcome"]):
+            continue
+        if parse_time(str(thread["outcome"]["occurred_at"])) > parse_time(str(target["offer"]["occurred_at"])):
+            continue
+        comparable.append(thread)
+    return comparable
+
+
+def _shadow_candidates(available: list[dict[str, Any]], context: dict[str, Any], comparable_threads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    amount_range = _historical_amount_range(comparable_threads)
+    rows = []
+    for action in available:
+        amount = _action_amount(action, context)
+        margin = _mature_margin_if_sold(amount, action, context) if amount is not None and context.get("cost_basis") is not None else None
+        rows.append(
+            {
+                "action": action["action"],
+                "amount": amount,
+                "projected_mature_margin": round(margin, 2) if margin is not None else None,
+                "historically_supported": _amount_in_range(amount, amount_range),
+            }
+        )
+    return rows
+
+
+def _historical_amount_range(comparable_threads: list[dict[str, Any]]) -> dict[str, float | None]:
+    amounts = []
+    for thread in comparable_threads:
+        action = _normalize_action(thread["decision"]["selected_action"])
+        amount = _action_amount(action, thread["offer"]["pre_decision_context"])
+        if amount is not None:
+            amounts.append(float(amount))
+    return {"min": round(min(amounts), 2), "max": round(max(amounts), 2)} if amounts else {"min": None, "max": None}
+
+
+def _amount_in_range(amount: float | None, amount_range: dict[str, float | None]) -> bool:
+    if amount is None:
+        return True
+    if amount_range["min"] is None or amount_range["max"] is None:
+        return False
+    return float(amount_range["min"]) <= float(amount) <= float(amount_range["max"])
+
+
+def _contains_shadow_sensitive_feature(value: Any) -> bool:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            tokens = _key_tokens(str(key).lower())
+            if _is_shadow_sensitive_key(tokens):
+                return True
+            if _contains_shadow_sensitive_feature(item):
+                return True
+    elif isinstance(value, list):
+        return any(_contains_shadow_sensitive_feature(item) for item in value)
+    return False
+
+
+def _is_shadow_sensitive_key(tokens: set[str]) -> bool:
+    if "age" in tokens and tokens & {"inventory", "item", "listing", "product"}:
+        return False
+    return bool(tokens & SHADOW_SENSITIVE_FEATURE_TOKENS)
 
 
 def _latest_event(events: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -955,6 +1273,29 @@ def _validate_merchant_decision(event: dict[str, Any]) -> None:
         raise MarginPilotError("randomized decisions require non-degenerate assignment_probability")
 
 
+def _validate_shadow_recommendation(event: dict[str, Any]) -> None:
+    if not isinstance(event.get("offer_id"), str) or not event["offer_id"].strip():
+        raise MarginPilotError("shadow_recommendation requires offer_id")
+    recommendation = event.get("recommendation")
+    if not isinstance(recommendation, dict):
+        raise MarginPilotError("shadow_recommendation requires recommendation object")
+    if recommendation.get("system_mode") != "shadow_only":
+        raise MarginPilotError("shadow recommendations must be shadow_only")
+    if recommendation.get("automation_allowed") is not False:
+        raise MarginPilotError("shadow recommendations may not allow automation")
+    if recommendation.get("model_training") != "not_run":
+        raise MarginPilotError("shadow recommendations may not train models")
+    if recommendation.get("no_customer_targeting") is not True:
+        raise MarginPilotError("shadow recommendations must declare no customer targeting")
+    action = recommendation.get("recommendation", {}).get("action")
+    if action not in SHADOW_ACTION_TYPES:
+        raise MarginPilotError("shadow recommendation action is invalid")
+    if not isinstance(recommendation.get("available_actions_snapshot"), list):
+        raise MarginPilotError("shadow recommendation must record available_actions_snapshot")
+    if recommendation.get("executed_action") is not None:
+        raise MarginPilotError("shadow recommendation may not execute a seller action")
+
+
 def _validate_outcome(event: dict[str, Any]) -> None:
     for key in ["offer_id", "order_id"]:
         if not isinstance(event.get(key), str) or not event[key].strip():
@@ -1077,7 +1418,14 @@ def _key_tokens(text: str) -> set[str]:
 
 
 def _is_pii_value(text: str) -> bool:
+    if _is_internal_marginpilot_token(text):
+        return False
     return any(pattern.search(text) for pattern in PII_VALUE_PATTERNS)
+
+
+def _is_internal_marginpilot_token(text: str) -> bool:
+    lowered = text.strip().lower()
+    return bool(re.fullmatch(r"shadow_[a-f0-9]{16,64}", lowered))
 
 
 def _reject_post_decision_context(context: dict[str, Any]) -> None:
