@@ -1563,7 +1563,12 @@ def _json_artifact_verification(
         if payload.get(field) is not True:
             failures.append(f"{field}_not_true")
     for field in required_zero_fields:
-        if payload.get(field) != 0:
+        value = payload.get(field)
+        if isinstance(value, list):
+            zero = len(value) == 0
+        else:
+            zero = value == 0
+        if not zero:
             failures.append(f"{field}_not_zero")
     if not _artifact_binds_to_manifest(manifest, payload):
         failures.append("artifact_not_bound_to_manifest")
