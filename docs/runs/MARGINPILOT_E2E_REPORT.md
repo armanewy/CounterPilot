@@ -14,6 +14,7 @@
     "checkout_state": "checkout_created",
     "duplicate_order_created": {
       "delivery_id": "delivery_order_created",
+      "delivery_replay": true,
       "result": {
         "current_state": "order_created",
         "idempotent_replay": true,
@@ -86,6 +87,7 @@
     ],
     "order_created": {
       "delivery_id": "delivery_order_created",
+      "delivery_replay": false,
       "result": {
         "current_state": "order_created",
         "idempotent_replay": false,
@@ -153,6 +155,7 @@
     },
     "out_of_order_return_close": {
       "delivery_id": "delivery_return_close",
+      "delivery_replay": false,
       "result": {
         "current_state": "partially_refunded",
         "idempotent_replay": false,
@@ -245,6 +248,7 @@
     },
     "paid": {
       "delivery_id": "delivery_order_paid",
+      "delivery_replay": false,
       "result": {
         "current_state": "paid",
         "idempotent_replay": false,
@@ -313,6 +317,7 @@
     },
     "partial_refund": {
       "delivery_id": "delivery_refund_partial",
+      "delivery_replay": false,
       "result": {
         "current_state": "partially_refunded",
         "idempotent_replay": false,
@@ -382,6 +387,7 @@
     },
     "return_open": {
       "delivery_id": "delivery_return_open",
+      "delivery_replay": false,
       "result": {
         "current_state": "return_closed",
         "idempotent_replay": false,
@@ -459,9 +465,11 @@
     "partial_refund_minor": 1000,
     "reconciled_fees_minor": 2234,
     "reconciled_fulfillment_cost_minor": 4600,
-    "reconciliation_formula": "final_sale_price - cost_basis - fees - fulfillment - partial_refund"
+    "reconciliation_formula": "final_sale_price - cost_basis - fees - fulfillment - partial_refund",
+    "reconciliation_verified": true
   },
   "idempotency_behavior": {
+    "duplicate_delivery_replay": true,
     "duplicate_order_created_replay": true,
     "duplicate_order_event_count": 5
   },
@@ -498,17 +506,17 @@
           "cross_merchant_training"
         ],
         "purpose": "merchant_specific_model_training",
-        "record_hash": "f2808e4ccc1d9abbbcda3fd331995e2fc56b33f6375e72478da4e72d69b60202",
+        "record_hash": "d9ae344fc423e5c1629c0e998ae522d1e0457377804276fda9349e428226dcb4",
         "record_id": "marginpilot_consent_b7cb9862192667f8d3472cfe",
         "revoked_at": null,
         "store_id": "store_demo_shopify"
       }
     ],
     "dataset_lineage": {
-      "dataset_id": "34e1a6c83ed2bd92e876f90121812326b0be9dd10e85e1a82c65c44b89738c93",
+      "dataset_id": "b6de9535993b1337bb5e1612e5c6f7cc3e2de2a7c0f95bf058807d3dc6addb09",
       "event_count": 1,
       "event_hashes": [
-        "4d6cac659df997ef17f3f24f3e5b3fad7b67016f2fd34aa8ddcd7949e7123b3e"
+        "68fe778e8aa693374dfeaa4e6e823e9d42f86b66dd1895bcfc50469f7e4d3d08"
       ],
       "merchant_store_pairs": [
         {
@@ -528,6 +536,7 @@
         "financial_mature_contribution_margin_minor": 16166,
         "financial_reconciled_fees_minor": 2234,
         "financial_reconciled_fulfillment_costs_minor": 4600,
+        "financial_refund_total_minor": 1000,
         "surface": "product_page_offer"
       }
     ],
@@ -538,7 +547,7 @@
           "amount_minor": 76000,
           "selected_action": "counter_at_amount"
         },
-        "event_hash": "4d6cac659df997ef17f3f24f3e5b3fad7b67016f2fd34aa8ddcd7949e7123b3e",
+        "event_hash": "68fe778e8aa693374dfeaa4e6e823e9d42f86b66dd1895bcfc50469f7e4d3d08",
         "features": {
           "asking_price_minor": 90000,
           "buyer_offer_amount_minor": 72000,
@@ -548,6 +557,7 @@
           "financial_mature_contribution_margin_minor": 16166,
           "financial_reconciled_fees_minor": 2234,
           "financial_reconciled_fulfillment_costs_minor": 4600,
+          "financial_refund_total_minor": 1000,
           "surface": "product_page_offer"
         },
         "merchant_id": "merchant_demo_refurb",

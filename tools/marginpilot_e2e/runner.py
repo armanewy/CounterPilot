@@ -69,6 +69,7 @@ def run_development_store_e2e(*, data_dir: str | Path, report_path: str | Path |
         store_id=offer.store_id,
         transaction_id=transaction_id,
     )
+    resource_ids = _resource_ids(provider)
     order_created = _send_webhook(
         adapter,
         topic="orders/create",
@@ -76,7 +77,11 @@ def run_development_store_e2e(*, data_dir: str | Path, report_path: str | Path |
         merchant_id=offer.merchant_id,
         store_id=offer.store_id,
         transaction_id=transaction_id,
-        payload={"occurred_at": "2026-06-22T10:12:00+00:00", "received_at": "2026-06-22T10:12:01+00:00"},
+        payload={
+            "occurred_at": "2026-06-22T10:12:00+00:00",
+            "received_at": "2026-06-22T10:12:01+00:00",
+            "resource_ids": resource_ids,
+        },
     )
     duplicate_order_created = _send_webhook(
         adapter,
@@ -85,7 +90,11 @@ def run_development_store_e2e(*, data_dir: str | Path, report_path: str | Path |
         merchant_id=offer.merchant_id,
         store_id=offer.store_id,
         transaction_id=transaction_id,
-        payload={"occurred_at": "2026-06-22T10:12:00+00:00", "received_at": "2026-06-22T10:12:01+00:00"},
+        payload={
+            "occurred_at": "2026-06-22T10:12:00+00:00",
+            "received_at": "2026-06-22T10:12:01+00:00",
+            "resource_ids": resource_ids,
+        },
     )
     paid = _send_webhook(
         adapter,
@@ -94,7 +103,12 @@ def run_development_store_e2e(*, data_dir: str | Path, report_path: str | Path |
         merchant_id=offer.merchant_id,
         store_id=offer.store_id,
         transaction_id=transaction_id,
-        payload={"occurred_at": "2026-06-22T10:14:00+00:00", "financial_status": "paid"},
+        payload={
+            "occurred_at": "2026-06-22T10:14:00+00:00",
+            "financial_status": "paid",
+            "economics": {"final_sale_price": {"amount_minor": 76000, "currency": "USD"}},
+            "resource_ids": {"order_gid": resource_ids["order_gid"]},
+        },
     )
     refund = _send_webhook(
         adapter,
@@ -103,7 +117,12 @@ def run_development_store_e2e(*, data_dir: str | Path, report_path: str | Path |
         merchant_id=offer.merchant_id,
         store_id=offer.store_id,
         transaction_id=transaction_id,
-        payload={"occurred_at": "2026-06-22T10:16:00+00:00", "refund_status": "partial", "economics": {"refund_amount": {"amount_minor": 1000, "currency": "USD"}}},
+        payload={
+            "occurred_at": "2026-06-22T10:16:00+00:00",
+            "refund_status": "partial",
+            "resource_ids": {"order_gid": resource_ids["order_gid"], "refund_gid": "gid://shopify/Refund/5001"},
+            "economics": {"refund_amount": {"amount_minor": 1000, "currency": "USD"}},
+        },
     )
     out_of_order = _send_webhook(
         adapter,
@@ -112,7 +131,10 @@ def run_development_store_e2e(*, data_dir: str | Path, report_path: str | Path |
         merchant_id=offer.merchant_id,
         store_id=offer.store_id,
         transaction_id=transaction_id,
-        payload={"occurred_at": "2026-06-22T10:19:00+00:00"},
+        payload={
+            "occurred_at": "2026-06-22T10:19:00+00:00",
+            "resource_ids": {"order_gid": resource_ids["order_gid"], "return_gid": "gid://shopify/Return/6001"},
+        },
     )
     return_open = _send_webhook(
         adapter,
@@ -121,7 +143,10 @@ def run_development_store_e2e(*, data_dir: str | Path, report_path: str | Path |
         merchant_id=offer.merchant_id,
         store_id=offer.store_id,
         transaction_id=transaction_id,
-        payload={"occurred_at": "2026-06-22T10:18:00+00:00"},
+        payload={
+            "occurred_at": "2026-06-22T10:18:00+00:00",
+            "resource_ids": {"order_gid": resource_ids["order_gid"], "return_gid": "gid://shopify/Return/6001"},
+        },
     )
     mature = adapter.mature_and_export(
         offer=offer,
@@ -156,6 +181,7 @@ def run_development_store_e2e(*, data_dir: str | Path, report_path: str | Path |
         },
         "state_transition_log": _transition_log(adapter, offer.merchant_id, offer.store_id, transaction_id),
         "idempotency_behavior": {
+            "duplicate_delivery_replay": duplicate_order_created["delivery_replay"],
             "duplicate_order_created_replay": duplicate_order_created["result"]["idempotent_replay"],
             "duplicate_order_event_count": duplicate_order_created["state"]["event_count"],
         },
@@ -172,6 +198,7 @@ def run_development_store_e2e(*, data_dir: str | Path, report_path: str | Path |
             "partial_refund_minor": 1000,
             "mature_contribution_margin_minor": 16166,
             "reconciliation_formula": "final_sale_price - cost_basis - fees - fulfillment - partial_refund",
+            "reconciliation_verified": 76000 - offer.cost_basis_minor - 2234 - 4600 - 1000 == 16166,
         },
         "shopify_resource_linkage": {
             "checkout_link_available_to_delivery_flow": checkout_delivery["checkout_url"].startswith("https://"),
@@ -192,10 +219,20 @@ def _send_webhook(adapter: ShopifyDevelopmentAdapter, *, topic: str, delivery_id
     raw = json.dumps(payload, sort_keys=True).encode("utf-8")
     headers = {
         "X-Shopify-Hmac-Sha256": sign_webhook(raw, SECRET),
+        "X-Shopify-Shop-Domain": "marginpilot-dev-store.myshopify.com",
         "X-Shopify-Webhook-Id": delivery_id,
         "X-Shopify-Topic": topic,
     }
     return adapter.ingest_webhook(raw_body=raw, headers=headers, merchant_id=merchant_id, store_id=store_id, transaction_id=transaction_id)
+
+
+def _resource_ids(provider: DeterministicFakeShopifyProvider) -> dict[str, str]:
+    result = provider.created_draft_orders[0]["result"]
+    return {
+        "checkout_gid": result["resource_ids"]["checkout_gid"],
+        "draft_order_gid": result["draft_order_id"],
+        "order_gid": "gid://shopify/Order/3001",
+    }
 
 
 def _transition_log(adapter: ShopifyDevelopmentAdapter, merchant_id: str, store_id: str, transaction_id: str) -> list[dict[str, Any]]:

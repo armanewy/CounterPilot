@@ -68,6 +68,11 @@ Raw Shopify resource IDs, access tokens, contact email, and invoice URLs belong
 in encrypted operational storage. Adapter responses and research exports use
 references such as `operational_store`, not raw Shopify IDs.
 
+Checkout creation is gated by the MarginPilot state machine. The adapter
+requires merchant or buyer acceptance before it calls the Shopify provider. A
+duplicate checkout request returns the existing operational checkout reference
+and does not create a second draft order.
+
 ## Webhooks
 
 Transaction webhooks supported by the adapter:
@@ -96,6 +101,23 @@ Every webhook is verified against the raw body using HMAC-SHA256 before the
 payload is trusted. Delivery IDs become idempotency keys in the state machine.
 Out-of-order transaction webhooks may be stored as pending and reconciled when
 the predecessor event arrives.
+
+Transaction webhooks must also include the Shopify shop-domain header and
+resource IDs that bind the delivery to the encrypted operational record. Order
+creation must match the draft order or checkout GID already stored
+operationally; later order, refund, return, and cancellation events must match
+the operational order GID. The raw Shopify resource IDs are used only for this
+operational binding and are not copied into transaction events, reports, model
+features, or research exports.
+
+App-level webhooks are shop-bound too. The adapter verifies the same shop-domain
+header against the encrypted installed-token record before token revocation or
+compliance acknowledgement.
+
+Mature contribution margin must reconcile to observed facts: the final sale
+price must match the accepted checkout amount and the order/payment economics
+recorded by Shopify webhooks before the return/refund maturity event is allowed
+to enter research export.
 
 ## Security Boundary
 
