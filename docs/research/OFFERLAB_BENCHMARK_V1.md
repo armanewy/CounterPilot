@@ -1,7 +1,8 @@
 # OfferLab Benchmark v1
 
-Status: frozen protocol. Do not revise after hidden results. Any future change
-must be versioned as Benchmark v2.
+Status: historical, frozen, hidden-spent, and final STOP. Do not revise after hidden results, and do not run Benchmark v1 again. Any future full-release,
+no-row-cap, new-split, new-control, calibration, or model result must be
+versioned as Benchmark v2 or later.
 
 ## Scope
 
@@ -10,7 +11,10 @@ negotiation outcomes better than strong simple baselines under leakage-safe
 splits. It is research-only and non-exportable. It cannot support causal claims
 about seller profit or production OfferLab automation.
 
-The first eligible full run is the negotiation-first real NBER normalization:
+The originally intended full-run path was the negotiation-first real NBER
+normalization below. It is retained only as historical protocol context. After
+v1 hidden access, this path must be implemented as Benchmark v2 or later, not
+as a Benchmark v1 rerun:
 
 1. Normalize official `anon_bo_threads.csv.gz`.
 2. Retain only listings referenced by negotiation threads.

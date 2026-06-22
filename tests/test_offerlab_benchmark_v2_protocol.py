@@ -248,6 +248,36 @@ class OfferLabBenchmarkV2ProtocolTests(unittest.TestCase):
 
             os.chdir(original)
 
+    def test_cli_benchmark_v1_help_and_missing_args_are_retired(self) -> None:
+        for argv in (
+            ["offerlab-models", "benchmark-v1", "--help"],
+            ["offerlab-models", "benchmark-v1"],
+        ):
+            with self.subTest(argv=argv):
+                with self.assertRaisesRegex(SystemExit, "Benchmark v1 is frozen and hidden-spent"):
+                    cli_main(list(argv))
+
+    def test_v2_pre_hidden_validator_rejects_missing_or_extra_class_support(self) -> None:
+        manifest = json.loads(V2_MANIFEST.read_text(encoding="utf-8"))
+        report = _valid_v2_readiness_report(manifest)
+        del report["calibration"]["seller_next_action"]["class_row_counts"]["accept"]
+
+        with self.assertRaisesRegex(V2ProtocolError, "class row counts do not match"):
+            validate_v2_pre_hidden_readiness(v2_manifest=manifest, readiness_report=report)
+
+        report = _valid_v2_readiness_report(manifest)
+        report["calibration"]["seller_next_action"]["class_row_counts"]["unexpected"] = 100
+        with self.assertRaisesRegex(V2ProtocolError, "class row counts do not match"):
+            validate_v2_pre_hidden_readiness(v2_manifest=manifest, readiness_report=report)
+
+    def test_v2_pre_hidden_validator_rejects_noninteger_class_support(self) -> None:
+        manifest = json.loads(V2_MANIFEST.read_text(encoding="utf-8"))
+        report = _valid_v2_readiness_report(manifest)
+        report["calibration"]["seller_next_action"]["class_row_counts"]["accept"] = 30.5
+
+        with self.assertRaisesRegex(V2ProtocolError, "not an integer"):
+            validate_v2_pre_hidden_readiness(v2_manifest=manifest, readiness_report=report)
+
 
 def _valid_v2_readiness_report(manifest: dict) -> dict:
     splits = {}

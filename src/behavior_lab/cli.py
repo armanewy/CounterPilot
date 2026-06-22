@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sys
 from typing import Any
 
 from behavior_lab.bridge import (
@@ -687,8 +688,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    raw_args = sys.argv[1:] if argv is None else list(argv)
+    if len(raw_args) >= 2 and raw_args[0] == "offerlab-models" and raw_args[1] == "benchmark-v1":
+        raise SystemExit(
+            "OfferLab Benchmark v1 is frozen and hidden-spent. "
+            "Do not rerun it; create Benchmark v2 with fresh hidden cases instead."
+        )
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_args)
     args.func(args)
 
 

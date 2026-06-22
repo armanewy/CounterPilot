@@ -185,6 +185,14 @@ def _validate_calibration(v2_manifest: dict[str, Any], readiness_report: dict[st
             class_rows = report.get("class_row_counts", {})
             if not isinstance(class_rows, dict) or not class_rows:
                 raise V2ProtocolError(f"missing class row counts for {target}")
+            if set(class_rows) != set(classwise):
+                raise V2ProtocolError(f"class row counts do not match classwise calibration classes for {target}")
+            minimum_rows = classification_spec.get("minimum_rows_per_reported_class", 0)
+            for class_name, count in class_rows.items():
+                if isinstance(count, bool) or not isinstance(count, int):
+                    raise V2ProtocolError(f"class row count is not an integer for {target}: {class_name}")
+                if count < minimum_rows:
+                    raise V2ProtocolError(f"class row support threshold failed for {target}: {class_name}")
             if any(count < classification_spec.get("minimum_rows_per_reported_class", 0) for count in class_rows.values()):
                 raise V2ProtocolError(f"class row support threshold failed for {target}")
             if report.get("macro_classwise_expected_calibration_error", 1.0) > classification_spec.get("macro_classwise_expected_calibration_error_max", 0.0):
