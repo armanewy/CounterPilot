@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 from behavior_lab.datasets.nber_best_offer.normalize import build_sample_dataset, normalize_dataset
-from behavior_lab.offerlab_models.benchmark_v2_runner import BenchmarkV2Paths, _leaderboard, run_offerlab_benchmark_v2
+from behavior_lab.offerlab_models.benchmark_v2_runner import BenchmarkV2Paths, _decision_gate, _leaderboard, run_offerlab_benchmark_v2
 from test_offerlab_benchmark_v2_build import _write_normalized
 
 
@@ -79,9 +79,16 @@ class OfferLabBenchmarkV2RunnerTests(unittest.TestCase):
             self.assertTrue(controls["accepted_price_canary"]["rejected"])
             self.assertTrue(controls["identifier_memorization_canary"]["identifier_features_rejected"])
             self.assertTrue(controls["artifact_name_leakage_canary"]["rejected"])
-            self.assertIn("random_split_selected_model_gain", controls["random_row_split_inflation"])
+            random_split = controls["random_row_split_inflation"]
+            self.assertIn("random_split_selected_model_gain", random_split)
+            self.assertIn("random_split_gain_inflation", random_split)
+            self.assertFalse(random_split["selection_override_allowed"])
             self.assertIn("perturbed_selected_model_id", controls["same_timestamp_ordering_perturbation"])
-            self.assertTrue(controls["censoring_as_rejection_canary"]["variant_constructed"])
+            censoring = controls["censoring_as_rejection_canary"]
+            self.assertIn("variant_constructed", censoring)
+            if censoring["variant_constructed"]:
+                self.assertTrue(censoring["variant_rejected_by_task_manifest_validator"])
+                self.assertFalse(censoring["variant_used_for_selection"])
 
     def test_runner_preserves_unknown_and_censored_counts_in_task_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -105,6 +112,20 @@ class OfferLabBenchmarkV2RunnerTests(unittest.TestCase):
                 report["targets"]["seller_next_action"]["task_manifest"]["eligible_rows"],
                 report["targets"]["seller_next_action"]["task_manifest"]["supervised_training_rows"],
             )
+            censoring = report["targets"]["seller_next_action"]["negative_controls"]["censoring_as_rejection_canary"]
+            self.assertTrue(censoring["variant_constructed"])
+            self.assertTrue(censoring["variant_rejected_by_task_manifest_validator"])
+            self.assertIn("labeled as rejection", censoring["rejection_reason"])
+
+    def test_decision_gate_requires_full_release_evidence_even_when_readiness_passes(self) -> None:
+        gate = _decision_gate(
+            {"status": "ready_for_hidden"},
+            {"seller_next_action": {"selected_model": {"model_id": "majority"}}},
+            full_release_evidence=False,
+        )
+
+        self.assertEqual(gate["status"], "STOP")
+        self.assertIn("full-release evidence blocked", " ".join(gate["reasons"]))
 
     def test_leaderboard_includes_required_models_and_scores_more_than_500_rows(self) -> None:
         rows = [_seller_row(index) for index in range(720)]

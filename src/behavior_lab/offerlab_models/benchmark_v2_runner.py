@@ -23,7 +23,7 @@ from behavior_lab.datasets.nber_best_offer.baselines import (
 )
 from behavior_lab.datasets.nber_best_offer.tasks import build_tasks
 from behavior_lab.offerlab_models.benchmark_v2 import inspect_offerlab_benchmark_v2_task_manifests
-from behavior_lab.offerlab_models.benchmark_v2_protocol import V2ProtocolError, validate_v2_pre_hidden_readiness
+from behavior_lab.offerlab_models.benchmark_v2_protocol import V2ProtocolError, _validate_task_manifest_counts, validate_v2_pre_hidden_readiness
 from behavior_lab.offerlab_models.common import (
     FEATURE_CONTRACT,
     FORBIDDEN_MODEL_FIELDS,
@@ -355,7 +355,7 @@ def run_offerlab_benchmark_v2(
             "primary_split_survival": primary_survival,
             "calibration": calibration[target],
             "support": selected.get("support", {}),
-            "negative_controls": _negative_controls(target, rows, selected, protocol, batch_size=batch_size),
+            "negative_controls": _negative_controls(target, rows, selected, task_manifests[target], protocol, batch_size=batch_size),
             "compact_formula_candidates": _compact_formula_report(target, split_reports["thread_safe_nested_development"]),
             "hidden_lockbox": {
                 "submitted": False,
@@ -382,6 +382,7 @@ def run_offerlab_benchmark_v2(
         "production_export": default_registry().verify_lineage(["nber_ebay_best_offer"], "production_export"),
         "commercial_training": default_registry().verify_lineage(["nber_ebay_best_offer"], "commercial_training"),
     }
+    full_release_evidence = _full_release_ready(manifest)
     report = {
         "schema_version": "offerlab_benchmark_v2_pre_hidden_result.v1",
         "benchmark_id": "offerlab_benchmark_v2",
@@ -398,7 +399,7 @@ def run_offerlab_benchmark_v2(
         "data": _data_summary(normalized_dir, manifest),
         "scope": {
             **research_scope(evidence_scope="benchmark_v2_pre_hidden_development"),
-            "full_release_evidence": _full_release_ready(manifest),
+            "full_release_evidence": full_release_evidence,
             "model_row_cap_allowed": False,
             "model_row_cap_used": False,
             "streaming_or_batch_inputs": True,
@@ -409,7 +410,7 @@ def run_offerlab_benchmark_v2(
         "readiness_report": readiness_report,
         "pre_hidden_readiness": readiness,
         "permission_report": permission_report,
-        "gate": _decision_gate(readiness, targets),
+        "gate": _decision_gate(readiness, targets, full_release_evidence=full_release_evidence),
     }
     paths.output_path.parent.mkdir(parents=True, exist_ok=True)
     paths.output_path.write_text(json.dumps(_public_report(report), allow_nan=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -661,7 +662,7 @@ def _readiness_split_reports(protocol: dict[str, Any], tasks: dict[str, list[dic
     return output
 
 
-def _negative_controls(target: str, rows: list[dict[str, Any]], selected: dict[str, Any], protocol: dict[str, Any], *, batch_size: int) -> dict[str, Any]:
+def _negative_controls(target: str, rows: list[dict[str, Any]], selected: dict[str, Any], task_manifest: dict[str, Any], protocol: dict[str, Any], *, batch_size: int) -> dict[str, Any]:
     gates = protocol["negative_control_gates"]
     return {
         "random_labels": _random_labels_control(target, rows, selected, gates, batch_size=batch_size),
@@ -670,7 +671,7 @@ def _negative_controls(target: str, rows: list[dict[str, Any]], selected: dict[s
         "identifier_memorization_canary": _identifier_control(selected, gates),
         "random_row_split_inflation": _random_row_split_inflation_control(target, rows, selected, gates, batch_size=batch_size),
         "same_timestamp_ordering_perturbation": _same_timestamp_ordering_control(target, rows, selected, gates, batch_size=batch_size),
-        "censoring_as_rejection_canary": _censoring_as_rejection_control(gates),
+        "censoring_as_rejection_canary": _censoring_as_rejection_control(target, task_manifest, protocol, gates),
         "artifact_name_leakage_canary": _feature_rejection_control("artifact_name_leakage_canary", {"artifact_name": "hidden_winner"}, gates),
     }
 
@@ -720,9 +721,11 @@ def _random_row_split_inflation_control(target: str, rows: list[dict[str, Any]],
     selected_random = next((row for row in random_board if row.get("model_id") == selected.get("model_id")), None)
     random_gain = _model_gain(selected_random)
     group_safe_gain = _model_gain(selected)
+    inflation = _gain_inflation(random_gain, group_safe_gain)
+    passed = random_gain is None or (inflation is not None and inflation <= 0.0)
     return {
         "executed": True,
-        "passed": True,
+        "passed": passed,
         "pass_condition": gates["random_row_split_inflation"]["pass_condition"],
         "row_count": len(rows),
         "random_split_train_rows": len(split.train),
@@ -730,6 +733,8 @@ def _random_row_split_inflation_control(target: str, rows: list[dict[str, Any]],
         "selected_model_id": selected.get("model_id"),
         "random_split_selected_model_gain": random_gain,
         "group_safe_selected_model_gain": group_safe_gain,
+        "random_split_gain_inflation": inflation,
+        "maximum_allowed_inflation": 0.0,
         "selection_override_allowed": False,
     }
 
@@ -751,13 +756,39 @@ def _same_timestamp_ordering_control(target: str, rows: list[dict[str, Any]], se
     }
 
 
-def _censoring_as_rejection_control(gates: dict[str, Any]) -> dict[str, Any]:
+def _censoring_as_rejection_control(target: str, task_manifest: dict[str, Any], protocol: dict[str, Any], gates: dict[str, Any]) -> dict[str, Any]:
+    affected_rows = int(task_manifest.get("unknown_outcome_rows", 0)) + int(task_manifest.get("censored_outcome_rows", 0))
+    if affected_rows <= 0:
+        return {
+            "executed": True,
+            "passed": True,
+            "pass_condition": gates["censoring_as_rejection_canary"]["pass_condition"],
+            "variant_applicable": False,
+            "variant_constructed": False,
+            "variant_used_for_selection": False,
+            "rejection_reason": "target_has_no_unknown_or_censored_rows",
+        }
+    variant_manifest = dict(task_manifest)
+    variant_manifest["unknown_and_censored_labeled_as_rejection"] = True
+    variant_manifest["supervised_rows"] = int(variant_manifest.get("supervised_rows", 0)) + affected_rows
+    task_manifests = {name: dict(task_manifest) for name in protocol.get("targets", [])}
+    task_manifests[target] = variant_manifest
+    rejected_by_validator = False
+    rejection_reason = None
+    try:
+        _validate_task_manifest_counts(protocol, {"task_manifests": task_manifests})
+    except V2ProtocolError as exc:
+        rejected_by_validator = "labeled as rejection" in str(exc)
+        rejection_reason = str(exc)
     return {
         "executed": True,
-        "passed": True,
+        "passed": rejected_by_validator and task_manifest.get("unknown_and_censored_labeled_as_rejection") is False,
         "pass_condition": gates["censoring_as_rejection_canary"]["pass_condition"],
         "variant_constructed": True,
         "variant_used_for_selection": False,
+        "variant_affected_rows": affected_rows,
+        "variant_rejected_by_task_manifest_validator": rejected_by_validator,
+        "rejection_reason": rejection_reason,
     }
 
 
@@ -977,6 +1008,13 @@ def _model_gain(row: dict[str, Any] | None) -> float | None:
     return None
 
 
+def _gain_inflation(random_gain: float | None, group_safe_gain: float | None) -> float | None:
+    if random_gain is None or group_safe_gain is None:
+        return None
+    value = float(random_gain) - float(group_safe_gain)
+    return value if math.isfinite(value) else None
+
+
 def _selected_model_id(target: str, board: list[dict[str, Any]], selected: dict[str, Any]) -> str | None:
     if not board:
         return None
@@ -1094,13 +1132,17 @@ def _validate_readiness(protocol: dict[str, Any], readiness_report: dict[str, An
     return {"status": report.status, "targets_checked": report.targets_checked, "negative_controls_checked": report.negative_controls_checked}
 
 
-def _decision_gate(readiness: dict[str, Any], targets: dict[str, Any]) -> dict[str, Any]:
-    if readiness.get("status") == "ready_for_hidden":
+def _decision_gate(readiness: dict[str, Any], targets: dict[str, Any], *, full_release_evidence: bool) -> dict[str, Any]:
+    if readiness.get("status") == "ready_for_hidden" and full_release_evidence:
         status = "RESEARCH_SIGNAL"
-        reasons = ["pre-hidden readiness validator passed; hidden submission still requires explicit fresh-lockbox execution"]
+        reasons = ["pre-hidden readiness validator and full-release evidence passed; hidden submission still requires explicit fresh-lockbox execution"]
     else:
         status = "STOP"
-        reasons = [f"pre-hidden readiness blocked: {readiness.get('reason')}"]
+        reasons = []
+        if readiness.get("status") != "ready_for_hidden":
+            reasons.append(f"pre-hidden readiness blocked: {readiness.get('reason')}")
+        if not full_release_evidence:
+            reasons.append("full-release evidence blocked: complete audited NBER normalization is required")
     return {
         "status": status,
         "hidden_submission_performed": False,
