@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 from behavior_lab.datasets.nber_best_offer.normalize import build_sample_dataset, normalize_dataset
-from behavior_lab.offerlab_models.benchmark_v2_runner import BenchmarkV2Paths, _decision_gate, _leaderboard, run_offerlab_benchmark_v2
+from behavior_lab.offerlab_models.benchmark_v2_runner import BenchmarkV2Paths, _decision_gate, _full_release_ready, _leaderboard, run_offerlab_benchmark_v2
 from test_offerlab_benchmark_v2_build import _write_normalized
 
 
@@ -126,6 +126,14 @@ class OfferLabBenchmarkV2RunnerTests(unittest.TestCase):
 
         self.assertEqual(gate["status"], "STOP")
         self.assertIn("full-release evidence blocked", " ".join(gate["reasons"]))
+
+    def test_full_release_ready_requires_audited_evidence_not_only_flags(self) -> None:
+        manifest = {
+            "command_args": {"full": True, "limit_threads": None},
+            "audited_full_release_evidence": {"passed": True},
+        }
+
+        self.assertFalse(_full_release_ready(manifest))
 
     def test_leaderboard_includes_required_models_and_scores_more_than_500_rows(self) -> None:
         rows = [_seller_row(index) for index in range(720)]

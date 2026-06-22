@@ -21,6 +21,7 @@ from behavior_lab.datasets.nber_best_offer.baselines import (
     MedianRegressor,
     OfferRatioThresholdClassifier,
 )
+from behavior_lab.datasets.nber_best_offer.real_normalize import verify_full_release_evidence
 from behavior_lab.datasets.nber_best_offer.tasks import build_tasks
 from behavior_lab.offerlab_models.benchmark_v2 import inspect_offerlab_benchmark_v2_task_manifests
 from behavior_lab.offerlab_models.benchmark_v2_protocol import V2ProtocolError, _validate_task_manifest_counts, validate_v2_pre_hidden_readiness
@@ -382,7 +383,7 @@ def run_offerlab_benchmark_v2(
         "production_export": default_registry().verify_lineage(["nber_ebay_best_offer"], "production_export"),
         "commercial_training": default_registry().verify_lineage(["nber_ebay_best_offer"], "commercial_training"),
     }
-    full_release_evidence = _full_release_ready(manifest)
+    full_release_evidence = _full_release_evidence_summary(manifest)
     report = {
         "schema_version": "offerlab_benchmark_v2_pre_hidden_result.v1",
         "benchmark_id": "offerlab_benchmark_v2",
@@ -399,7 +400,8 @@ def run_offerlab_benchmark_v2(
         "data": _data_summary(normalized_dir, manifest),
         "scope": {
             **research_scope(evidence_scope="benchmark_v2_pre_hidden_development"),
-            "full_release_evidence": full_release_evidence,
+            "full_release_evidence": full_release_evidence["passed"],
+            "full_release_evidence_verification": full_release_evidence,
             "model_row_cap_allowed": False,
             "model_row_cap_used": False,
             "streaming_or_batch_inputs": True,
@@ -410,7 +412,7 @@ def run_offerlab_benchmark_v2(
         "readiness_report": readiness_report,
         "pre_hidden_readiness": readiness,
         "permission_report": permission_report,
-        "gate": _decision_gate(readiness, targets, full_release_evidence=full_release_evidence),
+        "gate": _decision_gate(readiness, targets, full_release_evidence=full_release_evidence["passed"]),
     }
     paths.output_path.parent.mkdir(parents=True, exist_ok=True)
     paths.output_path.write_text(json.dumps(_public_report(report), allow_nan=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -1212,9 +1214,18 @@ def _data_summary(normalized_dir: Path, manifest: dict[str, Any]) -> dict[str, A
     }
 
 
+def _full_release_evidence_summary(manifest: dict[str, Any]) -> dict[str, Any]:
+    report = verify_full_release_evidence(manifest)
+    return {
+        "schema_version": "offerlab_benchmark_v2_full_release_evidence_summary.v1",
+        "passed": bool(report.get("passed") is True),
+        "checks": dict(report.get("checks", {})),
+        "failures": list(report.get("failures", [])),
+    }
+
+
 def _full_release_ready(manifest: dict[str, Any]) -> bool:
-    args = manifest.get("command_args", {})
-    return bool(args.get("full") is True and args.get("limit_threads") is None)
+    return _full_release_evidence_summary(manifest)["passed"]
 
 
 def _nonempty_assignment(split: SplitAssignment) -> bool:
