@@ -57,6 +57,7 @@ from behavior_lab.offerlab import (
 )
 from behavior_lab.offerlab_models import run_sample_research_suite
 from behavior_lab.offerlab_models.benchmark_v1 import BenchmarkPaths, run_offerlab_benchmark_v1
+from behavior_lab.offerlab_models.benchmark_v2 import BenchmarkV2Paths, build_offerlab_benchmark_v2
 from behavior_lab.research_api import ResearchAPI
 from behavior_lab.runner import BatchConfig, SyntheticBatchRunner
 from behavior_lab.stress import LabStressTester
@@ -272,6 +273,22 @@ def command_offerlab_models_benchmark_v1(args: argparse.Namespace) -> None:
     raise SystemExit(
         "OfferLab Benchmark v1 is frozen and hidden-spent. "
         "Do not rerun it; create Benchmark v2 with fresh hidden cases instead."
+    )
+
+
+def command_offerlab_models_benchmark_v2_build(args: argparse.Namespace) -> None:
+    _print_json(
+        build_offerlab_benchmark_v2(
+            BenchmarkV2Paths(
+                normalized_dir=Path(args.normalized_dir),
+                output_dir=Path(args.output_dir),
+                protocol_path=Path(args.protocol),
+                v1_final_manifest_path=Path(args.v1_final_manifest),
+                external_v1_hidden_tokens_path=Path(args.external_v1_hidden_tokens) if args.external_v1_hidden_tokens else None,
+            ),
+            require_full_release=not args.allow_bounded_test_input,
+            partition_rows=args.partition_rows,
+        )
     )
 
 
@@ -686,6 +703,15 @@ def build_parser() -> argparse.ArgumentParser:
     offer_models_benchmark.add_argument("--row-cap", type=_positive, default=500)
     offer_models_benchmark.add_argument("--seed", type=int, default=20240621)
     offer_models_benchmark.set_defaults(func=command_offerlab_models_benchmark_v1)
+    offer_models_benchmark_v2 = offer_models_subparsers.add_parser("benchmark-v2-build", help="Build Benchmark v2 tasks and split manifests without training")
+    offer_models_benchmark_v2.add_argument("--normalized-dir", required=True)
+    offer_models_benchmark_v2.add_argument("--output-dir", required=True)
+    offer_models_benchmark_v2.add_argument("--protocol", default="datasets/manifests/offerlab_benchmark_v2.yaml")
+    offer_models_benchmark_v2.add_argument("--v1-final-manifest", default="reports/offerlab_benchmark_v1_final_manifest.json")
+    offer_models_benchmark_v2.add_argument("--external-v1-hidden-tokens", required=True)
+    offer_models_benchmark_v2.add_argument("--partition-rows", type=_positive, default=50_000)
+    offer_models_benchmark_v2.add_argument("--allow-bounded-test-input", action="store_true", help=argparse.SUPPRESS)
+    offer_models_benchmark_v2.set_defaults(func=command_offerlab_models_benchmark_v2_build)
 
     demo = subparsers.add_parser("demo", help="Run all waves end-to-end with campaign-safe lockboxes")
     demo.add_argument("--data-dir", default=".demo")
