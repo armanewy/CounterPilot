@@ -17,8 +17,8 @@ shopper submits product-page offer
 
 This app shell currently contains the product-page theme app extension and a
 minimal local offer intake server used in the development-store proof. It is
-not the complete production app server yet. The next implementation step is paid
-webhook ingest, maturity jobs, and report generation.
+not the complete production app server yet. The next implementation step is
+refund/return webhook ingest, maturity jobs, and report generation.
 
 ## Current Extension
 
@@ -65,6 +65,7 @@ POST /counterpilot/merchant/offers/:transaction_id/counter
 POST /counterpilot/merchant/offers/:transaction_id/decline
 GET /apps/counterpilot/offers/:transaction_id/respond
 POST /apps/counterpilot/offers/:transaction_id/accept
+POST /counterpilot/webhooks/shopify/orders
 ```
 
 Submitted offers are stored in `.counterpilot-data/offers.jsonl`, which is
@@ -98,8 +99,17 @@ the checkout URL to the buyer response. A retry that sees a checkout started
 but not finished fails closed instead of creating a duplicate draft order. Raw
 checkout URLs are stored only in the gitignored
 `.counterpilot-data/checkout_refs.jsonl`; `offers.jsonl` stores only hashed
-draft-order and checkout references. Paid webhooks are intentionally not
-ingested yet.
+draft-order and checkout references.
+
+Shopify `orders/create` and `orders/paid` webhook deliveries are accepted at
+`POST /counterpilot/webhooks/shopify/orders`. The route verifies Shopify HMAC
+against the raw body before parsing JSON, deduplicates by
+`X-Shopify-Webhook-Id`, ignores orders without `counterpilot_transaction_id`,
+requires an existing `checkout_created` transaction, and appends sanitized
+`order_created` and `paid` events. Raw Shopify order IDs and order names are
+stored only in the gitignored `.counterpilot-data/order_refs.jsonl`; webhook
+delivery IDs are tracked in
+`.counterpilot-data/shopify_webhook_deliveries.jsonl`.
 
 Counterpilot treats `offer_amount_minor`, `counter_amount_minor`, and
 `accepted_amount_minor` as per-unit prices. Order-level negotiated revenue is
@@ -141,6 +151,8 @@ Do not commit:
 - access tokens
 - refresh tokens
 - checkout URLs
+- order status URLs
+- raw Shopify order IDs
 - buyer names
 - buyer emails
 - addresses

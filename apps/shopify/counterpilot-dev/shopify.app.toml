@@ -12,6 +12,32 @@ automatically_update_urls_on_dev = true
 [webhooks]
 api_version = "2026-07"
 
+[[webhooks.subscriptions]]
+topics = [ "orders/create", "orders/paid" ]
+uri = "/counterpilot/webhooks/shopify/orders"
+include_fields = [
+  "id",
+  "admin_graphql_api_id",
+  "name",
+  "created_at",
+  "updated_at",
+  "processed_at",
+  "currency",
+  "presentment_currency",
+  "financial_status",
+  "current_total_price",
+  "current_subtotal_price",
+  "current_total_discounts",
+  "current_total_tax",
+  "current_shipping_price_set",
+  "note_attributes",
+  "tags",
+  "line_items.id",
+  "line_items.variant_id",
+  "line_items.quantity",
+  "line_items.price",
+]
+
 [access.admin]
 direct_api_mode = "online"
 embedded_app_direct_api_access = true

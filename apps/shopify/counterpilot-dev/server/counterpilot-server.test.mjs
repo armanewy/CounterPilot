@@ -10,6 +10,8 @@ import {
   createCounterpilotServer,
 } from "./counterpilot-server.mjs";
 
+const WEBHOOK_SECRET = "shopify-webhook-secret";
+
 async function withServer(fn, options = {}) {
   const dataDir = await fs.mkdtemp(
     path.join(os.tmpdir(), "counterpilot-server-"),
@@ -128,6 +130,82 @@ function createFakeShopifyAdapter(options = {}) {
   return { adapter, calls };
 }
 
+function signWebhookBody(rawBody, secret = WEBHOOK_SECRET) {
+  return crypto.createHmac("sha256", secret).update(rawBody).digest("base64");
+}
+
+function orderWebhookPayload(transactionId, overrides = {}) {
+  return {
+    id: 123456789,
+    admin_graphql_api_id: "gid://shopify/Order/123456789",
+    name: "#1001",
+    created_at: "2026-06-23T14:00:00-04:00",
+    updated_at: "2026-06-23T14:01:00-04:00",
+    processed_at: "2026-06-23T14:00:30-04:00",
+    currency: "USD",
+    presentment_currency: "USD",
+    financial_status: "pending",
+    current_total_price: "610.00",
+    current_subtotal_price: "610.00",
+    current_total_discounts: "0.00",
+    current_total_tax: "0.00",
+    current_shipping_price_set: {
+      shop_money: { amount: "0.00", currency_code: "USD" },
+    },
+    note_attributes:
+      transactionId === null
+        ? []
+        : [{ name: "counterpilot_transaction_id", value: transactionId }],
+    tags: "counterpilot,counterpilot-negotiated",
+    contact_email: "buyer@example.com",
+    email: "buyer@example.com",
+    phone: "555-0100",
+    order_status_url:
+      "https://counterpilot-dev.myshopify.com/orders/raw-status-token",
+    shipping_address: {
+      address1: "123 Union Ave",
+      city: "Framingham",
+    },
+    customer: {
+      email: "buyer@example.com",
+    },
+    ...overrides,
+  };
+}
+
+async function postShopifyWebhook(
+  baseUrl,
+  { topic, deliveryId, payload, secret = WEBHOOK_SECRET, headers = {} },
+) {
+  const rawBody = JSON.stringify(payload);
+  return fetch(`${baseUrl}/counterpilot/webhooks/shopify/orders`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-shopify-topic": topic,
+      "x-shopify-webhook-id": deliveryId,
+      "x-shopify-shop-domain": "counterpilot-dev.myshopify.com",
+      "x-shopify-hmac-sha256": signWebhookBody(rawBody, secret),
+      ...headers,
+    },
+    body: rawBody,
+  });
+}
+
+async function createCheckoutTransaction(baseUrl) {
+  const transactionId = await submitOffer(baseUrl);
+  const accepted = await merchantAction(baseUrl, transactionId, "accept", {
+    store_id: "counterpilot-dev.myshopify.com",
+  });
+  assert.equal(accepted.response.status, 200);
+  const checkout = await fetch(
+    buyerAcceptUrl(baseUrl, accepted.body.buyer_response_path),
+    { method: "POST" },
+  );
+  assert.equal(checkout.status, 200);
+  return transactionId;
+}
+
 async function readOfferEvents(dataDir) {
   const persisted = await fs.readFile(
     path.join(dataDir, "offers.jsonl"),
@@ -150,15 +228,52 @@ async function readCheckoutRefs(dataDir) {
     .map((line) => JSON.parse(line));
 }
 
+async function readOrderRefs(dataDir) {
+  const persisted = await fs.readFile(
+    path.join(dataDir, "order_refs.jsonl"),
+    "utf8",
+  );
+  return persisted
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+async function readWebhookDeliveries(dataDir) {
+  const persisted = await fs.readFile(
+    path.join(dataDir, "shopify_webhook_deliveries.jsonl"),
+    "utf8",
+  );
+  return persisted
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
 function assertSafeArtifact(value) {
   const text = JSON.stringify(value);
   assert.doesNotMatch(text, /buyer@example\.com/);
   assert.doesNotMatch(text, /gid:\/\/shopify\/Product/);
   assert.doesNotMatch(text, /gid:\/\/shopify\/DraftOrder/);
+  assert.doesNotMatch(text, /gid:\/\/shopify\/Order/);
   assert.doesNotMatch(text, /https:\/\/checkout\.counterpilot\.test/);
+  assert.doesNotMatch(text, /raw-status-token/);
+  assert.doesNotMatch(text, /123 Union/);
   assert.doesNotMatch(text, /phone/i);
   assert.doesNotMatch(text, /shipping-address/i);
   assert.doesNotMatch(text, /secret-token/i);
+}
+
+function assertNoRawOrderWebhookLeak(value) {
+  const text = JSON.stringify(value);
+  assert.doesNotMatch(text, /buyer@example\.com/);
+  assert.doesNotMatch(text, /gid:\/\/shopify\/Order/);
+  assert.doesNotMatch(text, /raw-status-token/);
+  assert.doesNotMatch(text, /123 Union/);
+  assert.doesNotMatch(text, /555-0100/);
+  assert.doesNotMatch(text, /contact_email/);
+  assert.doesNotMatch(text, /shipping_address/);
+  assert.doesNotMatch(text, /customer/);
 }
 
 function assertBuyerCheckoutResponse(value) {
@@ -716,6 +831,280 @@ test("buyer acceptance with a pending checkout marker does not create a duplicat
       );
     },
     { shopifyDraftOrderAdapter: shopify.adapter },
+  );
+});
+
+test("valid orders/create webhook appends order_created and stores raw order refs only operationally", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await createCheckoutTransaction(baseUrl);
+      const response = await postShopifyWebhook(baseUrl, {
+        topic: "orders/create",
+        deliveryId: "delivery_order_create_1",
+        payload: orderWebhookPayload(transactionId),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.deepEqual(body.appended, { order_created: true, paid: false });
+      assert.equal(body.lifecycle_state, "order_created");
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(events.at(-1).event_type, "order_created");
+      assert.equal(events.at(-1).lifecycle_state, "order_created");
+      assert.equal(events.at(-1).order_total_minor, 61000);
+      assert.equal(events.at(-1).shipping_total_minor, 0);
+      assert.equal(events.at(-1).tax_total_minor, 0);
+      assert.equal(events.at(-1).discount_total_minor, 0);
+      assert.equal(events.at(-1).currency, "USD");
+      assert.equal(events.at(-1).production_evidence, false);
+      assert.ok(events.at(-1).order_reference_hash.startsWith("sha256:"));
+      assert.ok(events.at(-1).order_name_reference_hash.startsWith("sha256:"));
+      assertNoRawOrderWebhookLeak(events);
+
+      const orderRefs = await readOrderRefs(dataDir);
+      assert.equal(orderRefs.length, 1);
+      assert.equal(orderRefs[0].transaction_id, transactionId);
+      assert.equal(
+        orderRefs[0].admin_graphql_api_id,
+        "gid://shopify/Order/123456789",
+      );
+      assert.equal(orderRefs[0].order_name, "#1001");
+      assert.doesNotMatch(JSON.stringify(orderRefs), /buyer@example\.com/);
+      assert.doesNotMatch(JSON.stringify(orderRefs), /raw-status-token/);
+      assert.doesNotMatch(JSON.stringify(orderRefs), /123 Union/);
+
+      const deliveries = await readWebhookDeliveries(dataDir);
+      assert.equal(deliveries.length, 1);
+      assert.equal(deliveries[0].delivery_id, "delivery_order_create_1");
+      assert.equal(deliveries[0].status, "processed");
+      assertSafeArtifact(deliveries);
+
+      const inboxResponse = await fetch(
+        `${baseUrl}/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`,
+      );
+      assert.equal(inboxResponse.status, 200);
+      const inbox = await inboxResponse.json();
+      assert.equal(inbox.offers[0].lifecycle_state, "order_created");
+      assert.equal(inbox.offers[0].order_total_minor, 61000);
+      assertSafeArtifact(inbox);
+      assert.equal(shopify.calls.length, 1);
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("orders/paid arriving before orders/create appends order_created then paid", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await createCheckoutTransaction(baseUrl);
+      const response = await postShopifyWebhook(baseUrl, {
+        topic: "orders/paid",
+        deliveryId: "delivery_paid_first",
+        payload: orderWebhookPayload(transactionId, {
+          financial_status: "paid",
+          processed_at: "2026-06-23T14:02:00-04:00",
+        }),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.deepEqual(body.appended, { order_created: true, paid: true });
+      assert.equal(body.lifecycle_state, "paid");
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(
+        events
+          .filter((event) =>
+            ["order_created", "paid"].includes(event.event_type),
+          )
+          .map((event) => event.event_type)
+          .join(","),
+        "order_created,paid",
+      );
+      const paid = events.at(-1);
+      assert.equal(paid.event_type, "paid");
+      assert.equal(paid.paid_total_minor, 61000);
+      assert.equal(paid.currency, "USD");
+      assert.equal(paid.production_evidence, false);
+      assertNoRawOrderWebhookLeak(events);
+
+      const orderRefs = await readOrderRefs(dataDir);
+      assert.equal(orderRefs.length, 1);
+      assert.equal(
+        orderRefs[0].admin_graphql_api_id,
+        "gid://shopify/Order/123456789",
+      );
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("duplicate Shopify webhook delivery does not append duplicate order or paid events", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await createCheckoutTransaction(baseUrl);
+      const payload = orderWebhookPayload(transactionId, {
+        financial_status: "paid",
+      });
+      const first = await postShopifyWebhook(baseUrl, {
+        topic: "orders/paid",
+        deliveryId: "delivery_duplicate_paid",
+        payload,
+      });
+      assert.equal(first.status, 200);
+      const second = await postShopifyWebhook(baseUrl, {
+        topic: "orders/paid",
+        deliveryId: "delivery_duplicate_paid",
+        payload,
+      });
+      assert.equal(second.status, 200);
+      const secondBody = await second.json();
+      assert.equal(secondBody.duplicate, true);
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(
+        events.filter((event) => event.event_type === "order_created").length,
+        1,
+      );
+      assert.equal(
+        events.filter((event) => event.event_type === "paid").length,
+        1,
+      );
+      const orderRefs = await readOrderRefs(dataDir);
+      assert.equal(orderRefs.length, 1);
+      const deliveries = await readWebhookDeliveries(dataDir);
+      assert.equal(deliveries.length, 1);
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("invalid Shopify webhook HMAC is rejected before parsing payload", async () => {
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const response = await fetch(
+        `${baseUrl}/counterpilot/webhooks/shopify/orders`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-shopify-topic": "orders/create",
+            "x-shopify-webhook-id": "delivery_bad_hmac",
+            "x-shopify-shop-domain": "counterpilot-dev.myshopify.com",
+            "x-shopify-hmac-sha256": signWebhookBody(
+              Buffer.from("different body"),
+            ),
+          },
+          body: "{not valid json",
+        },
+      );
+      assert.equal(response.status, 401);
+      await assert.rejects(
+        fs.readFile(path.join(dataDir, "offers.jsonl"), "utf8"),
+        { code: "ENOENT" },
+      );
+      await assert.rejects(
+        fs.readFile(
+          path.join(dataDir, "shopify_webhook_deliveries.jsonl"),
+          "utf8",
+        ),
+        { code: "ENOENT" },
+      );
+    },
+    { shopifyWebhookSecret: WEBHOOK_SECRET },
+  );
+});
+
+test("Shopify order webhooks with no Counterpilot transaction are ignored and deduped", async () => {
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const response = await postShopifyWebhook(baseUrl, {
+        topic: "orders/create",
+        deliveryId: "delivery_no_transaction",
+        payload: orderWebhookPayload(null),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.ignored, true);
+
+      await assert.rejects(
+        fs.readFile(path.join(dataDir, "offers.jsonl"), "utf8"),
+        { code: "ENOENT" },
+      );
+      const deliveries = await readWebhookDeliveries(dataDir);
+      assert.equal(deliveries.length, 1);
+      assert.equal(deliveries[0].status, "ignored_no_counterpilot_transaction");
+      assertSafeArtifact(deliveries);
+    },
+    { shopifyWebhookSecret: WEBHOOK_SECRET },
+  );
+});
+
+test("Shopify order webhooks for unknown Counterpilot transactions are ignored safely", async () => {
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const response = await postShopifyWebhook(baseUrl, {
+        topic: "orders/create",
+        deliveryId: "delivery_unknown_transaction",
+        payload: orderWebhookPayload("cp_offer_missing"),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.ignored, true);
+
+      await assert.rejects(
+        fs.readFile(path.join(dataDir, "offers.jsonl"), "utf8"),
+        { code: "ENOENT" },
+      );
+      const deliveries = await readWebhookDeliveries(dataDir);
+      assert.equal(deliveries.length, 1);
+      assert.equal(deliveries[0].status, "ignored_unknown_transaction");
+      assertSafeArtifact(deliveries);
+    },
+    { shopifyWebhookSecret: WEBHOOK_SECRET },
+  );
+});
+
+test("Shopify order webhook for a transaction without checkout_created is rejected without consuming delivery", async () => {
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await submitOffer(baseUrl);
+      const accepted = await merchantAction(baseUrl, transactionId, "accept", {
+        store_id: "counterpilot-dev.myshopify.com",
+      });
+      assert.equal(accepted.response.status, 200);
+
+      const response = await postShopifyWebhook(baseUrl, {
+        topic: "orders/create",
+        deliveryId: "delivery_before_checkout",
+        payload: orderWebhookPayload(transactionId),
+      });
+      assert.equal(response.status, 409);
+      const events = await readOfferEvents(dataDir);
+      assert.equal(
+        events.filter((event) => event.event_type === "order_created").length,
+        0,
+      );
+      await assert.rejects(
+        fs.readFile(
+          path.join(dataDir, "shopify_webhook_deliveries.jsonl"),
+          "utf8",
+        ),
+        { code: "ENOENT" },
+      );
+    },
+    { shopifyWebhookSecret: WEBHOOK_SECRET },
   );
 });
 

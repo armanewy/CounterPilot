@@ -5,8 +5,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createDraftOrderForAcceptedOffer } from "./shopify-draft-orders.mjs";
+import { normalizeShopifyOrderWebhook } from "./shopify-order-webhooks.mjs";
 
 const DEFAULT_MAX_BODY_BYTES = 16 * 1024;
+const DEFAULT_WEBHOOK_MAX_BODY_BYTES = 256 * 1024;
 const DEFAULT_DATA_DIR = path.join(process.cwd(), ".counterpilot-data");
 const DEFAULT_BUYER_RESPONSE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -16,6 +18,7 @@ const OFFER_POST_PATHS = new Set([
 ]);
 
 const MERCHANT_INBOX_PATH = "/counterpilot/merchant/offers";
+const SHOPIFY_ORDER_WEBHOOK_PATH = "/counterpilot/webhooks/shopify/orders";
 
 const ALLOWED_OFFER_FIELDS = new Set([
   "shop",
@@ -49,6 +52,12 @@ const BUYER_RESPONSE_STATES = new Set([
   "merchant_countered",
 ]);
 
+const ORDER_WEBHOOK_READY_STATES = new Set([
+  "checkout_created",
+  "order_created",
+  "paid",
+]);
+
 const FORBIDDEN_FIELDS = new Set([
   "address",
   "buyer_message",
@@ -72,6 +81,11 @@ class OfferStore {
     this.dataDir = dataDir;
     this.filePath = path.join(dataDir, "offers.jsonl");
     this.checkoutRefsPath = path.join(dataDir, "checkout_refs.jsonl");
+    this.orderRefsPath = path.join(dataDir, "order_refs.jsonl");
+    this.webhookDeliveriesPath = path.join(
+      dataDir,
+      "shopify_webhook_deliveries.jsonl",
+    );
     this.writeQueue = Promise.resolve();
   }
 
@@ -105,6 +119,8 @@ class OfferStore {
     const operation = this.writeQueue.then(async () => {
       const events = await this.#readDirect();
       const checkoutRefs = await this.#readCheckoutRefsDirect();
+      const orderRefs = await this.#readOrderRefsDirect();
+      const webhookDeliveries = await this.#readWebhookDeliveriesDirect();
       const appendEvent = async (record) => {
         await this.#appendDirect(record);
         events.push(record);
@@ -115,11 +131,25 @@ class OfferStore {
         checkoutRefs.push(record);
         return record;
       };
+      const appendOrderRef = async (record) => {
+        await this.#appendJsonlDirect(this.orderRefsPath, record);
+        orderRefs.push(record);
+        return record;
+      };
+      const appendWebhookDelivery = async (record) => {
+        await this.#appendJsonlDirect(this.webhookDeliveriesPath, record);
+        webhookDeliveries.push(record);
+        return record;
+      };
       return operationFactory({
         events,
         checkoutRefs,
+        orderRefs,
+        webhookDeliveries,
         appendEvent,
         appendCheckoutRef,
+        appendOrderRef,
+        appendWebhookDelivery,
       });
     });
     this.writeQueue = operation.then(
@@ -149,6 +179,14 @@ class OfferStore {
 
   async #readCheckoutRefsDirect() {
     return this.#readJsonlDirect(this.checkoutRefsPath);
+  }
+
+  async #readOrderRefsDirect() {
+    return this.#readJsonlDirect(this.orderRefsPath);
+  }
+
+  async #readWebhookDeliveriesDirect() {
+    return this.#readJsonlDirect(this.webhookDeliveriesPath);
   }
 
   async #readJsonlDirect(filePath) {
@@ -201,6 +239,21 @@ function shopifyApiVersion(options) {
     process.env.COUNTERPILOT_SHOPIFY_API_VERSION ??
     "2026-04"
   );
+}
+
+function shopifyWebhookSecret(options) {
+  return (
+    options.shopifyWebhookSecret ??
+    process.env.COUNTERPILOT_SHOPIFY_WEBHOOK_SECRET ??
+    process.env.SHOPIFY_WEBHOOK_SECRET
+  );
+}
+
+function shopifyProductionEvidence(options) {
+  if (options.productionEvidence !== undefined) {
+    return Boolean(options.productionEvidence);
+  }
+  return process.env.COUNTERPILOT_PRODUCTION_EVIDENCE === "1";
 }
 
 function buyerResponseTtlMs(options) {
@@ -605,6 +658,30 @@ export function buildOfferSnapshots(events) {
       snapshot.checkout_error_code = event.error_code;
       snapshot.checkout_creation_status = "failed";
     }
+    if (event.event_type === "order_created") {
+      snapshot.lifecycle_state = event.lifecycle_state;
+      snapshot.event_type = event.event_type;
+      snapshot.updated_at = event.occurred_at;
+      snapshot.order_created_at = event.occurred_at;
+      snapshot.order_reference_hash = event.order_reference_hash;
+      snapshot.order_name_reference_hash = event.order_name_reference_hash;
+      snapshot.order_total_minor = event.order_total_minor;
+      snapshot.shipping_total_minor = event.shipping_total_minor;
+      snapshot.tax_total_minor = event.tax_total_minor;
+      snapshot.discount_total_minor = event.discount_total_minor;
+      snapshot.order_currency = event.currency;
+      snapshot.production_evidence = event.production_evidence;
+    }
+    if (event.event_type === "paid") {
+      snapshot.lifecycle_state = event.lifecycle_state;
+      snapshot.event_type = event.event_type;
+      snapshot.updated_at = event.occurred_at;
+      snapshot.paid_at = event.paid_at;
+      snapshot.order_reference_hash = event.order_reference_hash;
+      snapshot.paid_total_minor = event.paid_total_minor;
+      snapshot.paid_currency = event.currency;
+      snapshot.production_evidence = event.production_evidence;
+    }
   }
   return snapshots;
 }
@@ -635,6 +712,18 @@ export function sanitizeOfferForInbox(record) {
     negotiated_revenue_minor: record.negotiated_revenue_minor,
     draft_order_reference_hash: record.draft_order_reference_hash,
     checkout_reference_hash: record.checkout_reference_hash,
+    order_created_at: record.order_created_at,
+    order_reference_hash: record.order_reference_hash,
+    order_name_reference_hash: record.order_name_reference_hash,
+    order_total_minor: record.order_total_minor,
+    shipping_total_minor: record.shipping_total_minor,
+    tax_total_minor: record.tax_total_minor,
+    discount_total_minor: record.discount_total_minor,
+    order_currency: record.order_currency,
+    paid_at: record.paid_at,
+    paid_total_minor: record.paid_total_minor,
+    paid_currency: record.paid_currency,
+    production_evidence: record.production_evidence,
     currency: record.currency,
     quantity: record.quantity,
     buyer_contact_reference: record.buyer_contact_reference,
@@ -881,6 +970,105 @@ function checkoutAdapter(options) {
   return options.shopifyDraftOrderAdapter ?? createDraftOrderForAcceptedOffer;
 }
 
+function hasTransactionEvent(events, transactionId, eventType) {
+  return events.some(
+    (event) =>
+      event.transaction_id === transactionId && event.event_type === eventType,
+  );
+}
+
+function latestWebhookDeliveryFor(webhookDeliveries, deliveryId) {
+  return [...webhookDeliveries]
+    .reverse()
+    .find((record) => record.delivery_id === deliveryId);
+}
+
+function hasOrderRef(orderRefs, transactionId, orderReferenceHash) {
+  return orderRefs.some(
+    (record) =>
+      record.transaction_id === transactionId &&
+      record.order_reference_hash === orderReferenceHash,
+  );
+}
+
+function nullableReferenceHash(value) {
+  return value === null || value === undefined ? null : checkoutRefHash(value);
+}
+
+function createOrderCreatedEvent(snapshot, webhook) {
+  return {
+    schema_version: "counterpilot.offer_event.v1",
+    transaction_id: snapshot.transaction_id,
+    lifecycle_state: "order_created",
+    event_type: "order_created",
+    actor_type: "shopify",
+    occurred_at: webhook.occurredAt,
+    store_id: snapshot.store_id,
+    store_reference_hash: `sha256:${hashValue(snapshot.store_id)}`,
+    source: webhook.source,
+    order_reference_hash: checkoutRefHash(webhook.order.reference),
+    order_name_reference_hash: nullableReferenceHash(
+      webhook.order.nameReference,
+    ),
+    currency: webhook.order.currency,
+    order_total_minor: webhook.order.orderTotalMinor,
+    shipping_total_minor: webhook.order.shippingTotalMinor,
+    tax_total_minor: webhook.order.taxTotalMinor,
+    discount_total_minor: webhook.order.discountTotalMinor,
+    production_evidence: webhook.productionEvidence,
+  };
+}
+
+function createPaidEvent(snapshot, webhook) {
+  return {
+    schema_version: "counterpilot.offer_event.v1",
+    transaction_id: snapshot.transaction_id,
+    lifecycle_state: "paid",
+    event_type: "paid",
+    actor_type: "shopify",
+    occurred_at: webhook.paidAt,
+    paid_at: webhook.paidAt,
+    store_id: snapshot.store_id,
+    store_reference_hash: `sha256:${hashValue(snapshot.store_id)}`,
+    source: webhook.source,
+    order_reference_hash: checkoutRefHash(webhook.order.reference),
+    paid_total_minor: webhook.order.orderTotalMinor,
+    currency: webhook.order.currency,
+    production_evidence: webhook.productionEvidence,
+  };
+}
+
+function createOrderRefRecord(snapshot, webhook, now = new Date()) {
+  return {
+    schema_version: "counterpilot.order_ref.v1",
+    transaction_id: snapshot.transaction_id,
+    store_id: snapshot.store_id,
+    created_at: now.toISOString(),
+    delivery_id: webhook.deliveryId,
+    topic: webhook.topic,
+    order_id: webhook.order.rawOrderId,
+    admin_graphql_api_id: webhook.order.adminGraphqlApiId,
+    order_name: webhook.order.name,
+    order_reference_hash: checkoutRefHash(webhook.order.reference),
+    order_name_reference_hash: nullableReferenceHash(
+      webhook.order.nameReference,
+    ),
+  };
+}
+
+function createWebhookDeliveryRecord(webhook, status, now = new Date()) {
+  return {
+    schema_version: "counterpilot.shopify_webhook_delivery.v1",
+    delivery_id: webhook.deliveryId,
+    topic: webhook.topic,
+    store_id: webhook.shop,
+    transaction_id: webhook.transactionId,
+    status,
+    received_at: now.toISOString(),
+    order_reference_hash: checkoutRefHash(webhook.order.reference),
+  };
+}
+
 async function readJsonRequest(request, maxBodyBytes) {
   const chunks = [];
   let totalBytes = 0;
@@ -900,6 +1088,23 @@ async function readJsonRequest(request, maxBodyBytes) {
   } catch {
     throw validationError("request body must be valid JSON");
   }
+}
+
+async function readRawRequest(request, maxBodyBytes) {
+  const chunks = [];
+  let totalBytes = 0;
+  for await (const chunk of request) {
+    totalBytes += chunk.length;
+    if (totalBytes > maxBodyBytes) {
+      throw validationError("request body is too large", 413);
+    }
+    chunks.push(chunk);
+  }
+  const rawBody = Buffer.concat(chunks);
+  if (rawBody.length === 0) {
+    throw validationError("request body is required");
+  }
+  return rawBody;
 }
 
 async function handleOfferPost(
@@ -1146,12 +1351,138 @@ async function handleBuyerAcceptPost(
   jsonResponse(response, result.statusCode, result.body);
 }
 
+async function handleShopifyOrderWebhookPost(
+  request,
+  response,
+  store,
+  maxBodyBytes,
+  options,
+) {
+  const rawBody = await readRawRequest(request, maxBodyBytes);
+  const webhook = normalizeShopifyOrderWebhook({
+    rawBody,
+    headers: request.headers,
+    webhookSecret: shopifyWebhookSecret(options),
+    productionEvidence: shopifyProductionEvidence(options),
+  });
+
+  const result = await store.transaction(
+    async ({
+      events,
+      orderRefs,
+      webhookDeliveries,
+      appendEvent,
+      appendOrderRef,
+      appendWebhookDelivery,
+    }) => {
+      const existingDelivery = latestWebhookDeliveryFor(
+        webhookDeliveries,
+        webhook.deliveryId,
+      );
+      if (existingDelivery) {
+        return {
+          statusCode: 200,
+          body: {
+            received: true,
+            duplicate: true,
+            status: existingDelivery.status,
+          },
+        };
+      }
+
+      if (!webhook.transactionId) {
+        await appendWebhookDelivery(
+          createWebhookDeliveryRecord(
+            webhook,
+            "ignored_no_counterpilot_transaction",
+          ),
+        );
+        return {
+          statusCode: 200,
+          body: { received: true, ignored: true },
+        };
+      }
+
+      let snapshot = buildOfferSnapshots(events).get(webhook.transactionId);
+      if (!snapshot) {
+        await appendWebhookDelivery(
+          createWebhookDeliveryRecord(webhook, "ignored_unknown_transaction"),
+        );
+        return {
+          statusCode: 200,
+          body: { received: true, ignored: true },
+        };
+      }
+      if (snapshot.store_id !== webhook.shop) {
+        throw validationError(
+          "Shopify webhook shop does not match transaction store",
+          403,
+        );
+      }
+      if (!ORDER_WEBHOOK_READY_STATES.has(snapshot.lifecycle_state)) {
+        return {
+          statusCode: 409,
+          body: {
+            error: "checkout_not_created",
+            transaction_id: webhook.transactionId,
+          },
+        };
+      }
+
+      const orderReferenceHash = checkoutRefHash(webhook.order.reference);
+      if (!hasOrderRef(orderRefs, webhook.transactionId, orderReferenceHash)) {
+        await appendOrderRef(createOrderRefRecord(snapshot, webhook));
+      }
+
+      const appended = {
+        order_created: false,
+        paid: false,
+      };
+
+      if (
+        !hasTransactionEvent(events, webhook.transactionId, "order_created")
+      ) {
+        await appendEvent(createOrderCreatedEvent(snapshot, webhook));
+        appended.order_created = true;
+        snapshot = buildOfferSnapshots(events).get(webhook.transactionId);
+      }
+
+      if (
+        webhook.paidObserved &&
+        !hasTransactionEvent(events, webhook.transactionId, "paid")
+      ) {
+        await appendEvent(createPaidEvent(snapshot, webhook));
+        appended.paid = true;
+        snapshot = buildOfferSnapshots(events).get(webhook.transactionId);
+      }
+
+      await appendWebhookDelivery(
+        createWebhookDeliveryRecord(webhook, "processed"),
+      );
+
+      return {
+        statusCode: 200,
+        body: {
+          received: true,
+          duplicate: false,
+          transaction_id: webhook.transactionId,
+          lifecycle_state: snapshot.lifecycle_state,
+          appended,
+        },
+      };
+    },
+  );
+  jsonResponse(response, result.statusCode, result.body);
+}
+
 export function createCounterpilotServer(options = {}) {
   const dataDir =
     options.dataDir ??
     process.env.COUNTERPILOT_SERVER_DATA_DIR ??
     DEFAULT_DATA_DIR;
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
+  const webhookMaxBodyBytes =
+    options.webhookMaxBodyBytes ?? DEFAULT_WEBHOOK_MAX_BODY_BYTES;
   const store = options.store ?? new OfferStore(dataDir);
 
   return http.createServer(async (request, response) => {
@@ -1163,6 +1494,19 @@ export function createCounterpilotServer(options = {}) {
       }
       if (request.method === "GET" && requestUrl.pathname === "/healthz") {
         jsonResponse(response, 200, { ok: true });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === SHOPIFY_ORDER_WEBHOOK_PATH
+      ) {
+        await handleShopifyOrderWebhookPost(
+          request,
+          response,
+          store,
+          webhookMaxBodyBytes,
+          options,
+        );
         return;
       }
       if (

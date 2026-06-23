@@ -60,7 +60,7 @@ $env:COUNTERPILOT_SHOPIFY_STORE_DOMAIN="<store>.myshopify.com"
 $env:COUNTERPILOT_SHOPIFY_ACCESS_TOKEN="..."
 $env:COUNTERPILOT_SHOPIFY_WEBHOOK_SECRET="..."
 $env:COUNTERPILOT_SHOPIFY_APP_URL="https://..."
-$env:COUNTERPILOT_SHOPIFY_WEBHOOK_URL="https://.../webhooks/shopify"
+$env:COUNTERPILOT_SHOPIFY_WEBHOOK_URL="https://.../counterpilot/webhooks/shopify/orders"
 $env:COUNTERPILOT_SHOPIFY_SCOPES="read_orders,read_products,write_draft_orders"
 $env:COUNTERPILOT_SHOPIFY_PROVIDER_MODE="real"
 $env:COUNTERPILOT_MERCHANT_ID="merchant_dev_demo"
@@ -104,10 +104,11 @@ The app shell includes backend routes for:
 - Merchant accept/counter/decline actions.
 - Buyer accept page.
 - Draft order / checkout creation.
+- Shopify `orders/create` and `orders/paid` webhook ingest.
 
 The next implementation needs backend routes or jobs for:
 
-- Shopify webhook ingest.
+- Refund/return webhook ingest.
 - Maturity job.
 - Report generation.
 
