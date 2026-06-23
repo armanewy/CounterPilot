@@ -110,9 +110,38 @@ function tokenFromBuyerResponsePath(buyerResponsePath) {
   ).searchParams.get("token");
 }
 
+function createFakeShopifyAdapter(options = {}) {
+  const calls = [];
+  const adapter = async (payload) => {
+    calls.push(payload);
+    if (options.error) {
+      throw options.error;
+    }
+    return {
+      draftOrderId:
+        options.draftOrderId ?? "gid://shopify/DraftOrder/checkout-created-1",
+      checkoutUrl:
+        options.checkoutUrl ??
+        "https://checkout.counterpilot.test/invoice/checkout-created-1",
+    };
+  };
+  return { adapter, calls };
+}
+
 async function readOfferEvents(dataDir) {
   const persisted = await fs.readFile(
     path.join(dataDir, "offers.jsonl"),
+    "utf8",
+  );
+  return persisted
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+async function readCheckoutRefs(dataDir) {
+  const persisted = await fs.readFile(
+    path.join(dataDir, "checkout_refs.jsonl"),
     "utf8",
   );
   return persisted
@@ -125,11 +154,22 @@ function assertSafeArtifact(value) {
   const text = JSON.stringify(value);
   assert.doesNotMatch(text, /buyer@example\.com/);
   assert.doesNotMatch(text, /gid:\/\/shopify\/Product/);
-  assert.doesNotMatch(text, /checkout/i);
-  assert.doesNotMatch(text, /draft_order/i);
+  assert.doesNotMatch(text, /gid:\/\/shopify\/DraftOrder/);
+  assert.doesNotMatch(text, /https:\/\/checkout\.counterpilot\.test/);
   assert.doesNotMatch(text, /phone/i);
   assert.doesNotMatch(text, /shipping-address/i);
   assert.doesNotMatch(text, /secret-token/i);
+}
+
+function assertBuyerCheckoutResponse(value) {
+  const text = JSON.stringify(value);
+  assert.doesNotMatch(text, /buyer@example\.com/);
+  assert.doesNotMatch(text, /gid:\/\/shopify\/Product/);
+  assert.doesNotMatch(text, /gid:\/\/shopify\/DraftOrder/);
+  assert.doesNotMatch(text, /phone/i);
+  assert.doesNotMatch(text, /shipping-address/i);
+  assert.doesNotMatch(text, /secret-token/i);
+  assert.match(value.checkout_url, /^https:\/\/checkout\.counterpilot\.test\//);
 }
 
 test("POST /counterpilot/offers persists an offer_submitted event and returns only safe fields", async () => {
@@ -373,126 +413,310 @@ test("buyer can fetch a safe response view for a countered offer", async () => {
   });
 });
 
-test("buyer can accept a merchant counter", async () => {
-  await withServer(async ({ baseUrl, dataDir }) => {
-    const transactionId = await submitOffer(
-      baseUrl,
-      validOffer({ offer_amount: "580.00" }),
-    );
-    const counter = await merchantAction(baseUrl, transactionId, "counter", {
-      store_id: "counterpilot-dev.myshopify.com",
-      counter_amount: "610.00",
-      currency: "USD",
-    });
-    assert.equal(counter.response.status, 200);
-
-    const response = await fetch(
-      buyerAcceptUrl(baseUrl, counter.body.buyer_response_path),
-      { method: "POST" },
-    );
-    assert.equal(response.status, 200);
-    const body = await response.json();
-    assert.equal(body.offer.lifecycle_state, "buyer_accepted");
-    assert.equal(body.offer.accepted_amount_minor, 61000);
-    assert.equal(body.offer.accepted_currency, "USD");
-    assertSafeArtifact(body);
-
-    const events = await readOfferEvents(dataDir);
-    assert.equal(
-      events.map((event) => event.event_type).join(","),
-      "offer_submitted,merchant_countered,buyer_accepted",
-    );
-    assert.equal(events[2].accepted_amount_minor, 61000);
-    assert.equal(events[2].currency, "USD");
-    assert.equal(events[2].accepted_from_event_type, "merchant_countered");
-    assert.doesNotMatch(JSON.stringify(events), /checkout/i);
-    assert.doesNotMatch(JSON.stringify(events), /draft_order/i);
-
-    const inboxResponse = await fetch(
-      `${baseUrl}/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`,
-    );
-    assert.equal(inboxResponse.status, 200);
-    const inbox = await inboxResponse.json();
-    assert.equal(inbox.offers[0].lifecycle_state, "buyer_accepted");
-    assert.equal(inbox.offers[0].accepted_amount_minor, 61000);
-    assertSafeArtifact(inbox);
-  });
-});
-
-test("buyer can accept a merchant acceptance of the original offer", async () => {
-  await withServer(async ({ baseUrl, dataDir }) => {
-    const transactionId = await submitOffer(
-      baseUrl,
-      validOffer({ offer_amount: "590.00" }),
-    );
-    const accepted = await merchantAction(baseUrl, transactionId, "accept", {
-      store_id: "counterpilot-dev.myshopify.com",
-    });
-    assert.equal(accepted.response.status, 200);
-
-    const response = await fetch(
-      buyerAcceptUrl(baseUrl, accepted.body.buyer_response_path),
-      { method: "POST" },
-    );
-    assert.equal(response.status, 200);
-    const body = await response.json();
-    assert.equal(body.offer.lifecycle_state, "buyer_accepted");
-    assert.equal(body.offer.accepted_amount_minor, 59000);
-    assertSafeArtifact(body);
-
-    const events = await readOfferEvents(dataDir);
-    assert.equal(events[2].event_type, "buyer_accepted");
-    assert.equal(events[2].accepted_amount_minor, 59000);
-    assert.equal(events[2].accepted_from_event_type, "merchant_accepted");
-  });
-});
-
-test("buyer acceptance rejects declined, pre-action, repeated, and unknown transactions", async () => {
-  await withServer(async ({ baseUrl }) => {
-    const submittedId = await submitOffer(baseUrl);
-    const submittedResponse = await fetch(
-      `${baseUrl}/apps/counterpilot/offers/${submittedId}/accept?shop=counterpilot-dev.myshopify.com&token=anything`,
-      { method: "POST" },
-    );
-    assert.equal(submittedResponse.status, 409);
-
-    const declinedId = await submitOffer(baseUrl);
-    const declined = await merchantAction(baseUrl, declinedId, "decline", {
-      store_id: "counterpilot-dev.myshopify.com",
-    });
-    assert.equal(declined.response.status, 200);
-    const declinedResponse = await fetch(
-      `${baseUrl}/apps/counterpilot/offers/${declinedId}/accept?shop=counterpilot-dev.myshopify.com&token=anything`,
-      { method: "POST" },
-    );
-    assert.equal(declinedResponse.status, 409);
-
-    const acceptedId = await submitOffer(baseUrl);
-    const merchantAccepted = await merchantAction(
-      baseUrl,
-      acceptedId,
-      "accept",
-      {
+test("buyer can accept a merchant counter and create a checkout", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await submitOffer(
+        baseUrl,
+        validOffer({ offer_amount: "580.00", quantity: 2 }),
+      );
+      const counter = await merchantAction(baseUrl, transactionId, "counter", {
         store_id: "counterpilot-dev.myshopify.com",
-      },
-    );
-    const firstAccept = await fetch(
-      buyerAcceptUrl(baseUrl, merchantAccepted.body.buyer_response_path),
-      { method: "POST" },
-    );
-    assert.equal(firstAccept.status, 200);
-    const secondAccept = await fetch(
-      buyerAcceptUrl(baseUrl, merchantAccepted.body.buyer_response_path),
-      { method: "POST" },
-    );
-    assert.equal(secondAccept.status, 409);
+        counter_amount: "610.00",
+        currency: "USD",
+      });
+      assert.equal(counter.response.status, 200);
+      assert.equal(shopify.calls.length, 0);
 
-    const unknownResponse = await fetch(
-      `${baseUrl}/apps/counterpilot/offers/cp_offer_missing/accept?shop=counterpilot-dev.myshopify.com&token=anything`,
-      { method: "POST" },
-    );
-    assert.equal(unknownResponse.status, 404);
-  });
+      const response = await fetch(
+        buyerAcceptUrl(baseUrl, counter.body.buyer_response_path),
+        { method: "POST" },
+      );
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.offer.lifecycle_state, "checkout_created");
+      assert.equal(body.offer.accepted_amount_minor, 61000);
+      assert.equal(body.offer.accepted_currency, "USD");
+      assert.equal(body.offer.negotiated_revenue_minor, 122000);
+      assertBuyerCheckoutResponse(body);
+
+      assert.equal(shopify.calls.length, 1);
+      assert.deepEqual(shopify.calls[0], {
+        shop: "counterpilot-dev.myshopify.com",
+        adminAccessToken: undefined,
+        apiVersion: "2026-04",
+        transactionId,
+        variantRef: "gid://shopify/ProductVariant/456",
+        quantity: 2,
+        acceptedUnitAmountMinor: 61000,
+        currency: "USD",
+        productTitle: "The Complete Snowboard",
+      });
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(
+        events.map((event) => event.event_type).join(","),
+        "offer_submitted,merchant_countered,buyer_accepted,checkout_creation_started,checkout_created",
+      );
+      assert.equal(events[2].accepted_amount_minor, 61000);
+      assert.equal(events[2].currency, "USD");
+      assert.equal(events[2].accepted_from_event_type, "merchant_countered");
+      assert.equal(events[3].event_type, "checkout_creation_started");
+      assert.ok(
+        events[3].checkout_request_reference_hash.startsWith("sha256:"),
+      );
+      assert.equal(events[4].accepted_amount_minor, 61000);
+      assert.equal(events[4].quantity, 2);
+      assert.equal(events[4].negotiated_revenue_minor, 122000);
+      assert.ok(events[4].draft_order_reference_hash.startsWith("sha256:"));
+      assert.ok(events[4].checkout_reference_hash.startsWith("sha256:"));
+      assert.doesNotMatch(
+        JSON.stringify(events),
+        /https:\/\/checkout\.counterpilot\.test/,
+      );
+      assert.doesNotMatch(
+        JSON.stringify(events),
+        /gid:\/\/shopify\/DraftOrder/,
+      );
+
+      const checkoutRefs = await readCheckoutRefs(dataDir);
+      assert.equal(checkoutRefs.length, 1);
+      assert.equal(checkoutRefs[0].checkout_url, body.checkout_url);
+      assert.equal(
+        checkoutRefs[0].draft_order_id,
+        "gid://shopify/DraftOrder/checkout-created-1",
+      );
+
+      const inboxResponse = await fetch(
+        `${baseUrl}/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`,
+      );
+      assert.equal(inboxResponse.status, 200);
+      const inbox = await inboxResponse.json();
+      assert.equal(inbox.offers[0].lifecycle_state, "checkout_created");
+      assert.equal(inbox.offers[0].accepted_amount_minor, 61000);
+      assert.equal(
+        inbox.offers[0].checkout_reference_hash,
+        events[4].checkout_reference_hash,
+      );
+      assertSafeArtifact(inbox);
+    },
+    { shopifyDraftOrderAdapter: shopify.adapter },
+  );
+});
+
+test("buyer can accept a merchant acceptance of the original offer and create a checkout", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await submitOffer(
+        baseUrl,
+        validOffer({ offer_amount: "590.00" }),
+      );
+      const accepted = await merchantAction(baseUrl, transactionId, "accept", {
+        store_id: "counterpilot-dev.myshopify.com",
+      });
+      assert.equal(accepted.response.status, 200);
+      assert.equal(shopify.calls.length, 0);
+
+      const response = await fetch(
+        buyerAcceptUrl(baseUrl, accepted.body.buyer_response_path),
+        { method: "POST" },
+      );
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.offer.lifecycle_state, "checkout_created");
+      assert.equal(body.offer.accepted_amount_minor, 59000);
+      assertBuyerCheckoutResponse(body);
+
+      assert.equal(shopify.calls.length, 1);
+      assert.equal(shopify.calls[0].acceptedUnitAmountMinor, 59000);
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(events[2].event_type, "buyer_accepted");
+      assert.equal(events[2].accepted_amount_minor, 59000);
+      assert.equal(events[2].accepted_from_event_type, "merchant_accepted");
+      assert.equal(events[3].event_type, "checkout_creation_started");
+      assert.equal(events[4].event_type, "checkout_created");
+    },
+    { shopifyDraftOrderAdapter: shopify.adapter },
+  );
+});
+
+test("buyer acceptance rejects declined, pre-action, and unknown transactions before checkout", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl }) => {
+      const submittedId = await submitOffer(baseUrl);
+      const submittedResponse = await fetch(
+        `${baseUrl}/apps/counterpilot/offers/${submittedId}/accept?shop=counterpilot-dev.myshopify.com&token=anything`,
+        { method: "POST" },
+      );
+      assert.equal(submittedResponse.status, 409);
+
+      const declinedId = await submitOffer(baseUrl);
+      const declined = await merchantAction(baseUrl, declinedId, "decline", {
+        store_id: "counterpilot-dev.myshopify.com",
+      });
+      assert.equal(declined.response.status, 200);
+      const declinedResponse = await fetch(
+        `${baseUrl}/apps/counterpilot/offers/${declinedId}/accept?shop=counterpilot-dev.myshopify.com&token=anything`,
+        { method: "POST" },
+      );
+      assert.equal(declinedResponse.status, 409);
+
+      const unknownResponse = await fetch(
+        `${baseUrl}/apps/counterpilot/offers/cp_offer_missing/accept?shop=counterpilot-dev.myshopify.com&token=anything`,
+        { method: "POST" },
+      );
+      assert.equal(unknownResponse.status, 404);
+      assert.equal(shopify.calls.length, 0);
+    },
+    { shopifyDraftOrderAdapter: shopify.adapter },
+  );
+});
+
+test("buyer acceptance retry returns the existing checkout without duplicate events or draft orders", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const acceptedId = await submitOffer(baseUrl);
+      const merchantAccepted = await merchantAction(
+        baseUrl,
+        acceptedId,
+        "accept",
+        {
+          store_id: "counterpilot-dev.myshopify.com",
+        },
+      );
+      const firstAccept = await fetch(
+        buyerAcceptUrl(baseUrl, merchantAccepted.body.buyer_response_path),
+        { method: "POST" },
+      );
+      assert.equal(firstAccept.status, 200);
+      const firstBody = await firstAccept.json();
+
+      const secondAccept = await fetch(
+        buyerAcceptUrl(baseUrl, merchantAccepted.body.buyer_response_path),
+        { method: "POST" },
+      );
+      assert.equal(secondAccept.status, 200);
+      const secondBody = await secondAccept.json();
+      assert.equal(secondBody.checkout_url, firstBody.checkout_url);
+      assert.equal(secondBody.offer.lifecycle_state, "checkout_created");
+      assertBuyerCheckoutResponse(secondBody);
+
+      assert.equal(shopify.calls.length, 1);
+      const events = await readOfferEvents(dataDir);
+      assert.equal(
+        events.filter((event) => event.event_type === "buyer_accepted").length,
+        1,
+      );
+      assert.equal(
+        events.filter((event) => event.event_type === "checkout_created")
+          .length,
+        1,
+      );
+      assert.equal(
+        events.filter(
+          (event) => event.event_type === "checkout_creation_started",
+        ).length,
+        1,
+      );
+      const checkoutRefs = await readCheckoutRefs(dataDir);
+      assert.equal(checkoutRefs.length, 1);
+    },
+    { shopifyDraftOrderAdapter: shopify.adapter },
+  );
+});
+
+test("buyer acceptance with a pending checkout marker does not create a duplicate draft order", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await submitOffer(baseUrl);
+      const accepted = await merchantAction(baseUrl, transactionId, "accept", {
+        store_id: "counterpilot-dev.myshopify.com",
+      });
+      const persistedEvents = await readOfferEvents(dataDir);
+      const merchantAccepted = persistedEvents.at(-1);
+      const acceptedAmountMinor = 61000;
+      const acceptedCurrency = "USD";
+      const quantity = 1;
+      const checkoutRequestHash = crypto
+        .createHash("sha256")
+        .update(
+          [transactionId, acceptedAmountMinor, acceptedCurrency, quantity].join(
+            ":",
+          ),
+        )
+        .digest("hex");
+      const buyerAccepted = {
+        schema_version: "counterpilot.offer_event.v1",
+        transaction_id: transactionId,
+        lifecycle_state: "buyer_accepted",
+        event_type: "buyer_accepted",
+        actor_type: "buyer",
+        occurred_at: "2026-06-23T10:00:00.000Z",
+        store_id: "counterpilot-dev.myshopify.com",
+        store_reference_hash: merchantAccepted.store_reference_hash,
+        source: "counterpilot_buyer_response",
+        accepted_amount_minor: acceptedAmountMinor,
+        currency: acceptedCurrency,
+        accepted_from_event_type: "merchant_accepted",
+      };
+      const checkoutStarted = {
+        schema_version: "counterpilot.offer_event.v1",
+        transaction_id: transactionId,
+        lifecycle_state: "buyer_accepted",
+        event_type: "checkout_creation_started",
+        actor_type: "system",
+        occurred_at: "2026-06-23T10:00:01.000Z",
+        store_id: "counterpilot-dev.myshopify.com",
+        store_reference_hash: merchantAccepted.store_reference_hash,
+        source: "counterpilot_shopify_draft_order",
+        accepted_amount_minor: acceptedAmountMinor,
+        currency: acceptedCurrency,
+        quantity,
+        checkout_request_reference_hash: `sha256:${checkoutRequestHash}`,
+      };
+      await fs.appendFile(
+        path.join(dataDir, "offers.jsonl"),
+        `${JSON.stringify(buyerAccepted)}\n${JSON.stringify(checkoutStarted)}\n`,
+        "utf8",
+      );
+
+      const retry = await fetch(
+        buyerAcceptUrl(baseUrl, accepted.body.buyer_response_path),
+        { method: "POST" },
+      );
+      assert.equal(retry.status, 202);
+      const body = await retry.json();
+      assert.equal(body.error, "checkout_creation_pending");
+      assert.equal(body.offer.lifecycle_state, "buyer_accepted");
+      assert.equal(body.offer.checkout_creation_status, "started");
+      assertSafeArtifact(body);
+      assert.equal(shopify.calls.length, 0);
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(
+        events.filter((event) => event.event_type === "buyer_accepted").length,
+        1,
+      );
+      assert.equal(
+        events.filter(
+          (event) => event.event_type === "checkout_creation_started",
+        ).length,
+        1,
+      );
+      assert.equal(
+        events.filter((event) => event.event_type === "checkout_created")
+          .length,
+        0,
+      );
+    },
+    { shopifyDraftOrderAdapter: shopify.adapter },
+  );
 });
 
 test("buyer acceptance rejects wrong store, wrong token, and expired token", async () => {
@@ -540,6 +764,130 @@ test("buyer acceptance rejects wrong store, wrong token, and expired token", asy
       assert.equal(expired.status, 410);
     },
     { buyerResponseTtlMs: -1 },
+  );
+});
+
+test("accepted offer with missing variant_ref appends a safe checkout failure without calling Shopify", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await submitOffer(
+        baseUrl,
+        validOffer({ variant_gid: "" }),
+      );
+      const accepted = await merchantAction(baseUrl, transactionId, "accept", {
+        store_id: "counterpilot-dev.myshopify.com",
+      });
+      assert.equal(accepted.response.status, 200);
+
+      const response = await fetch(
+        buyerAcceptUrl(baseUrl, accepted.body.buyer_response_path),
+        { method: "POST" },
+      );
+      assert.equal(response.status, 422);
+      const body = await response.json();
+      assert.equal(body.error, "checkout_creation_failed");
+      assert.equal(body.error_code, "missing_variant_ref");
+      assert.equal(body.offer.lifecycle_state, "buyer_accepted");
+      assertSafeArtifact(body);
+      assert.equal(shopify.calls.length, 0);
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(
+        events.map((event) => event.event_type).join(","),
+        "offer_submitted,merchant_accepted,buyer_accepted,checkout_creation_failed",
+      );
+      assert.equal(events[3].error_code, "missing_variant_ref");
+      assert.doesNotMatch(
+        JSON.stringify(events),
+        /https:\/\/checkout\.counterpilot\.test/,
+      );
+    },
+    { shopifyDraftOrderAdapter: shopify.adapter },
+  );
+});
+
+test("Shopify user errors are surfaced safely and can be retried without duplicate buyer acceptance", async () => {
+  const shopifyError = Object.assign(new Error("raw Shopify payload hidden"), {
+    code: "shopify_user_error",
+    statusCode: 422,
+    safeUserErrors: [{ field: "lineItems", message: "Variant is unavailable" }],
+  });
+  const calls = [];
+  let shouldFail = true;
+  const shopifyAdapter = async (payload) => {
+    calls.push(payload);
+    if (shouldFail) {
+      shouldFail = false;
+      throw shopifyError;
+    }
+    return {
+      draftOrderId: "gid://shopify/DraftOrder/checkout-created-after-retry",
+      checkoutUrl: "https://checkout.counterpilot.test/invoice/retry-success",
+    };
+  };
+
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await submitOffer(baseUrl);
+      const accepted = await merchantAction(baseUrl, transactionId, "accept", {
+        store_id: "counterpilot-dev.myshopify.com",
+      });
+      const acceptUrl = buyerAcceptUrl(
+        baseUrl,
+        accepted.body.buyer_response_path,
+      );
+      const response = await fetch(acceptUrl, { method: "POST" });
+      assert.equal(response.status, 422);
+      const body = await response.json();
+      assert.equal(body.error, "checkout_creation_failed");
+      assert.equal(body.error_code, "shopify_user_error");
+      assert.deepEqual(body.user_errors, [
+        { field: "lineItems", message: "Variant is unavailable" },
+      ]);
+      assertSafeArtifact(body);
+      assert.equal(calls.length, 1);
+
+      const retry = await fetch(acceptUrl, { method: "POST" });
+      assert.equal(retry.status, 200);
+      const retryBody = await retry.json();
+      assert.equal(retryBody.offer.lifecycle_state, "checkout_created");
+      assert.equal(
+        retryBody.checkout_url,
+        "https://checkout.counterpilot.test/invoice/retry-success",
+      );
+      assertBuyerCheckoutResponse(retryBody);
+      assert.equal(calls.length, 2);
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(
+        events.filter((event) => event.event_type === "buyer_accepted").length,
+        1,
+      );
+      assert.equal(
+        events.filter((event) => event.event_type === "checkout_created")
+          .length,
+        1,
+      );
+      assert.equal(
+        events.filter(
+          (event) => event.event_type === "checkout_creation_started",
+        ).length,
+        2,
+      );
+      const failure = events.find(
+        (event) => event.event_type === "checkout_creation_failed",
+      );
+      assert.equal(failure.error_code, "shopify_user_error");
+      assert.deepEqual(failure.user_errors, [
+        { field: "lineItems", message: "Variant is unavailable" },
+      ]);
+      assert.doesNotMatch(
+        JSON.stringify(events),
+        /https:\/\/checkout\.counterpilot\.test/,
+      );
+    },
+    { shopifyDraftOrderAdapter: shopifyAdapter },
   );
 });
 

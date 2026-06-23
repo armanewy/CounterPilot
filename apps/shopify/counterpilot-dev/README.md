@@ -17,9 +17,8 @@ shopper submits product-page offer
 
 This app shell currently contains the product-page theme app extension and a
 minimal local offer intake server used in the development-store proof. It is
-not the complete production app server yet. The next implementation step is
-buyer accept pages, draft order creation, webhook ingest, maturity jobs, and
-report generation.
+not the complete production app server yet. The next implementation step is paid
+webhook ingest, maturity jobs, and report generation.
 
 ## Current Extension
 
@@ -92,8 +91,19 @@ or `SHOPIFY_API_SECRET`, the local server verifies Shopify app-proxy
 Merchant accept/counter actions return a one-time buyer response path for local
 demo use. The raw token in that path is operational-only and is not persisted;
 the append-only event log stores only `buyer_response_token_hash` plus
-`buyer_response_expires_at`. Buyer acceptance appends `buyer_accepted`. Draft
-orders and checkout links are intentionally not created yet.
+`buyer_response_expires_at`. Buyer acceptance appends `buyer_accepted`, creates
+a sanitized `checkout_creation_started` marker before the external Shopify
+write, creates a Shopify draft order, appends `checkout_created`, and returns
+the checkout URL to the buyer response. A retry that sees a checkout started
+but not finished fails closed instead of creating a duplicate draft order. Raw
+checkout URLs are stored only in the gitignored
+`.counterpilot-data/checkout_refs.jsonl`; `offers.jsonl` stores only hashed
+draft-order and checkout references. Paid webhooks are intentionally not
+ingested yet.
+
+Counterpilot treats `offer_amount_minor`, `counter_amount_minor`, and
+`accepted_amount_minor` as per-unit prices. Order-level negotiated revenue is
+`accepted_amount_minor * quantity`.
 
 Run against a development store:
 

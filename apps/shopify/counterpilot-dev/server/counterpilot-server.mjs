@@ -4,6 +4,8 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { createDraftOrderForAcceptedOffer } from "./shopify-draft-orders.mjs";
+
 const DEFAULT_MAX_BODY_BYTES = 16 * 1024;
 const DEFAULT_DATA_DIR = path.join(process.cwd(), ".counterpilot-data");
 const DEFAULT_BUYER_RESPONSE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -69,6 +71,7 @@ class OfferStore {
   constructor(dataDir) {
     this.dataDir = dataDir;
     this.filePath = path.join(dataDir, "offers.jsonl");
+    this.checkoutRefsPath = path.join(dataDir, "checkout_refs.jsonl");
     this.writeQueue = Promise.resolve();
   }
 
@@ -98,19 +101,59 @@ class OfferStore {
     return operation;
   }
 
+  async transaction(operationFactory) {
+    const operation = this.writeQueue.then(async () => {
+      const events = await this.#readDirect();
+      const checkoutRefs = await this.#readCheckoutRefsDirect();
+      const appendEvent = async (record) => {
+        await this.#appendDirect(record);
+        events.push(record);
+        return record;
+      };
+      const appendCheckoutRef = async (record) => {
+        await this.#appendJsonlDirect(this.checkoutRefsPath, record);
+        checkoutRefs.push(record);
+        return record;
+      };
+      return operationFactory({
+        events,
+        checkoutRefs,
+        appendEvent,
+        appendCheckoutRef,
+      });
+    });
+    this.writeQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
   async list() {
     await this.writeQueue;
     return this.#readDirect();
   }
 
   async #appendDirect(record) {
+    await this.#appendJsonlDirect(this.filePath, record);
+  }
+
+  async #appendJsonlDirect(filePath, record) {
     await fs.mkdir(this.dataDir, { recursive: true });
-    await fs.appendFile(this.filePath, `${JSON.stringify(record)}\n`, "utf8");
+    await fs.appendFile(filePath, `${JSON.stringify(record)}\n`, "utf8");
   }
 
   async #readDirect() {
+    return this.#readJsonlDirect(this.filePath);
+  }
+
+  async #readCheckoutRefsDirect() {
+    return this.#readJsonlDirect(this.checkoutRefsPath);
+  }
+
+  async #readJsonlDirect(filePath) {
     try {
-      const text = await fs.readFile(this.filePath, "utf8");
+      const text = await fs.readFile(filePath, "utf8");
       return text
         .split(/\r?\n/)
         .filter(Boolean)
@@ -137,6 +180,27 @@ function createOpaqueToken() {
 
 function hashToken(token) {
   return `sha256:${hashValue(token)}`;
+}
+
+function checkoutRefHash(value) {
+  return `sha256:${hashValue(value)}`;
+}
+
+function shopifyAdminAccessToken(options) {
+  return (
+    options.shopifyAdminAccessToken ??
+    process.env.COUNTERPILOT_SHOPIFY_ADMIN_ACCESS_TOKEN ??
+    process.env.COUNTERPILOT_SHOPIFY_ACCESS_TOKEN ??
+    process.env.SHOPIFY_ADMIN_ACCESS_TOKEN
+  );
+}
+
+function shopifyApiVersion(options) {
+  return (
+    options.shopifyApiVersion ??
+    process.env.COUNTERPILOT_SHOPIFY_API_VERSION ??
+    "2026-04"
+  );
 }
 
 function buyerResponseTtlMs(options) {
@@ -478,6 +542,7 @@ export function buildOfferSnapshots(events) {
         currency: event.currency,
         quantity: event.quantity,
         buyer_contact_reference: event.buyer_contact_reference,
+        operational_refs: event.operational_refs,
       });
       continue;
     }
@@ -513,6 +578,33 @@ export function buildOfferSnapshots(events) {
       snapshot.accepted_from_event_type = event.accepted_from_event_type;
       snapshot.buyer_accepted_at = event.occurred_at;
     }
+    if (event.event_type === "checkout_creation_started") {
+      snapshot.lifecycle_state = event.lifecycle_state;
+      snapshot.event_type = event.event_type;
+      snapshot.updated_at = event.occurred_at;
+      snapshot.checkout_creation_started_at = event.occurred_at;
+      snapshot.checkout_creation_status = "started";
+    }
+    if (event.event_type === "checkout_created") {
+      snapshot.lifecycle_state = event.lifecycle_state;
+      snapshot.event_type = event.event_type;
+      snapshot.updated_at = event.occurred_at;
+      snapshot.checkout_created_at = event.occurred_at;
+      snapshot.checkout_creation_status = "created";
+      snapshot.accepted_amount_minor = event.accepted_amount_minor;
+      snapshot.accepted_currency = event.currency;
+      snapshot.negotiated_revenue_minor = event.negotiated_revenue_minor;
+      snapshot.draft_order_reference_hash = event.draft_order_reference_hash;
+      snapshot.checkout_reference_hash = event.checkout_reference_hash;
+    }
+    if (event.event_type === "checkout_creation_failed") {
+      snapshot.lifecycle_state = event.lifecycle_state;
+      snapshot.event_type = event.event_type;
+      snapshot.updated_at = event.occurred_at;
+      snapshot.checkout_creation_failed_at = event.occurred_at;
+      snapshot.checkout_error_code = event.error_code;
+      snapshot.checkout_creation_status = "failed";
+    }
   }
   return snapshots;
 }
@@ -535,6 +627,14 @@ export function sanitizeOfferForInbox(record) {
     accepted_amount_minor: record.accepted_amount_minor,
     accepted_currency: record.accepted_currency,
     buyer_accepted_at: record.buyer_accepted_at,
+    checkout_creation_started_at: record.checkout_creation_started_at,
+    checkout_creation_status: record.checkout_creation_status,
+    checkout_created_at: record.checkout_created_at,
+    checkout_creation_failed_at: record.checkout_creation_failed_at,
+    checkout_error_code: record.checkout_error_code,
+    negotiated_revenue_minor: record.negotiated_revenue_minor,
+    draft_order_reference_hash: record.draft_order_reference_hash,
+    checkout_reference_hash: record.checkout_reference_hash,
     currency: record.currency,
     quantity: record.quantity,
     buyer_contact_reference: record.buyer_contact_reference,
@@ -619,7 +719,11 @@ function sanitizeBuyerResponseView(snapshot) {
 }
 
 function validateBuyerResponseSnapshot(snapshot, token, now = new Date()) {
-  if (!BUYER_RESPONSE_STATES.has(snapshot.lifecycle_state)) {
+  if (
+    !BUYER_RESPONSE_STATES.has(snapshot.lifecycle_state) &&
+    snapshot.lifecycle_state !== "buyer_accepted" &&
+    snapshot.lifecycle_state !== "checkout_created"
+  ) {
     throw validationError(
       `cannot accept an offer in ${snapshot.lifecycle_state} state`,
       409,
@@ -658,6 +762,123 @@ function createBuyerAcceptedEvent(snapshot, now = new Date()) {
     currency: snapshot.acceptable_currency,
     accepted_from_event_type: snapshot.accepted_from_event_type,
   };
+}
+
+function checkoutRequestHash(snapshot) {
+  return checkoutRefHash(
+    [
+      snapshot.transaction_id,
+      snapshot.accepted_amount_minor,
+      snapshot.accepted_currency,
+      snapshot.quantity,
+    ].join(":"),
+  );
+}
+
+function createCheckoutCreationStartedEvent(snapshot, now = new Date()) {
+  return {
+    schema_version: "counterpilot.offer_event.v1",
+    transaction_id: snapshot.transaction_id,
+    lifecycle_state: "buyer_accepted",
+    event_type: "checkout_creation_started",
+    actor_type: "system",
+    occurred_at: now.toISOString(),
+    store_id: snapshot.store_id,
+    store_reference_hash: `sha256:${hashValue(snapshot.store_id)}`,
+    source: "counterpilot_shopify_draft_order",
+    accepted_amount_minor: snapshot.accepted_amount_minor,
+    currency: snapshot.accepted_currency,
+    quantity: snapshot.quantity,
+    checkout_request_reference_hash: checkoutRequestHash(snapshot),
+  };
+}
+
+function createCheckoutCreatedEvent(snapshot, draftOrder, now = new Date()) {
+  return {
+    schema_version: "counterpilot.offer_event.v1",
+    transaction_id: snapshot.transaction_id,
+    lifecycle_state: "checkout_created",
+    event_type: "checkout_created",
+    actor_type: "system",
+    occurred_at: now.toISOString(),
+    store_id: snapshot.store_id,
+    store_reference_hash: `sha256:${hashValue(snapshot.store_id)}`,
+    source: "counterpilot_shopify_draft_order",
+    accepted_amount_minor: snapshot.accepted_amount_minor,
+    currency: snapshot.accepted_currency,
+    quantity: snapshot.quantity,
+    negotiated_revenue_minor:
+      snapshot.accepted_amount_minor * snapshot.quantity,
+    draft_order_reference_hash: checkoutRefHash(draftOrder.draftOrderId),
+    checkout_reference_hash: checkoutRefHash(draftOrder.checkoutUrl),
+  };
+}
+
+function createCheckoutRefRecord(snapshot, draftOrder, now = new Date()) {
+  return {
+    schema_version: "counterpilot.checkout_ref.v1",
+    transaction_id: snapshot.transaction_id,
+    store_id: snapshot.store_id,
+    created_at: now.toISOString(),
+    draft_order_id: draftOrder.draftOrderId,
+    checkout_url: draftOrder.checkoutUrl,
+    draft_order_reference_hash: checkoutRefHash(draftOrder.draftOrderId),
+    checkout_reference_hash: checkoutRefHash(draftOrder.checkoutUrl),
+  };
+}
+
+function checkoutFailureDetails(error) {
+  return {
+    error_code: error.code ?? "shopify_checkout_creation_failed",
+    statusCode: error.statusCode ?? 502,
+    user_errors: Array.isArray(error.safeUserErrors)
+      ? error.safeUserErrors
+      : [],
+  };
+}
+
+function createCheckoutCreationFailedEvent(
+  snapshot,
+  failure,
+  now = new Date(),
+) {
+  return {
+    schema_version: "counterpilot.offer_event.v1",
+    transaction_id: snapshot.transaction_id,
+    lifecycle_state: "buyer_accepted",
+    event_type: "checkout_creation_failed",
+    actor_type: "system",
+    occurred_at: now.toISOString(),
+    store_id: snapshot.store_id,
+    store_reference_hash: `sha256:${hashValue(snapshot.store_id)}`,
+    source: "counterpilot_shopify_draft_order",
+    accepted_amount_minor: snapshot.accepted_amount_minor,
+    currency: snapshot.accepted_currency,
+    quantity: snapshot.quantity,
+    error_code: failure.error_code,
+    user_errors: failure.user_errors,
+  };
+}
+
+function latestCheckoutRefFor(checkoutRefs, transactionId) {
+  return [...checkoutRefs]
+    .reverse()
+    .find((record) => record.transaction_id === transactionId);
+}
+
+function checkoutResponse(snapshot, checkoutRef) {
+  const body = {
+    offer: sanitizeOfferForInbox(snapshot),
+    checkout_created: snapshot.lifecycle_state === "checkout_created",
+  };
+  if (checkoutRef?.checkout_url) {
+    body.checkout_url = checkoutRef.checkout_url;
+  }
+  return body;
+}
+
+function checkoutAdapter(options) {
+  return options.shopifyDraftOrderAdapter ?? createDraftOrderForAcceptedOffer;
 }
 
 async function readJsonRequest(request, maxBodyBytes) {
@@ -829,13 +1050,100 @@ async function handleBuyerAcceptPost(
 ) {
   const storeId = resolveAppProxyStoreId(requestUrl, {}, options);
   const token = requestUrl.searchParams.get("token");
-  const { record, events } = await store.appendWithEvents((existingEvents) => {
-    const snapshot = getSnapshotOrThrow(existingEvents, transactionId, storeId);
-    validateBuyerResponseSnapshot(snapshot, token);
-    return createBuyerAcceptedEvent(snapshot);
-  });
-  const snapshot = getSnapshotOrThrow(events, record.transaction_id, storeId);
-  jsonResponse(response, 200, { offer: sanitizeOfferForInbox(snapshot) });
+  const result = await store.transaction(
+    async ({ events, checkoutRefs, appendEvent, appendCheckoutRef }) => {
+      let snapshot = getSnapshotOrThrow(events, transactionId, storeId);
+      validateBuyerResponseSnapshot(snapshot, token);
+
+      if (snapshot.lifecycle_state === "checkout_created") {
+        return {
+          statusCode: 200,
+          body: checkoutResponse(
+            snapshot,
+            latestCheckoutRefFor(checkoutRefs, transactionId),
+          ),
+        };
+      }
+
+      if (snapshot.lifecycle_state !== "buyer_accepted") {
+        await appendEvent(createBuyerAcceptedEvent(snapshot));
+        snapshot = getSnapshotOrThrow(events, transactionId, storeId);
+      }
+
+      if (!snapshot.operational_refs?.variant_ref) {
+        const failure = {
+          error_code: "missing_variant_ref",
+          statusCode: 422,
+          user_errors: [],
+        };
+        await appendEvent(createCheckoutCreationFailedEvent(snapshot, failure));
+        snapshot = getSnapshotOrThrow(events, transactionId, storeId);
+        return {
+          statusCode: failure.statusCode,
+          body: {
+            error: "checkout_creation_failed",
+            error_code: failure.error_code,
+            offer: sanitizeOfferForInbox(snapshot),
+          },
+        };
+      }
+
+      if (snapshot.checkout_creation_status === "started") {
+        return {
+          statusCode: 202,
+          body: {
+            error: "checkout_creation_pending",
+            offer: sanitizeOfferForInbox(snapshot),
+          },
+        };
+      }
+
+      try {
+        await appendEvent(createCheckoutCreationStartedEvent(snapshot));
+        snapshot = getSnapshotOrThrow(events, transactionId, storeId);
+        const draftOrder = await checkoutAdapter(options)({
+          shop: storeId,
+          adminAccessToken: shopifyAdminAccessToken(options),
+          apiVersion: shopifyApiVersion(options),
+          transactionId,
+          variantRef: snapshot.operational_refs.variant_ref,
+          quantity: snapshot.quantity,
+          acceptedUnitAmountMinor: snapshot.accepted_amount_minor,
+          currency: snapshot.accepted_currency,
+          productTitle: snapshot.product_title,
+        });
+        const checkoutEvent = await appendEvent(
+          createCheckoutCreatedEvent(snapshot, draftOrder),
+        );
+        const checkoutRef = await appendCheckoutRef(
+          createCheckoutRefRecord(snapshot, draftOrder),
+        );
+        snapshot = getSnapshotOrThrow(
+          events,
+          checkoutEvent.transaction_id,
+          storeId,
+        );
+        return {
+          statusCode: 200,
+          body: checkoutResponse(snapshot, checkoutRef),
+        };
+      } catch (error) {
+        const failure = checkoutFailureDetails(error);
+        await appendEvent(createCheckoutCreationFailedEvent(snapshot, failure));
+        snapshot = getSnapshotOrThrow(events, transactionId, storeId);
+        return {
+          statusCode: failure.statusCode,
+          body: {
+            error: "checkout_creation_failed",
+            error_code: failure.error_code,
+            user_errors: failure.user_errors,
+            offer: sanitizeOfferForInbox(snapshot),
+          },
+        };
+      }
+    },
+  );
+  jsonResponse(response, result.statusCode, result.body);
 }
 
 export function createCounterpilotServer(options = {}) {

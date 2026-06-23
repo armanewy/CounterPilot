@@ -95,16 +95,18 @@ offer_submitted
 The proof used a Shopify development store and test payment, so
 `production_evidence` is `false`.
 
-## Next Server-Backed Loop
+## Current Server-Backed Loop
 
-The app shell is not enough by itself. The next implementation needs backend
-routes for:
+The app shell includes backend routes for:
 
 - Offer submission from the product-page block.
 - Merchant inbox data.
 - Merchant accept/counter/decline actions.
 - Buyer accept page.
 - Draft order / checkout creation.
+
+The next implementation needs backend routes or jobs for:
+
 - Shopify webhook ingest.
 - Maturity job.
 - Report generation.

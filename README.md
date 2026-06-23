@@ -135,9 +135,10 @@ shopify app dev --store <your-dev-store>.myshopify.com
 ```
 
 The app shell contains the current product-page `Make an Offer` theme app
-extension. The next product milestone is a server-backed loop for offer
-submission, merchant actions, buyer acceptance, draft-order creation, webhook
-ingest, maturity, and reporting.
+extension plus a local server-backed loop for offer submission, merchant
+actions, buyer acceptance, and Shopify draft-order checkout creation. The next
+product milestone is paid/refund webhook ingest, maturity jobs, and reporting
+through that same server-backed path.
 
 ## Golden Acceptance Test
 
