@@ -7,7 +7,7 @@ the way to mature contribution margin.
 shopper makes an offer
 -> merchant accepts, counters, or declines
 -> buyer accepts and checks out
--> Shopify order, refund, and maturity events are ingested
+-> Shopify order, refund, return, and maturity events are ingested
 -> merchant sees whether the negotiated sale became real margin
 ```
 
@@ -63,8 +63,8 @@ In scope for the first sellable version:
 - Product-page offers for one product at a time.
 - Merchant manual accept, counter, and decline.
 - Buyer acceptance and Shopify draft-order checkout.
-- Paid/refund webhook ingestion.
-- Return/refund maturity window.
+- Paid/refund/return webhook ingestion.
+- Refund-aware maturity window.
 - Merchant mature-margin report.
 - PII-clean report/export/proof guards.
 - Demo mode.
@@ -136,9 +136,9 @@ shopify app dev --store <your-dev-store>.myshopify.com
 
 The app shell contains the current product-page `Make an Offer` theme app
 extension plus a local server-backed loop for offer submission, merchant
-actions, buyer acceptance, Shopify draft-order checkout creation, and paid order
-and refund webhook ingestion. The next product milestone is return exposure,
-maturity jobs, and reporting through that same server-backed path.
+actions, buyer acceptance, Shopify draft-order checkout creation, paid order and
+refund webhook ingestion, and return exposure tracking. The next product
+milestone is maturity jobs and reporting through that same server-backed path.
 
 ## Golden Acceptance Test
 
@@ -153,6 +153,7 @@ buyer submits product-page offer
 -> Counterpilot creates draft order / checkout flow
 -> paid order webhook is ingested
 -> refund event is handled if present
+-> return exposure blocks maturity if open
 -> maturity job closes the lifecycle
 -> merchant report is generated
 -> report contains no raw Shopify IDs, checkout URLs, tokens, names, emails,

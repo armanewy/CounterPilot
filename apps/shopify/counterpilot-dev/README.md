@@ -10,7 +10,7 @@ shopper submits product-page offer
 -> merchant accepts, counters, or declines
 -> buyer accepts counter
 -> Shopify draft order / checkout is created
--> paid/refund webhooks are ingested
+-> paid/refund/return webhooks are ingested
 -> maturity window closes
 -> merchant sees true mature margin
 ```
@@ -18,7 +18,7 @@ shopper submits product-page offer
 This app shell currently contains the product-page theme app extension and a
 minimal local offer intake server used in the development-store proof. It is
 not the complete production app server yet. The next implementation step is
-return exposure tracking, maturity jobs, and report generation.
+maturity jobs and report generation.
 
 ## Current Extension
 
@@ -67,6 +67,7 @@ GET /apps/counterpilot/offers/:transaction_id/respond
 POST /apps/counterpilot/offers/:transaction_id/accept
 POST /counterpilot/webhooks/shopify/orders
 POST /counterpilot/webhooks/shopify/refunds
+POST /counterpilot/webhooks/shopify/returns
 ```
 
 Submitted offers are stored in `.counterpilot-data/offers.jsonl`, which is
@@ -123,6 +124,19 @@ currency is held for reconciliation instead of guessed. Raw refund, order, and
 refund transaction references are stored only in the gitignored
 `.counterpilot-data/refund_refs.jsonl`.
 
+Shopify return status webhook deliveries are accepted at
+`POST /counterpilot/webhooks/shopify/returns` for `returns/request`,
+`returns/approve`, `returns/reopen`, `returns/close`, `returns/decline`, and
+`returns/cancel`. The route verifies Shopify HMAC against the raw body, maps
+the return back to a Counterpilot transaction through
+`.counterpilot-data/order_refs.jsonl`, deduplicates by delivery ID and processed
+return reference/status, and appends sanitized `return_status_recorded` events
+after `paid`. Return events track only maturity exposure:
+`returns/request`, `returns/approve`, and `returns/reopen` are `open`;
+`returns/close`, `returns/decline`, and `returns/cancel` are `closed`. They do
+not overwrite payment/refund lifecycle state. Raw return and order references
+are stored only in the gitignored `.counterpilot-data/return_refs.jsonl`.
+
 Counterpilot treats `offer_amount_minor`, `counter_amount_minor`, and
 `accepted_amount_minor` as per-unit prices. Order-level negotiated revenue is
 `accepted_amount_minor * quantity`.
@@ -145,10 +159,10 @@ Then:
 ## Required Scopes
 
 The current dev-store proof uses least-privilege scopes for product reads,
-order reads, and draft-order creation:
+order reads, return status reads, and draft-order creation:
 
 ```text
-read_orders,read_products,write_draft_orders
+read_orders,read_products,read_returns,write_draft_orders
 ```
 
 Do not broaden scopes unless a specific product requirement needs it.
@@ -167,6 +181,10 @@ Do not commit:
 - raw Shopify order IDs
 - raw Shopify refund IDs
 - raw Shopify refund transaction IDs
+- raw Shopify return IDs
+- raw Shopify return names
+- return notes
+- return tracking URLs
 - buyer names
 - buyer emails
 - addresses

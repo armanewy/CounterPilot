@@ -15,6 +15,7 @@ SHOPIFY_TOKEN_COLLECTION = "counterpilot_shopify_tokens"
 REQUIRED_DEVELOPMENT_SCOPES = (
     "read_orders",
     "read_products",
+    "read_returns",
     "write_draft_orders",
 )
 

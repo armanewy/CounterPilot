@@ -60,13 +60,35 @@ include_fields = [
   "transactions.admin_graphql_api_id",
 ]
 
+[[webhooks.subscriptions]]
+topics = [
+  "returns/request",
+  "returns/approve",
+  "returns/reopen",
+  "returns/close",
+  "returns/decline",
+  "returns/cancel",
+]
+uri = "/counterpilot/webhooks/shopify/returns"
+include_fields = [
+  "id",
+  "admin_graphql_api_id",
+  "order_id",
+  "order.id",
+  "order.admin_graphql_api_id",
+  "status",
+  "created_at",
+  "updated_at",
+  "total_return_line_items",
+]
+
 [access.admin]
 direct_api_mode = "online"
 embedded_app_direct_api_access = true
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_orders,read_products,write_draft_orders"
+scopes = "read_orders,read_products,read_returns,write_draft_orders"
 
 [auth]
 redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]

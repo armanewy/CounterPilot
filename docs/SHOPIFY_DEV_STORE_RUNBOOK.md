@@ -78,17 +78,14 @@ and does not create a second draft order.
 Transaction webhooks supported by the adapter:
 
 - `orders/create`
-- `orders/created`
 - `orders/paid`
-- `orders/updated`
-- `orders/cancelled`
-- `orders/cancel`
 - `refunds/create`
-- `refunds/created`
-- `returns/open`
-- `returns/opened`
+- `returns/request`
+- `returns/approve`
+- `returns/reopen`
 - `returns/close`
-- `returns/closed`
+- `returns/decline`
+- `returns/cancel`
 
 App-level webhooks supported separately:
 
@@ -125,7 +122,7 @@ to enter research export.
   adapter.
 - Token install responses do not include the token.
 - The required development scopes are intentionally narrow:
-  `read_orders`, `read_products`, and `write_draft_orders`.
+  `read_orders`, `read_products`, `read_returns`, and `write_draft_orders`.
 - No test uses live credentials.
 - Merchant/store namespace is part of every transaction and token record.
 - Operational data and research data remain separate.

@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests"))
 import _bootstrap  # noqa: F401,E402
 
 from integrations.shopify import DeterministicFakeShopifyProvider, ShopifyDevelopmentAdapter, ShopifyOfferInput, sign_webhook
+from integrations.shopify.adapter import _topic_to_transition
 from integrations.shopify.token_store import REQUIRED_DEVELOPMENT_SCOPES, SHOPIFY_TOKEN_COLLECTION
 from integrations.shopify.webhooks import ShopifyWebhookError, verify_webhook_hmac
 
@@ -278,6 +279,14 @@ class ShopifyAdapterTests(unittest.TestCase):
             self.assertTrue(second["delivery_replay"])
             self.assertTrue(second["result"]["idempotent_replay"])
             self.assertEqual(second["state"]["event_count"], 5)
+
+    def test_shopify_return_status_topics_map_to_return_transitions(self) -> None:
+        for topic in ["returns/request", "returns/approve", "returns/reopen"]:
+            with self.subTest(topic=topic):
+                self.assertEqual(_topic_to_transition(topic, {}), "return_opened")
+        for topic in ["returns/close", "returns/decline", "returns/cancel"]:
+            with self.subTest(topic=topic):
+                self.assertEqual(_topic_to_transition(topic, {}), "return_closed")
 
     def test_stale_webhook_timestamp_is_rejected_when_age_limit_is_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

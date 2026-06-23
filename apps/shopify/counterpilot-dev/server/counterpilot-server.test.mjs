@@ -212,6 +212,36 @@ function refundWebhookPayload(overrides = {}) {
   };
 }
 
+function returnWebhookPayload(overrides = {}) {
+  return {
+    id: 246813579,
+    admin_graphql_api_id: "gid://shopify/Return/246813579",
+    status: "requested",
+    order: {
+      id: 123456789,
+      admin_graphql_api_id: "gid://shopify/Order/123456789",
+    },
+    total_return_line_items: 2,
+    name: "#R1001",
+    created_at: "2026-06-23T14:10:00-04:00",
+    updated_at: "2026-06-23T14:11:00-04:00",
+    decline: {
+      reason: "return_period_ended",
+      note: "Decline note with buyer@example.com and 555-0100",
+    },
+    reverse_deliveries: [
+      {
+        tracking: {
+          tracking_url: "https://tracking.example/secret-return-tracking",
+        },
+      },
+    ],
+    buyer_email: "buyer@example.com",
+    phone: "555-0100",
+    ...overrides,
+  };
+}
+
 async function postShopifyWebhook(
   baseUrl,
   { topic, deliveryId, payload, secret = WEBHOOK_SECRET, headers = {} },
@@ -241,6 +271,25 @@ async function postShopifyRefundWebhook(
     headers: {
       "content-type": "application/json",
       "x-shopify-topic": "refunds/create",
+      "x-shopify-webhook-id": deliveryId,
+      "x-shopify-shop-domain": "counterpilot-dev.myshopify.com",
+      "x-shopify-hmac-sha256": signWebhookBody(rawBody, secret),
+      ...headers,
+    },
+    body: rawBody,
+  });
+}
+
+async function postShopifyReturnWebhook(
+  baseUrl,
+  { topic, deliveryId, payload, secret = WEBHOOK_SECRET, headers = {} },
+) {
+  const rawBody = JSON.stringify(payload);
+  return fetch(`${baseUrl}/counterpilot/webhooks/shopify/returns`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-shopify-topic": topic,
       "x-shopify-webhook-id": deliveryId,
       "x-shopify-shop-domain": "counterpilot-dev.myshopify.com",
       "x-shopify-hmac-sha256": signWebhookBody(rawBody, secret),
@@ -321,6 +370,17 @@ async function readRefundRefs(dataDir) {
     .map((line) => JSON.parse(line));
 }
 
+async function readReturnRefs(dataDir) {
+  const persisted = await fs.readFile(
+    path.join(dataDir, "return_refs.jsonl"),
+    "utf8",
+  );
+  return persisted
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
 async function readWebhookDeliveries(dataDir) {
   const persisted = await fs.readFile(
     path.join(dataDir, "shopify_webhook_deliveries.jsonl"),
@@ -368,6 +428,20 @@ function assertNoRawRefundWebhookLeak(value) {
   assert.doesNotMatch(text, /gateway/i);
   assert.doesNotMatch(text, /bogus/i);
   assert.doesNotMatch(text, /refund note/i);
+  assert.doesNotMatch(text, /555-0100/);
+}
+
+function assertNoRawReturnWebhookLeak(value) {
+  const text = JSON.stringify(value);
+  assert.doesNotMatch(text, /buyer@example\.com/);
+  assert.doesNotMatch(text, /gid:\/\/shopify\/Return/);
+  assert.doesNotMatch(text, /gid:\/\/shopify\/Order/);
+  assert.doesNotMatch(text, /246813579/);
+  assert.doesNotMatch(text, /#R1001/);
+  assert.doesNotMatch(text, /Decline note/i);
+  assert.doesNotMatch(text, /return_period_ended/i);
+  assert.doesNotMatch(text, /tracking\.example/);
+  assert.doesNotMatch(text, /secret-return-tracking/);
   assert.doesNotMatch(text, /555-0100/);
 }
 
@@ -1637,6 +1711,450 @@ test("refund with missing or conflicting currency fails closed for reconciliatio
       assert.equal(refundRefs[0].status, "needs_reconciliation");
       const deliveries = await readWebhookDeliveries(dataDir);
       assert.equal(deliveries.at(-1).status, "needs_reconciliation");
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("returns/request after paid records open return exposure without changing lifecycle", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await createPaidTransaction(baseUrl);
+      const response = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/request",
+        deliveryId: "delivery_return_request",
+        payload: returnWebhookPayload(),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.lifecycle_state, "paid");
+      assert.equal(body.return_status, "requested");
+      assert.equal(body.return_exposure_state, "open");
+
+      const events = await readOfferEvents(dataDir);
+      const returnEvent = events.at(-1);
+      assert.equal(returnEvent.event_type, "return_status_recorded");
+      assert.equal(returnEvent.lifecycle_state, "paid");
+      assert.equal(returnEvent.return_status, "requested");
+      assert.equal(returnEvent.return_exposure_state, "open");
+      assert.equal(returnEvent.total_return_line_items, 2);
+      assert.equal(returnEvent.production_evidence, false);
+      assert.ok(returnEvent.order_reference_hash.startsWith("sha256:"));
+      assert.ok(returnEvent.return_reference_hash.startsWith("sha256:"));
+      assertNoRawReturnWebhookLeak(events);
+
+      const returnRefs = await readReturnRefs(dataDir);
+      assert.equal(returnRefs.length, 1);
+      assert.equal(returnRefs[0].transaction_id, transactionId);
+      assert.equal(
+        returnRefs[0].return_admin_graphql_api_id,
+        "gid://shopify/Return/246813579",
+      );
+
+      const inboxResponse = await fetch(
+        `${baseUrl}/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`,
+      );
+      assert.equal(inboxResponse.status, 200);
+      const inbox = await inboxResponse.json();
+      assert.equal(inbox.offers[0].lifecycle_state, "paid");
+      assert.equal(inbox.offers[0].return_exposure_state, "open");
+      assert.equal(inbox.offers[0].return_status, "requested");
+      assertNoRawReturnWebhookLeak(inbox);
+      assert.equal(shopify.calls.length, 1);
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("returns/approve records open return exposure", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      await createPaidTransaction(baseUrl);
+      const response = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/approve",
+        deliveryId: "delivery_return_approve",
+        payload: returnWebhookPayload({
+          id: 246813580,
+          admin_graphql_api_id: "gid://shopify/Return/246813580",
+          status: "open",
+        }),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.return_status, "open");
+      assert.equal(body.return_exposure_state, "open");
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(events.at(-1).return_exposure_state, "open");
+      assertNoRawReturnWebhookLeak(events);
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("returns/reopen reopens return exposure after close", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      await createPaidTransaction(baseUrl);
+      const approvePayload = returnWebhookPayload({
+        id: 246813581,
+        admin_graphql_api_id: "gid://shopify/Return/246813581",
+        status: "open",
+      });
+      const approve = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/approve",
+        deliveryId: "delivery_return_reopen_approve",
+        payload: approvePayload,
+      });
+      assert.equal(approve.status, 200);
+
+      const closePayload = returnWebhookPayload({
+        id: 246813581,
+        admin_graphql_api_id: "gid://shopify/Return/246813581",
+        status: "closed",
+        order_id: 123456789,
+        order: undefined,
+      });
+      const close = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/close",
+        deliveryId: "delivery_return_reopen_close",
+        payload: closePayload,
+      });
+      assert.equal(close.status, 200);
+
+      const reopen = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/reopen",
+        deliveryId: "delivery_return_reopen",
+        payload: returnWebhookPayload({
+          id: 246813581,
+          admin_graphql_api_id: "gid://shopify/Return/246813581",
+          status: "open",
+          order_id: 123456789,
+          order: undefined,
+        }),
+      });
+      assert.equal(reopen.status, 200);
+      const body = await reopen.json();
+      assert.equal(body.return_status, "open");
+      assert.equal(body.return_exposure_state, "open");
+
+      const events = await readOfferEvents(dataDir);
+      const returnEvents = events.filter(
+        (event) => event.event_type === "return_status_recorded",
+      );
+      assert.equal(returnEvents.length, 3);
+      assert.deepEqual(
+        returnEvents.map((event) => event.return_exposure_state),
+        ["open", "closed", "open"],
+      );
+      const inboxResponse = await fetch(
+        `${baseUrl}/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`,
+      );
+      const inbox = await inboxResponse.json();
+      assert.equal(inbox.offers[0].return_exposure_state, "open");
+      assert.equal(inbox.offers[0].lifecycle_state, "paid");
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("returns/close records closed return exposure", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      await createPaidTransaction(baseUrl);
+      const response = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/close",
+        deliveryId: "delivery_return_close",
+        payload: returnWebhookPayload({
+          status: "closed",
+          order_id: 123456789,
+          order: undefined,
+        }),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.return_status, "closed");
+      assert.equal(body.return_exposure_state, "closed");
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(events.at(-1).return_exposure_state, "closed");
+      assertNoRawReturnWebhookLeak(events);
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("returns/decline records closed return exposure", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      await createPaidTransaction(baseUrl);
+      const response = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/decline",
+        deliveryId: "delivery_return_decline",
+        payload: returnWebhookPayload({ status: "declined" }),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.return_status, "declined");
+      assert.equal(body.return_exposure_state, "closed");
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(events.at(-1).return_exposure_state, "closed");
+      assertNoRawReturnWebhookLeak(events);
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("returns/cancel records closed return exposure", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      await createPaidTransaction(baseUrl);
+      const response = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/cancel",
+        deliveryId: "delivery_return_cancel",
+        payload: returnWebhookPayload({
+          status: "canceled",
+          order_id: 123456789,
+          order: undefined,
+        }),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.return_status, "canceled");
+      assert.equal(body.return_exposure_state, "closed");
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(events.at(-1).return_exposure_state, "closed");
+      assertNoRawReturnWebhookLeak(events);
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("return for unknown Shopify order is recorded only operationally", async () => {
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const response = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/request",
+        deliveryId: "delivery_return_unknown_order",
+        payload: returnWebhookPayload({ order: { id: 999999 } }),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.ignored, true);
+
+      await assert.rejects(
+        fs.readFile(path.join(dataDir, "offers.jsonl"), "utf8"),
+        { code: "ENOENT" },
+      );
+      const returnRefs = await readReturnRefs(dataDir);
+      assert.equal(returnRefs.length, 1);
+      assert.equal(returnRefs[0].status, "ignored_unknown_order");
+      assert.equal(returnRefs[0].return_id, "246813579");
+      const deliveries = await readWebhookDeliveries(dataDir);
+      assert.equal(deliveries[0].status, "ignored_unknown_order");
+    },
+    { shopifyWebhookSecret: WEBHOOK_SECRET },
+  );
+});
+
+test("return before paid is held without appending offer event", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await createCheckoutTransaction(baseUrl);
+      const order = await postShopifyWebhook(baseUrl, {
+        topic: "orders/create",
+        deliveryId: "delivery_order_before_return_hold",
+        payload: orderWebhookPayload(transactionId),
+      });
+      assert.equal(order.status, 200);
+      const response = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/request",
+        deliveryId: "delivery_return_before_paid",
+        payload: returnWebhookPayload(),
+      });
+      assert.equal(response.status, 202);
+      const body = await response.json();
+      assert.equal(body.held, true);
+      assert.equal(body.reason, "return_before_paid");
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(
+        events.filter((event) => event.event_type === "return_status_recorded")
+          .length,
+        0,
+      );
+      const returnRefs = await readReturnRefs(dataDir);
+      assert.equal(returnRefs[0].status, "held_before_paid");
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("return held before paid can be processed by a later delivery after payment", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await createCheckoutTransaction(baseUrl);
+      const order = await postShopifyWebhook(baseUrl, {
+        topic: "orders/create",
+        deliveryId: "delivery_order_before_return_replay",
+        payload: orderWebhookPayload(transactionId),
+      });
+      assert.equal(order.status, 200);
+      const payload = returnWebhookPayload();
+      const held = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/request",
+        deliveryId: "delivery_return_held_then_paid",
+        payload,
+      });
+      assert.equal(held.status, 202);
+
+      const paid = await postShopifyWebhook(baseUrl, {
+        topic: "orders/paid",
+        deliveryId: "delivery_paid_after_return_hold",
+        payload: orderWebhookPayload(transactionId, {
+          financial_status: "paid",
+        }),
+      });
+      assert.equal(paid.status, 200);
+
+      const processed = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/request",
+        deliveryId: "delivery_return_held_then_paid_replay",
+        payload,
+      });
+      assert.equal(processed.status, 200);
+      const body = await processed.json();
+      assert.equal(body.lifecycle_state, "paid");
+      assert.equal(body.return_status, "requested");
+      assert.equal(body.return_exposure_state, "open");
+
+      const events = await readOfferEvents(dataDir);
+      const returns = events.filter(
+        (event) => event.event_type === "return_status_recorded",
+      );
+      assert.equal(returns.length, 1);
+      assert.equal(returns[0].return_exposure_state, "open");
+      assertNoRawReturnWebhookLeak(events);
+
+      const returnRefs = await readReturnRefs(dataDir);
+      assert.deepEqual(
+        returnRefs.map((record) => record.status),
+        ["held_before_paid", "processed"],
+      );
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("duplicate return webhook delivery does not append duplicate return events", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      await createPaidTransaction(baseUrl);
+      const payload = returnWebhookPayload();
+      const first = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/request",
+        deliveryId: "delivery_return_duplicate_delivery",
+        payload,
+      });
+      assert.equal(first.status, 200);
+      const second = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/request",
+        deliveryId: "delivery_return_duplicate_delivery",
+        payload,
+      });
+      assert.equal(second.status, 200);
+      const secondBody = await second.json();
+      assert.equal(secondBody.duplicate, true);
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(
+        events.filter((event) => event.event_type === "return_status_recorded")
+          .length,
+        1,
+      );
+      const returnRefs = await readReturnRefs(dataDir);
+      assert.equal(returnRefs.length, 1);
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("duplicate return reference and status does not append duplicate exposure events", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      await createPaidTransaction(baseUrl);
+      const payload = returnWebhookPayload();
+      const first = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/request",
+        deliveryId: "delivery_return_duplicate_status_1",
+        payload,
+      });
+      assert.equal(first.status, 200);
+      const second = await postShopifyReturnWebhook(baseUrl, {
+        topic: "returns/request",
+        deliveryId: "delivery_return_duplicate_status_2",
+        payload,
+      });
+      assert.equal(second.status, 200);
+      const secondBody = await second.json();
+      assert.equal(secondBody.duplicate_return_status, true);
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(
+        events.filter((event) => event.event_type === "return_status_recorded")
+          .length,
+        1,
+      );
+      const returnRefs = await readReturnRefs(dataDir);
+      assert.equal(returnRefs.length, 1);
+      const deliveries = await readWebhookDeliveries(dataDir);
+      assert.equal(
+        deliveries.filter((delivery) => delivery.topic === "returns/request")
+          .length,
+        2,
+      );
     },
     {
       shopifyDraftOrderAdapter: shopify.adapter,

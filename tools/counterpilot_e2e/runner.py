@@ -98,7 +98,7 @@ def run_development_store_e2e(*, data_dir: str | Path, report_path: str | Path |
     )
     paid = _send_webhook(
         adapter,
-        topic="orders/updated",
+        topic="orders/paid",
         delivery_id="delivery_order_paid",
         merchant_id=offer.merchant_id,
         store_id=offer.store_id,
@@ -138,7 +138,7 @@ def run_development_store_e2e(*, data_dir: str | Path, report_path: str | Path |
     )
     return_open = _send_webhook(
         adapter,
-        topic="returns/open",
+        topic="returns/request",
         delivery_id="delivery_return_open",
         merchant_id=offer.merchant_id,
         store_id=offer.store_id,

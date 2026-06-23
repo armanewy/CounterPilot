@@ -18,7 +18,7 @@ def _env(tmp: str) -> dict[str, str]:
         "COUNTERPILOT_SHOPIFY_ACCESS_TOKEN": "shpat_development_secret_token",
         "COUNTERPILOT_SHOPIFY_APP_URL": "https://counterpilot-app.example.test",
         "COUNTERPILOT_SHOPIFY_PROVIDER_MODE": "real",
-        "COUNTERPILOT_SHOPIFY_SCOPES": "read_orders,read_products,write_draft_orders",
+        "COUNTERPILOT_SHOPIFY_SCOPES": "read_orders,read_products,read_returns,write_draft_orders",
         "COUNTERPILOT_SHOPIFY_STORE_DOMAIN": "counterpilot-dev-store.myshopify.com",
         "COUNTERPILOT_SHOPIFY_STORE_MODE": "development",
         "COUNTERPILOT_SHOPIFY_WEBHOOK_SECRET": "dev_webhook_secret",

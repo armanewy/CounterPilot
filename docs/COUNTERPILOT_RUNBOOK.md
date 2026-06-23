@@ -60,12 +60,20 @@ $env:COUNTERPILOT_SHOPIFY_STORE_DOMAIN="<store>.myshopify.com"
 $env:COUNTERPILOT_SHOPIFY_ACCESS_TOKEN="..."
 $env:COUNTERPILOT_SHOPIFY_WEBHOOK_SECRET="..."
 $env:COUNTERPILOT_SHOPIFY_APP_URL="https://..."
-$env:COUNTERPILOT_SHOPIFY_WEBHOOK_URL="https://.../counterpilot/webhooks/shopify/orders"
-$env:COUNTERPILOT_SHOPIFY_SCOPES="read_orders,read_products,write_draft_orders"
+$env:COUNTERPILOT_SHOPIFY_SCOPES="read_orders,read_products,read_returns,write_draft_orders"
 $env:COUNTERPILOT_SHOPIFY_PROVIDER_MODE="real"
 $env:COUNTERPILOT_MERCHANT_ID="merchant_dev_demo"
 $env:COUNTERPILOT_STORE_ID="store_dev_shopify"
 $env:COUNTERPILOT_DATA_DIR="C:\OfferLabData\counterpilot_devstore"
+$env:COUNTERPILOT_SERVER_DATA_DIR=$env:COUNTERPILOT_DATA_DIR
+```
+
+The app URL must expose these webhook paths:
+
+```text
+/counterpilot/webhooks/shopify/orders
+/counterpilot/webhooks/shopify/refunds
+/counterpilot/webhooks/shopify/returns
 ```
 
 Never commit env files or token values.
@@ -106,10 +114,10 @@ The app shell includes backend routes for:
 - Draft order / checkout creation.
 - Shopify `orders/create` and `orders/paid` webhook ingest.
 - Shopify `refunds/create` webhook ingest.
+- Shopify return status webhook ingest for maturity exposure.
 
 The next implementation needs backend routes or jobs for:
 
-- Return exposure tracking.
 - Maturity job.
 - Report generation.
 
@@ -118,7 +126,7 @@ Use Shopify-native rails where possible:
 - Theme app extension for storefront surface.
 - App proxy route for storefront-to-backend requests.
 - Admin GraphQL for draft orders.
-- Webhooks for order/refund/app lifecycle.
+- Webhooks for order/refund/return/app lifecycle.
 
 ## Demo Checklist
 
@@ -135,9 +143,11 @@ Before showing the product to another person:
 9. Test payment completes.
 10. Order paid webhook is ingested.
 11. Refund handling is either exercised or explicitly skipped with reason.
-12. Maturity is recorded.
-13. Merchant report is generated.
-14. Report/proof/export pass PII scans.
+12. Return exposure handling is either exercised or explicitly skipped with
+    reason.
+13. Maturity is recorded.
+14. Merchant report is generated.
+15. Report/proof/export pass PII scans.
 
 ## Troubleshooting
 
@@ -148,7 +158,7 @@ If Shopify reports missing scopes, remove generated template features before
 broadening scopes. Counterpilot Private Beta v0 should need only:
 
 ```text
-read_orders,read_products,write_draft_orders
+read_orders,read_products,read_returns,write_draft_orders
 ```
 
 If the theme block does not appear, rebuild the app shell and confirm the

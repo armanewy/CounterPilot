@@ -846,15 +846,16 @@ def _event(transition_to: str, *, event_id: str, namespace: str, transaction_id:
 
 def _topic_to_transition(topic: str, payload: dict[str, Any]) -> str:
     normalized = topic.lower().replace(".", "/")
+    # Legacy aliases are retained for old deterministic fixtures; app config uses the current Shopify topics.
     if normalized in {"orders/create", "orders/created"}:
         return "order_created"
     if normalized in {"orders/paid", "orders/updated"} and payload.get("financial_status") in {"paid", "partially_paid"}:
         return "paid" if payload.get("financial_status") == "paid" else "payment_pending"
     if normalized in {"refunds/create", "refunds/created"}:
         return "fully_refunded" if payload.get("refund_status") == "full" else "partially_refunded"
-    if normalized in {"returns/open", "returns/opened"}:
+    if normalized in {"returns/request", "returns/approve", "returns/reopen", "returns/open", "returns/opened"}:
         return "return_opened"
-    if normalized in {"returns/close", "returns/closed"}:
+    if normalized in {"returns/close", "returns/decline", "returns/cancel", "returns/closed"}:
         return "return_closed"
     if normalized in {"orders/cancelled", "orders/cancel"}:
         return "cancelled"
