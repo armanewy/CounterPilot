@@ -173,6 +173,45 @@ function orderWebhookPayload(transactionId, overrides = {}) {
   };
 }
 
+function refundWebhookPayload(overrides = {}) {
+  return {
+    id: 987654321,
+    admin_graphql_api_id: "gid://shopify/Refund/987654321",
+    order_id: 123456789,
+    created_at: "2026-06-23T14:05:00-04:00",
+    processed_at: "2026-06-23T14:05:30-04:00",
+    refund_line_items: [
+      {
+        quantity: 1,
+        subtotal_set: {
+          shop_money: { amount: "15.00", currency_code: "USD" },
+        },
+        total_tax_set: {
+          shop_money: { amount: "0.00", currency_code: "USD" },
+        },
+      },
+    ],
+    refund_shipping_lines: [],
+    order_adjustments: [],
+    transactions: [
+      {
+        id: 444555666,
+        kind: "refund",
+        status: "success",
+        amount: "15.00",
+        currency: "USD",
+        admin_graphql_api_id: "gid://shopify/OrderTransaction/444555666",
+        gateway: "bogus",
+        message: "refund processed for buyer@example.com",
+      },
+    ],
+    note: "do not store this refund note",
+    buyer_email: "buyer@example.com",
+    phone: "555-0100",
+    ...overrides,
+  };
+}
+
 async function postShopifyWebhook(
   baseUrl,
   { topic, deliveryId, payload, secret = WEBHOOK_SECRET, headers = {} },
@@ -183,6 +222,25 @@ async function postShopifyWebhook(
     headers: {
       "content-type": "application/json",
       "x-shopify-topic": topic,
+      "x-shopify-webhook-id": deliveryId,
+      "x-shopify-shop-domain": "counterpilot-dev.myshopify.com",
+      "x-shopify-hmac-sha256": signWebhookBody(rawBody, secret),
+      ...headers,
+    },
+    body: rawBody,
+  });
+}
+
+async function postShopifyRefundWebhook(
+  baseUrl,
+  { deliveryId, payload, secret = WEBHOOK_SECRET, headers = {} },
+) {
+  const rawBody = JSON.stringify(payload);
+  return fetch(`${baseUrl}/counterpilot/webhooks/shopify/refunds`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-shopify-topic": "refunds/create",
       "x-shopify-webhook-id": deliveryId,
       "x-shopify-shop-domain": "counterpilot-dev.myshopify.com",
       "x-shopify-hmac-sha256": signWebhookBody(rawBody, secret),
@@ -203,6 +261,19 @@ async function createCheckoutTransaction(baseUrl) {
     { method: "POST" },
   );
   assert.equal(checkout.status, 200);
+  return transactionId;
+}
+
+async function createPaidTransaction(baseUrl) {
+  const transactionId = await createCheckoutTransaction(baseUrl);
+  const paid = await postShopifyWebhook(baseUrl, {
+    topic: "orders/paid",
+    deliveryId: `delivery_paid_${transactionId}`,
+    payload: orderWebhookPayload(transactionId, {
+      financial_status: "paid",
+    }),
+  });
+  assert.equal(paid.status, 200);
   return transactionId;
 }
 
@@ -231,6 +302,17 @@ async function readCheckoutRefs(dataDir) {
 async function readOrderRefs(dataDir) {
   const persisted = await fs.readFile(
     path.join(dataDir, "order_refs.jsonl"),
+    "utf8",
+  );
+  return persisted
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+async function readRefundRefs(dataDir) {
+  const persisted = await fs.readFile(
+    path.join(dataDir, "refund_refs.jsonl"),
     "utf8",
   );
   return persisted
@@ -274,6 +356,19 @@ function assertNoRawOrderWebhookLeak(value) {
   assert.doesNotMatch(text, /contact_email/);
   assert.doesNotMatch(text, /shipping_address/);
   assert.doesNotMatch(text, /customer/);
+}
+
+function assertNoRawRefundWebhookLeak(value) {
+  const text = JSON.stringify(value);
+  assert.doesNotMatch(text, /buyer@example\.com/);
+  assert.doesNotMatch(text, /gid:\/\/shopify\/Refund/);
+  assert.doesNotMatch(text, /gid:\/\/shopify\/OrderTransaction/);
+  assert.doesNotMatch(text, /gid:\/\/shopify\/Order/);
+  assert.doesNotMatch(text, /444555666/);
+  assert.doesNotMatch(text, /gateway/i);
+  assert.doesNotMatch(text, /bogus/i);
+  assert.doesNotMatch(text, /refund note/i);
+  assert.doesNotMatch(text, /555-0100/);
 }
 
 function assertBuyerCheckoutResponse(value) {
@@ -1105,6 +1200,448 @@ test("Shopify order webhook for a transaction without checkout_created is reject
       );
     },
     { shopifyWebhookSecret: WEBHOOK_SECRET },
+  );
+});
+
+test("valid refunds/create after paid appends a partial refund event", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await createPaidTransaction(baseUrl);
+      const response = await postShopifyRefundWebhook(baseUrl, {
+        deliveryId: "delivery_refund_partial",
+        payload: refundWebhookPayload(),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.lifecycle_state, "partially_refunded");
+      assert.equal(body.refund_total_minor, 1500);
+      assert.equal(body.cumulative_refund_total_minor, 1500);
+
+      const events = await readOfferEvents(dataDir);
+      const refund = events.at(-1);
+      assert.equal(refund.event_type, "refund_recorded");
+      assert.equal(refund.lifecycle_state, "partially_refunded");
+      assert.equal(refund.refund_total_minor, 1500);
+      assert.equal(refund.cumulative_refund_total_minor, 1500);
+      assert.equal(
+        refund.refund_amount_source,
+        "successful_refund_transactions",
+      );
+      assert.equal(refund.currency, "USD");
+      assert.equal(refund.production_evidence, false);
+      assert.ok(refund.order_reference_hash.startsWith("sha256:"));
+      assert.ok(refund.refund_reference_hash.startsWith("sha256:"));
+      assertNoRawRefundWebhookLeak(events);
+
+      const refundRefs = await readRefundRefs(dataDir);
+      assert.equal(refundRefs.length, 1);
+      assert.equal(refundRefs[0].transaction_id, transactionId);
+      assert.equal(
+        refundRefs[0].refund_admin_graphql_api_id,
+        "gid://shopify/Refund/987654321",
+      );
+      assert.equal(
+        refundRefs[0].refund_transaction_refs[0].admin_graphql_api_id,
+        "gid://shopify/OrderTransaction/444555666",
+      );
+
+      const inboxResponse = await fetch(
+        `${baseUrl}/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`,
+      );
+      assert.equal(inboxResponse.status, 200);
+      const inbox = await inboxResponse.json();
+      assert.equal(inbox.offers[0].lifecycle_state, "partially_refunded");
+      assert.equal(inbox.offers[0].cumulative_refund_total_minor, 1500);
+      assertNoRawRefundWebhookLeak(inbox);
+      assert.equal(shopify.calls.length, 1);
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("full refund sets lifecycle_state refunded", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      await createPaidTransaction(baseUrl);
+      const response = await postShopifyRefundWebhook(baseUrl, {
+        deliveryId: "delivery_refund_full",
+        payload: refundWebhookPayload({
+          id: 987654322,
+          admin_graphql_api_id: "gid://shopify/Refund/987654322",
+          transactions: [
+            {
+              id: 444555667,
+              kind: "refund",
+              status: "success",
+              amount: "610.00",
+              currency: "USD",
+              admin_graphql_api_id: "gid://shopify/OrderTransaction/444555667",
+            },
+          ],
+        }),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.lifecycle_state, "refunded");
+      assert.equal(body.cumulative_refund_total_minor, 61000);
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(events.at(-1).event_type, "refund_recorded");
+      assert.equal(events.at(-1).lifecycle_state, "refunded");
+      assertNoRawRefundWebhookLeak(events);
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("multiple refunds accumulate cumulative refund totals", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      await createPaidTransaction(baseUrl);
+      const first = await postShopifyRefundWebhook(baseUrl, {
+        deliveryId: "delivery_refund_accumulate_1",
+        payload: refundWebhookPayload({
+          id: 111,
+          admin_graphql_api_id: "gid://shopify/Refund/111",
+          transactions: [
+            {
+              id: 1111,
+              kind: "refund",
+              status: "success",
+              amount: "10.00",
+              currency: "USD",
+            },
+          ],
+        }),
+      });
+      assert.equal(first.status, 200);
+      const second = await postShopifyRefundWebhook(baseUrl, {
+        deliveryId: "delivery_refund_accumulate_2",
+        payload: refundWebhookPayload({
+          id: 222,
+          admin_graphql_api_id: "gid://shopify/Refund/222",
+          transactions: [
+            {
+              id: 2222,
+              kind: "refund",
+              status: "success",
+              amount: "20.00",
+              currency: "USD",
+            },
+          ],
+        }),
+      });
+      assert.equal(second.status, 200);
+      const body = await second.json();
+      assert.equal(body.lifecycle_state, "partially_refunded");
+      assert.equal(body.cumulative_refund_total_minor, 3000);
+
+      const events = await readOfferEvents(dataDir);
+      const refunds = events.filter(
+        (event) => event.event_type === "refund_recorded",
+      );
+      assert.equal(refunds.length, 2);
+      assert.equal(refunds[0].cumulative_refund_total_minor, 1000);
+      assert.equal(refunds[1].cumulative_refund_total_minor, 3000);
+      const refundRefs = await readRefundRefs(dataDir);
+      assert.equal(refundRefs.length, 2);
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("refund webhook dedupes by delivery id and refund reference hash", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      await createPaidTransaction(baseUrl);
+      const payload = refundWebhookPayload();
+      const first = await postShopifyRefundWebhook(baseUrl, {
+        deliveryId: "delivery_refund_duplicate_delivery",
+        payload,
+      });
+      assert.equal(first.status, 200);
+      const second = await postShopifyRefundWebhook(baseUrl, {
+        deliveryId: "delivery_refund_duplicate_delivery",
+        payload,
+      });
+      assert.equal(second.status, 200);
+      const secondBody = await second.json();
+      assert.equal(secondBody.duplicate, true);
+
+      const third = await postShopifyRefundWebhook(baseUrl, {
+        deliveryId: "delivery_refund_duplicate_reference",
+        payload,
+      });
+      assert.equal(third.status, 200);
+      const thirdBody = await third.json();
+      assert.equal(thirdBody.duplicate_refund, true);
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(
+        events.filter((event) => event.event_type === "refund_recorded").length,
+        1,
+      );
+      const refundRefs = await readRefundRefs(dataDir);
+      assert.equal(refundRefs.length, 1);
+      const deliveries = await readWebhookDeliveries(dataDir);
+      assert.equal(
+        deliveries.filter((delivery) => delivery.topic === "refunds/create")
+          .length,
+        2,
+      );
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("refund fallback uses line items when no successful refund transactions exist", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      await createPaidTransaction(baseUrl);
+      const response = await postShopifyRefundWebhook(baseUrl, {
+        deliveryId: "delivery_refund_fallback",
+        payload: refundWebhookPayload({
+          id: 333,
+          admin_graphql_api_id: "gid://shopify/Refund/333",
+          transactions: [{ kind: "refund", status: "failure" }],
+          refund_line_items: [
+            {
+              quantity: 1,
+              subtotal_set: {
+                shop_money: { amount: "12.00", currency_code: "USD" },
+              },
+              total_tax_set: {
+                shop_money: { amount: "1.25", currency_code: "USD" },
+              },
+            },
+          ],
+          refund_shipping_lines: [
+            {
+              subtotal_set: {
+                shop_money: { amount: "2.75", currency_code: "USD" },
+              },
+            },
+          ],
+        }),
+      });
+      assert.equal(response.status, 200);
+      const events = await readOfferEvents(dataDir);
+      const refund = events.at(-1);
+      assert.equal(refund.refund_total_minor, 1600);
+      assert.equal(refund.refund_amount_source, "line_item_fallback");
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("refund for unknown Shopify order is recorded only operationally", async () => {
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const response = await postShopifyRefundWebhook(baseUrl, {
+        deliveryId: "delivery_refund_unknown_order",
+        payload: refundWebhookPayload({ order_id: 999999 }),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.ignored, true);
+
+      await assert.rejects(
+        fs.readFile(path.join(dataDir, "offers.jsonl"), "utf8"),
+        { code: "ENOENT" },
+      );
+      const refundRefs = await readRefundRefs(dataDir);
+      assert.equal(refundRefs.length, 1);
+      assert.equal(refundRefs[0].status, "ignored_unknown_order");
+      assert.equal(refundRefs[0].refund_id, "987654321");
+      const deliveries = await readWebhookDeliveries(dataDir);
+      assert.equal(deliveries[0].status, "ignored_unknown_order");
+    },
+    { shopifyWebhookSecret: WEBHOOK_SECRET },
+  );
+});
+
+test("refund before paid is held without appending offer event", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await createCheckoutTransaction(baseUrl);
+      const order = await postShopifyWebhook(baseUrl, {
+        topic: "orders/create",
+        deliveryId: "delivery_order_before_refund_hold",
+        payload: orderWebhookPayload(transactionId),
+      });
+      assert.equal(order.status, 200);
+      const response = await postShopifyRefundWebhook(baseUrl, {
+        deliveryId: "delivery_refund_before_paid",
+        payload: refundWebhookPayload(),
+      });
+      assert.equal(response.status, 202);
+      const body = await response.json();
+      assert.equal(body.held, true);
+      assert.equal(body.reason, "refund_before_paid");
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(
+        events.filter((event) => event.event_type === "refund_recorded").length,
+        0,
+      );
+      const refundRefs = await readRefundRefs(dataDir);
+      assert.equal(refundRefs[0].status, "held_before_paid");
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("refund held before paid can be processed by a later delivery after payment", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      const transactionId = await createCheckoutTransaction(baseUrl);
+      const order = await postShopifyWebhook(baseUrl, {
+        topic: "orders/create",
+        deliveryId: "delivery_order_before_refund_replay",
+        payload: orderWebhookPayload(transactionId),
+      });
+      assert.equal(order.status, 200);
+      const payload = refundWebhookPayload();
+      const held = await postShopifyRefundWebhook(baseUrl, {
+        deliveryId: "delivery_refund_held_then_paid",
+        payload,
+      });
+      assert.equal(held.status, 202);
+
+      const paid = await postShopifyWebhook(baseUrl, {
+        topic: "orders/paid",
+        deliveryId: "delivery_paid_after_refund_hold",
+        payload: orderWebhookPayload(transactionId, {
+          financial_status: "paid",
+        }),
+      });
+      assert.equal(paid.status, 200);
+
+      const processed = await postShopifyRefundWebhook(baseUrl, {
+        deliveryId: "delivery_refund_held_then_paid_replay",
+        payload,
+      });
+      assert.equal(processed.status, 200);
+      const body = await processed.json();
+      assert.equal(body.lifecycle_state, "partially_refunded");
+      assert.equal(body.refund_total_minor, 1500);
+
+      const events = await readOfferEvents(dataDir);
+      const refunds = events.filter(
+        (event) => event.event_type === "refund_recorded",
+      );
+      assert.equal(refunds.length, 1);
+      assert.equal(refunds[0].cumulative_refund_total_minor, 1500);
+      assertNoRawRefundWebhookLeak(events);
+
+      const refundRefs = await readRefundRefs(dataDir);
+      assert.deepEqual(
+        refundRefs.map((record) => record.status),
+        ["held_before_paid", "processed"],
+      );
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
+  );
+});
+
+test("refund with missing or conflicting currency fails closed for reconciliation", async () => {
+  const shopify = createFakeShopifyAdapter();
+  await withServer(
+    async ({ baseUrl, dataDir }) => {
+      await createPaidTransaction(baseUrl);
+      const missingCurrencyResponse = await postShopifyRefundWebhook(baseUrl, {
+        deliveryId: "delivery_refund_missing_currency",
+        payload: refundWebhookPayload({
+          id: 4441,
+          admin_graphql_api_id: "gid://shopify/Refund/4441",
+          transactions: [
+            {
+              id: 444555668,
+              kind: "refund",
+              status: "success",
+              amount: "10.00",
+              currency: "USD",
+            },
+            {
+              id: 444555669,
+              kind: "refund",
+              status: "success",
+              amount: "5.00",
+            },
+          ],
+        }),
+      });
+      assert.equal(missingCurrencyResponse.status, 202);
+      const missingCurrencyBody = await missingCurrencyResponse.json();
+      assert.equal(missingCurrencyBody.held, true);
+      assert.equal(
+        missingCurrencyBody.reason,
+        "missing_refund_transaction_currency",
+      );
+
+      const conflictResponse = await postShopifyRefundWebhook(baseUrl, {
+        deliveryId: "delivery_refund_currency_conflict",
+        payload: refundWebhookPayload({
+          id: 4442,
+          admin_graphql_api_id: "gid://shopify/Refund/4442",
+          transactions: [
+            {
+              id: 444555670,
+              kind: "refund",
+              status: "success",
+              amount: "15.00",
+              currency: "EUR",
+            },
+          ],
+        }),
+      });
+      assert.equal(conflictResponse.status, 202);
+      const body = await conflictResponse.json();
+      assert.equal(body.held, true);
+      assert.equal(body.reason, "refund_currency_mismatch");
+
+      const events = await readOfferEvents(dataDir);
+      assert.equal(
+        events.filter((event) => event.event_type === "refund_recorded").length,
+        0,
+      );
+      const refundRefs = await readRefundRefs(dataDir);
+      assert.equal(refundRefs[0].status, "needs_reconciliation");
+      const deliveries = await readWebhookDeliveries(dataDir);
+      assert.equal(deliveries.at(-1).status, "needs_reconciliation");
+    },
+    {
+      shopifyDraftOrderAdapter: shopify.adapter,
+      shopifyWebhookSecret: WEBHOOK_SECRET,
+    },
   );
 });
 

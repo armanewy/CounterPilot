@@ -18,7 +18,7 @@ shopper submits product-page offer
 This app shell currently contains the product-page theme app extension and a
 minimal local offer intake server used in the development-store proof. It is
 not the complete production app server yet. The next implementation step is
-refund/return webhook ingest, maturity jobs, and report generation.
+return exposure tracking, maturity jobs, and report generation.
 
 ## Current Extension
 
@@ -66,6 +66,7 @@ POST /counterpilot/merchant/offers/:transaction_id/decline
 GET /apps/counterpilot/offers/:transaction_id/respond
 POST /apps/counterpilot/offers/:transaction_id/accept
 POST /counterpilot/webhooks/shopify/orders
+POST /counterpilot/webhooks/shopify/refunds
 ```
 
 Submitted offers are stored in `.counterpilot-data/offers.jsonl`, which is
@@ -111,6 +112,17 @@ stored only in the gitignored `.counterpilot-data/order_refs.jsonl`; webhook
 delivery IDs are tracked in
 `.counterpilot-data/shopify_webhook_deliveries.jsonl`.
 
+Shopify `refunds/create` webhook deliveries are accepted at
+`POST /counterpilot/webhooks/shopify/refunds`. The route verifies Shopify HMAC
+against the raw body, maps the refund back to a Counterpilot transaction through
+`.counterpilot-data/order_refs.jsonl`, deduplicates by both delivery ID and
+refund reference hash, and appends sanitized `refund_recorded` events after
+`paid`. Successful refund transactions are used as financial truth first; line
+item/shipping/adjustment amounts are a fallback. Missing or conflicting refund
+currency is held for reconciliation instead of guessed. Raw refund, order, and
+refund transaction references are stored only in the gitignored
+`.counterpilot-data/refund_refs.jsonl`.
+
 Counterpilot treats `offer_amount_minor`, `counter_amount_minor`, and
 `accepted_amount_minor` as per-unit prices. Order-level negotiated revenue is
 `accepted_amount_minor * quantity`.
@@ -153,6 +165,8 @@ Do not commit:
 - checkout URLs
 - order status URLs
 - raw Shopify order IDs
+- raw Shopify refund IDs
+- raw Shopify refund transaction IDs
 - buyer names
 - buyer emails
 - addresses

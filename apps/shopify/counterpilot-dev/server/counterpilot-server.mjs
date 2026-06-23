@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { createDraftOrderForAcceptedOffer } from "./shopify-draft-orders.mjs";
 import { normalizeShopifyOrderWebhook } from "./shopify-order-webhooks.mjs";
+import { normalizeShopifyRefundWebhook } from "./shopify-refund-webhooks.mjs";
 
 const DEFAULT_MAX_BODY_BYTES = 16 * 1024;
 const DEFAULT_WEBHOOK_MAX_BODY_BYTES = 256 * 1024;
@@ -19,6 +20,7 @@ const OFFER_POST_PATHS = new Set([
 
 const MERCHANT_INBOX_PATH = "/counterpilot/merchant/offers";
 const SHOPIFY_ORDER_WEBHOOK_PATH = "/counterpilot/webhooks/shopify/orders";
+const SHOPIFY_REFUND_WEBHOOK_PATH = "/counterpilot/webhooks/shopify/refunds";
 
 const ALLOWED_OFFER_FIELDS = new Set([
   "shop",
@@ -58,6 +60,12 @@ const ORDER_WEBHOOK_READY_STATES = new Set([
   "paid",
 ]);
 
+const REFUND_WEBHOOK_READY_STATES = new Set([
+  "paid",
+  "partially_refunded",
+  "refunded",
+]);
+
 const FORBIDDEN_FIELDS = new Set([
   "address",
   "buyer_message",
@@ -82,6 +90,7 @@ class OfferStore {
     this.filePath = path.join(dataDir, "offers.jsonl");
     this.checkoutRefsPath = path.join(dataDir, "checkout_refs.jsonl");
     this.orderRefsPath = path.join(dataDir, "order_refs.jsonl");
+    this.refundRefsPath = path.join(dataDir, "refund_refs.jsonl");
     this.webhookDeliveriesPath = path.join(
       dataDir,
       "shopify_webhook_deliveries.jsonl",
@@ -120,6 +129,7 @@ class OfferStore {
       const events = await this.#readDirect();
       const checkoutRefs = await this.#readCheckoutRefsDirect();
       const orderRefs = await this.#readOrderRefsDirect();
+      const refundRefs = await this.#readRefundRefsDirect();
       const webhookDeliveries = await this.#readWebhookDeliveriesDirect();
       const appendEvent = async (record) => {
         await this.#appendDirect(record);
@@ -136,6 +146,11 @@ class OfferStore {
         orderRefs.push(record);
         return record;
       };
+      const appendRefundRef = async (record) => {
+        await this.#appendJsonlDirect(this.refundRefsPath, record);
+        refundRefs.push(record);
+        return record;
+      };
       const appendWebhookDelivery = async (record) => {
         await this.#appendJsonlDirect(this.webhookDeliveriesPath, record);
         webhookDeliveries.push(record);
@@ -145,10 +160,12 @@ class OfferStore {
         events,
         checkoutRefs,
         orderRefs,
+        refundRefs,
         webhookDeliveries,
         appendEvent,
         appendCheckoutRef,
         appendOrderRef,
+        appendRefundRef,
         appendWebhookDelivery,
       });
     });
@@ -183,6 +200,10 @@ class OfferStore {
 
   async #readOrderRefsDirect() {
     return this.#readJsonlDirect(this.orderRefsPath);
+  }
+
+  async #readRefundRefsDirect() {
+    return this.#readJsonlDirect(this.refundRefsPath);
   }
 
   async #readWebhookDeliveriesDirect() {
@@ -682,6 +703,21 @@ export function buildOfferSnapshots(events) {
       snapshot.paid_currency = event.currency;
       snapshot.production_evidence = event.production_evidence;
     }
+    if (event.event_type === "refund_recorded") {
+      snapshot.lifecycle_state = event.lifecycle_state;
+      snapshot.event_type = event.event_type;
+      snapshot.updated_at = event.occurred_at;
+      snapshot.refund_recorded_at = event.occurred_at;
+      snapshot.processed_at = event.processed_at;
+      snapshot.refund_reference_hash = event.refund_reference_hash;
+      snapshot.order_reference_hash = event.order_reference_hash;
+      snapshot.latest_refund_total_minor = event.refund_total_minor;
+      snapshot.cumulative_refund_total_minor =
+        event.cumulative_refund_total_minor;
+      snapshot.refund_amount_source = event.refund_amount_source;
+      snapshot.refund_currency = event.currency;
+      snapshot.production_evidence = event.production_evidence;
+    }
   }
   return snapshots;
 }
@@ -723,6 +759,13 @@ export function sanitizeOfferForInbox(record) {
     paid_at: record.paid_at,
     paid_total_minor: record.paid_total_minor,
     paid_currency: record.paid_currency,
+    refund_recorded_at: record.refund_recorded_at,
+    processed_at: record.processed_at,
+    refund_reference_hash: record.refund_reference_hash,
+    latest_refund_total_minor: record.latest_refund_total_minor,
+    cumulative_refund_total_minor: record.cumulative_refund_total_minor,
+    refund_amount_source: record.refund_amount_source,
+    refund_currency: record.refund_currency,
     production_evidence: record.production_evidence,
     currency: record.currency,
     quantity: record.quantity,
@@ -991,6 +1034,21 @@ function hasOrderRef(orderRefs, transactionId, orderReferenceHash) {
   );
 }
 
+function findOrderRefByHash(orderRefs, orderReferenceHash) {
+  return [...orderRefs]
+    .reverse()
+    .find((record) => record.order_reference_hash === orderReferenceHash);
+}
+
+function hasProcessedRefundRef(refundRefs, transactionId, refundReferenceHash) {
+  return refundRefs.some(
+    (record) =>
+      record.transaction_id === transactionId &&
+      record.refund_reference_hash === refundReferenceHash &&
+      record.status === "processed",
+  );
+}
+
 function nullableReferenceHash(value) {
   return value === null || value === undefined ? null : checkoutRefHash(value);
 }
@@ -1066,6 +1124,104 @@ function createWebhookDeliveryRecord(webhook, status, now = new Date()) {
     status,
     received_at: now.toISOString(),
     order_reference_hash: checkoutRefHash(webhook.order.reference),
+  };
+}
+
+function createRefundRefRecord({
+  refundWebhook,
+  transactionId = null,
+  orderReferenceHash = null,
+  status,
+  now = new Date(),
+}) {
+  return {
+    schema_version: "counterpilot.refund_ref.v1",
+    transaction_id: transactionId,
+    store_id: refundWebhook.shop,
+    created_at: now.toISOString(),
+    delivery_id: refundWebhook.deliveryId,
+    topic: refundWebhook.topic,
+    status,
+    reconciliation_reason: refundWebhook.reconciliationReason ?? null,
+    order_id: refundWebhook.order?.rawOrderId ?? null,
+    refund_id: refundWebhook.refund?.rawRefundId ?? null,
+    refund_admin_graphql_api_id:
+      refundWebhook.refund?.adminGraphqlApiId ?? null,
+    refund_transaction_refs: refundWebhook.refund?.transactionRefs ?? [],
+    order_reference_hash:
+      orderReferenceHash ??
+      (refundWebhook.order?.reference
+        ? checkoutRefHash(refundWebhook.order.reference)
+        : null),
+    refund_reference_hash: refundWebhook.refund?.reference
+      ? checkoutRefHash(refundWebhook.refund.reference)
+      : null,
+  };
+}
+
+function createRefundWebhookDeliveryRecord(
+  refundWebhook,
+  status,
+  transactionId = null,
+  now = new Date(),
+) {
+  return {
+    schema_version: "counterpilot.shopify_webhook_delivery.v1",
+    delivery_id: refundWebhook.deliveryId,
+    topic: refundWebhook.topic,
+    store_id: refundWebhook.shop,
+    transaction_id: transactionId,
+    status,
+    received_at: now.toISOString(),
+    order_reference_hash: refundWebhook.order?.reference
+      ? checkoutRefHash(refundWebhook.order.reference)
+      : null,
+    refund_reference_hash: refundWebhook.refund?.reference
+      ? checkoutRefHash(refundWebhook.refund.reference)
+      : null,
+    reconciliation_reason: refundWebhook.reconciliationReason ?? null,
+  };
+}
+
+function priorRefundTotalMinor(events, transactionId) {
+  return events
+    .filter(
+      (event) =>
+        event.transaction_id === transactionId &&
+        event.event_type === "refund_recorded",
+    )
+    .reduce((total, event) => total + event.refund_total_minor, 0);
+}
+
+function createRefundRecordedEvent({
+  snapshot,
+  refundWebhook,
+  refundReferenceHash,
+  orderReferenceHash,
+  cumulativeRefundTotalMinor,
+}) {
+  const lifecycleState =
+    cumulativeRefundTotalMinor >= snapshot.paid_total_minor
+      ? "refunded"
+      : "partially_refunded";
+  return {
+    schema_version: "counterpilot.offer_event.v1",
+    transaction_id: snapshot.transaction_id,
+    lifecycle_state: lifecycleState,
+    event_type: "refund_recorded",
+    actor_type: "shopify",
+    source: "shopify_refunds_create_webhook",
+    occurred_at: refundWebhook.processedAt,
+    processed_at: refundWebhook.processedAt,
+    store_id: snapshot.store_id,
+    store_reference_hash: `sha256:${hashValue(snapshot.store_id)}`,
+    order_reference_hash: orderReferenceHash,
+    refund_reference_hash: refundReferenceHash,
+    refund_total_minor: refundWebhook.refund.refundTotalMinor,
+    cumulative_refund_total_minor: cumulativeRefundTotalMinor,
+    currency: refundWebhook.refund.currency,
+    refund_amount_source: refundWebhook.refund.amountSource,
+    production_evidence: refundWebhook.productionEvidence,
   };
 }
 
@@ -1475,6 +1631,225 @@ async function handleShopifyOrderWebhookPost(
   jsonResponse(response, result.statusCode, result.body);
 }
 
+async function handleShopifyRefundWebhookPost(
+  request,
+  response,
+  store,
+  maxBodyBytes,
+  options,
+) {
+  const rawBody = await readRawRequest(request, maxBodyBytes);
+  const refundWebhook = normalizeShopifyRefundWebhook({
+    rawBody,
+    headers: request.headers,
+    webhookSecret: shopifyWebhookSecret(options),
+    productionEvidence: shopifyProductionEvidence(options),
+  });
+
+  const result = await store.transaction(
+    async ({
+      events,
+      orderRefs,
+      refundRefs,
+      webhookDeliveries,
+      appendEvent,
+      appendRefundRef,
+      appendWebhookDelivery,
+    }) => {
+      const existingDelivery = latestWebhookDeliveryFor(
+        webhookDeliveries,
+        refundWebhook.deliveryId,
+      );
+      if (existingDelivery) {
+        return {
+          statusCode: 200,
+          body: {
+            received: true,
+            duplicate: true,
+            status: existingDelivery.status,
+          },
+        };
+      }
+
+      const orderReferenceHash = refundWebhook.order?.reference
+        ? checkoutRefHash(refundWebhook.order.reference)
+        : null;
+      const refundReferenceHash = refundWebhook.refund?.reference
+        ? checkoutRefHash(refundWebhook.refund.reference)
+        : null;
+      const orderRef = orderReferenceHash
+        ? findOrderRefByHash(orderRefs, orderReferenceHash)
+        : null;
+
+      if (!orderRef) {
+        await appendRefundRef(
+          createRefundRefRecord({
+            refundWebhook,
+            orderReferenceHash,
+            status: "ignored_unknown_order",
+          }),
+        );
+        await appendWebhookDelivery(
+          createRefundWebhookDeliveryRecord(
+            refundWebhook,
+            "ignored_unknown_order",
+          ),
+        );
+        return {
+          statusCode: 200,
+          body: { received: true, ignored: true },
+        };
+      }
+
+      const snapshot = buildOfferSnapshots(events).get(orderRef.transaction_id);
+      if (!snapshot || snapshot.store_id !== refundWebhook.shop) {
+        await appendRefundRef(
+          createRefundRefRecord({
+            refundWebhook,
+            transactionId: orderRef.transaction_id,
+            orderReferenceHash,
+            status: "ignored_order_binding_mismatch",
+          }),
+        );
+        await appendWebhookDelivery(
+          createRefundWebhookDeliveryRecord(
+            refundWebhook,
+            "ignored_order_binding_mismatch",
+            orderRef.transaction_id,
+          ),
+        );
+        return {
+          statusCode: 200,
+          body: { received: true, ignored: true },
+        };
+      }
+
+      if (!REFUND_WEBHOOK_READY_STATES.has(snapshot.lifecycle_state)) {
+        await appendRefundRef(
+          createRefundRefRecord({
+            refundWebhook,
+            transactionId: snapshot.transaction_id,
+            orderReferenceHash,
+            status: "held_before_paid",
+          }),
+        );
+        await appendWebhookDelivery(
+          createRefundWebhookDeliveryRecord(
+            refundWebhook,
+            "held_before_paid",
+            snapshot.transaction_id,
+          ),
+        );
+        return {
+          statusCode: 202,
+          body: {
+            received: true,
+            held: true,
+            reason: "refund_before_paid",
+          },
+        };
+      }
+
+      if (
+        refundWebhook.needsReconciliation ||
+        !refundWebhook.refund.currency ||
+        refundWebhook.refund.currency !== snapshot.paid_currency
+      ) {
+        await appendRefundRef(
+          createRefundRefRecord({
+            refundWebhook,
+            transactionId: snapshot.transaction_id,
+            orderReferenceHash,
+            status: "needs_reconciliation",
+          }),
+        );
+        await appendWebhookDelivery(
+          createRefundWebhookDeliveryRecord(
+            refundWebhook,
+            "needs_reconciliation",
+            snapshot.transaction_id,
+          ),
+        );
+        return {
+          statusCode: 202,
+          body: {
+            received: true,
+            held: true,
+            reason:
+              refundWebhook.reconciliationReason ?? "refund_currency_mismatch",
+          },
+        };
+      }
+
+      if (
+        hasProcessedRefundRef(
+          refundRefs,
+          snapshot.transaction_id,
+          refundReferenceHash,
+        )
+      ) {
+        await appendWebhookDelivery(
+          createRefundWebhookDeliveryRecord(
+            refundWebhook,
+            "duplicate_refund",
+            snapshot.transaction_id,
+          ),
+        );
+        return {
+          statusCode: 200,
+          body: {
+            received: true,
+            duplicate_refund: true,
+            transaction_id: snapshot.transaction_id,
+          },
+        };
+      }
+
+      await appendRefundRef(
+        createRefundRefRecord({
+          refundWebhook,
+          transactionId: snapshot.transaction_id,
+          orderReferenceHash,
+          status: "processed",
+        }),
+      );
+      const cumulativeRefundTotalMinor =
+        priorRefundTotalMinor(events, snapshot.transaction_id) +
+        refundWebhook.refund.refundTotalMinor;
+      const refundEvent = await appendEvent(
+        createRefundRecordedEvent({
+          snapshot,
+          refundWebhook,
+          refundReferenceHash,
+          orderReferenceHash,
+          cumulativeRefundTotalMinor,
+        }),
+      );
+      await appendWebhookDelivery(
+        createRefundWebhookDeliveryRecord(
+          refundWebhook,
+          "processed",
+          snapshot.transaction_id,
+        ),
+      );
+
+      return {
+        statusCode: 200,
+        body: {
+          received: true,
+          duplicate: false,
+          transaction_id: snapshot.transaction_id,
+          lifecycle_state: refundEvent.lifecycle_state,
+          refund_total_minor: refundEvent.refund_total_minor,
+          cumulative_refund_total_minor:
+            refundEvent.cumulative_refund_total_minor,
+        },
+      };
+    },
+  );
+  jsonResponse(response, result.statusCode, result.body);
+}
+
 export function createCounterpilotServer(options = {}) {
   const dataDir =
     options.dataDir ??
@@ -1501,6 +1876,19 @@ export function createCounterpilotServer(options = {}) {
         requestUrl.pathname === SHOPIFY_ORDER_WEBHOOK_PATH
       ) {
         await handleShopifyOrderWebhookPost(
+          request,
+          response,
+          store,
+          webhookMaxBodyBytes,
+          options,
+        );
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === SHOPIFY_REFUND_WEBHOOK_PATH
+      ) {
+        await handleShopifyRefundWebhookPost(
           request,
           response,
           store,

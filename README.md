@@ -137,8 +137,8 @@ shopify app dev --store <your-dev-store>.myshopify.com
 The app shell contains the current product-page `Make an Offer` theme app
 extension plus a local server-backed loop for offer submission, merchant
 actions, buyer acceptance, Shopify draft-order checkout creation, and paid order
-webhook ingestion. The next product milestone is refund/return ingest, maturity
-jobs, and reporting through that same server-backed path.
+and refund webhook ingestion. The next product milestone is return exposure,
+maturity jobs, and reporting through that same server-backed path.
 
 ## Golden Acceptance Test
 

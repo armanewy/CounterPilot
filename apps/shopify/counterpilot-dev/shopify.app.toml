@@ -38,6 +38,28 @@ include_fields = [
   "line_items.price",
 ]
 
+[[webhooks.subscriptions]]
+topics = [ "refunds/create" ]
+uri = "/counterpilot/webhooks/shopify/refunds"
+include_fields = [
+  "id",
+  "admin_graphql_api_id",
+  "order_id",
+  "created_at",
+  "processed_at",
+  "refund_line_items.quantity",
+  "refund_line_items.subtotal_set",
+  "refund_line_items.total_tax_set",
+  "refund_shipping_lines",
+  "order_adjustments",
+  "transactions.id",
+  "transactions.kind",
+  "transactions.status",
+  "transactions.amount",
+  "transactions.currency",
+  "transactions.admin_graphql_api_id",
+]
+
 [access.admin]
 direct_api_mode = "online"
 embedded_app_direct_api_access = true

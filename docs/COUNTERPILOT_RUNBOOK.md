@@ -105,10 +105,11 @@ The app shell includes backend routes for:
 - Buyer accept page.
 - Draft order / checkout creation.
 - Shopify `orders/create` and `orders/paid` webhook ingest.
+- Shopify `refunds/create` webhook ingest.
 
 The next implementation needs backend routes or jobs for:
 
-- Refund/return webhook ingest.
+- Return exposure tracking.
 - Maturity job.
 - Report generation.
 
