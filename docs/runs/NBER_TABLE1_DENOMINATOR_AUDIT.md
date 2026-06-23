@@ -10,8 +10,9 @@ Audited levels:
   denominator, missing Used count, Used rate.
 - Seller level: retained sellers, feedback nonmissing sellers, feedback
   missing sellers, feedback mean over nonmissing sellers, listings per seller.
-- Buyer level: distinct buyers among retained bargaining threads, with null,
-  empty, and sentinel buyer identifiers reported separately.
+- Buyer level: released-code buyer denominator from buyer offer activity merged
+  back to retained listings by buyer ID. Distinct retained thread-offer buyers
+  are reported separately because they are not the final Table I denominator.
 - Thread level: distinct listing-buyer pairs among retained listings, duplicate
   pairs, and malformed identifier threads.
 

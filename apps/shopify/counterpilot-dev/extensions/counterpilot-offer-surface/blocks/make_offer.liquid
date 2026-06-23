@@ -1,0 +1,45 @@
+<div
+  class="counterpilot-offer"
+  data-counterpilot-product-gid="gid://shopify/Product/{{ product.id }}"
+  data-counterpilot-visible="{{ block.settings.enabled }}"
+>
+  {% if block.settings.enabled %}
+    <button type="button" class="counterpilot-offer__button" data-counterpilot-open>
+      {{ block.settings.button_label }}
+    </button>
+    <form class="counterpilot-offer__form" data-counterpilot-form hidden>
+      <input type="hidden" name="product_gid" value="gid://shopify/Product/{{ product.id }}">
+      <label class="counterpilot-offer__label">
+        Offer amount
+        <input class="counterpilot-offer__input" name="offer_amount" inputmode="decimal" autocomplete="off">
+      </label>
+      <button type="submit" class="counterpilot-offer__submit">Submit offer</button>
+    </form>
+  {% endif %}
+</div>
+
+{% schema %}
+{
+  "name": "Make an Offer",
+  "target": "section",
+  "stylesheet": "counterpilot-offer.css",
+  "javascript": "counterpilot-offer.js",
+  "enabled_on": {
+    "templates": ["product"]
+  },
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "enabled",
+      "label": "Enable offer button",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "button_label",
+      "label": "Button label",
+      "default": "Make an offer"
+    }
+  ]
+}
+{% endschema %}

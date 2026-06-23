@@ -84,46 +84,22 @@ def build_full_listing_restrictions(
     table_dir.mkdir(parents=True)
     quarantine_dir = work_dir / "quarantine"
     quarantine_dir.mkdir(parents=True)
-    sqlite_path = work_dir / "listing_pass.sqlite"
+    bucket_dir = work_dir / "source_listing_buckets"
+    bucket_dir.mkdir(parents=True)
 
     tracemalloc.start()
-    partition_handles = []
-    partition_rows = [0 for _ in range(partitions)]
     duplicate_quarantine_path = quarantine_dir / "duplicate_listing_ids.jsonl"
-    duplicate_handle = duplicate_quarantine_path.open("w", encoding="utf-8", newline="\n")
-    try:
-        for index in range(partitions):
-            partition_handles.append((table_dir / f"part-{index:04d}.jsonl.tmp").open("w", encoding="utf-8", newline="\n"))
-        conn = sqlite3.connect(sqlite_path)
-        try:
-            _configure_sqlite(conn)
-            stats = _new_stats()
-            with _open_text(lists_path) as handle:
-                reader = csv.DictReader(handle)
-                for line_number, row in enumerate(reader, start=2):
-                    _consume_listing_row(
-                        conn,
-                        row,
-                        line_number=line_number,
-                        source_hash=source_hash,
-                        partition_handles=partition_handles,
-                        partition_rows=partition_rows,
-                        duplicate_handle=duplicate_handle,
-                        stats=stats,
-                        partitions=partitions,
-                    )
-                    if stats["raw_source_listing_count"] % 100_000 == 0:
-                        conn.commit()
-            conn.commit()
-            duplicate_handle.flush()
-            seller_stats = _seller_stats(conn)
-            duplicate_hash = _sha256_if_nonempty(duplicate_quarantine_path)
-        finally:
-            conn.close()
-    finally:
-        duplicate_handle.close()
-        for handle in partition_handles:
-            handle.close()
+    bucket_manifest = _bucket_listing_rows(lists_path, bucket_dir, partitions=partitions)
+    stats, seller_stats, partition_rows = _process_listing_buckets(
+        bucket_dir,
+        table_dir,
+        duplicate_quarantine_path,
+        source_hash=source_hash,
+        partitions=partitions,
+        raw_source_listing_count=bucket_manifest["source_rows"],
+        missing_listing_id_count=bucket_manifest["missing_listing_id_count"],
+    )
+    duplicate_hash = _sha256_if_nonempty(duplicate_quarantine_path)
     current_memory, peak_memory = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
@@ -148,6 +124,7 @@ def build_full_listing_restrictions(
         },
         "official_source_contract": official,
         "header_validation": header_validation,
+        "bucket_manifest": bucket_manifest,
         "table": {
             "name": "listing_restrictions",
             "format": "jsonl",
@@ -244,6 +221,199 @@ def inspect_full_listing_restrictions(output_dir: str | Path | None = None) -> d
         "rows": table.get("rows"),
         "partitions": len(table.get("partitions", [])),
         "summary": manifest.get("summary", {}),
+    }
+
+
+def _bucket_listing_rows(lists_path: Path, bucket_dir: Path, *, partitions: int) -> dict[str, Any]:
+    handles = [(bucket_dir / f"bucket-{index:04d}.tsv").open("w", encoding="utf-8", newline="\n") for index in range(partitions)]
+    writers = [csv.writer(handle, delimiter="\t", lineterminator="\n") for handle in handles]
+    bucket_rows = [0 for _ in range(partitions)]
+    source_rows = 0
+    missing_listing_id_count = 0
+    progress_path = bucket_dir.parent / "bucket_progress.json"
+    try:
+        with _open_text(lists_path) as handle:
+            reader = csv.DictReader(handle)
+            for line_number, row in enumerate(reader, start=2):
+                source_rows += 1
+                listing_id = str(row.get("anon_item_id", "")).strip()
+                if not listing_id:
+                    missing_listing_id_count += 1
+                    continue
+                bucket = _bucket_for(listing_id, partitions)
+                writers[bucket].writerow(
+                    [
+                        listing_id,
+                        line_number,
+                        _listing_row_hash(row),
+                        str(row.get("anon_slr_id", "")),
+                        str(row.get("start_price_usd", "")),
+                        str(row.get("item_price", "")),
+                        str(row.get("item_cndtn_id", "")),
+                        str(row.get("fdbk_pstv_start", "")),
+                    ]
+                )
+                bucket_rows[bucket] += 1
+                if source_rows % 1_000_000 == 0:
+                    for bucket_handle in handles:
+                        bucket_handle.flush()
+                    _write_atomic_json(
+                        progress_path,
+                        {
+                            "schema_version": "nber_full_listing_bucket_progress.v1",
+                            "source_rows_seen": source_rows,
+                            "bucketed_rows": sum(bucket_rows),
+                            "missing_listing_id_count": missing_listing_id_count,
+                        },
+                    )
+    finally:
+        for handle in handles:
+            handle.close()
+    _write_atomic_json(
+        progress_path,
+        {
+            "schema_version": "nber_full_listing_bucket_progress.v1",
+            "source_rows_seen": source_rows,
+            "bucketed_rows": sum(bucket_rows),
+            "missing_listing_id_count": missing_listing_id_count,
+            "complete": True,
+        },
+    )
+    return {
+        "schema_version": "nber_full_listing_source_buckets.v1",
+        "source_rows": source_rows,
+        "missing_listing_id_count": missing_listing_id_count,
+        "partitions": [
+            {
+                "partition_index": index,
+                "rows": bucket_rows[index],
+            }
+            for index in range(partitions)
+        ],
+        "dedupe_strategy": "Rows are bucketed by listing_id hash; each bucket is deduplicated in memory, preserving the first source row and quarantining later duplicate listing IDs.",
+    }
+
+
+def _process_listing_buckets(
+    bucket_dir: Path,
+    table_dir: Path,
+    duplicate_quarantine_path: Path,
+    *,
+    source_hash: str,
+    partitions: int,
+    raw_source_listing_count: int,
+    missing_listing_id_count: int,
+) -> tuple[dict[str, Any], dict[str, int], list[int]]:
+    stats = _new_stats()
+    stats["raw_source_listing_count"] = raw_source_listing_count
+    stats["missing_listing_id_count"] = missing_listing_id_count
+    partition_rows = [0 for _ in range(partitions)]
+    sellers_before: dict[str, float | None] = {}
+    sellers_after_l1_l2: dict[str, float | None] = {}
+    with duplicate_quarantine_path.open("w", encoding="utf-8", newline="\n") as duplicate_handle:
+        for index in range(partitions):
+            seen: set[str] = set()
+            input_path = bucket_dir / f"bucket-{index:04d}.tsv"
+            output_path = table_dir / f"part-{index:04d}.jsonl.tmp"
+            with input_path.open("r", encoding="utf-8", newline="") as source, output_path.open("w", encoding="utf-8", newline="\n") as output:
+                reader = csv.reader(source, delimiter="\t")
+                for listing_id, line_number, source_row_hash, seller_id, start_price_text, item_price_text, condition_text, feedback_text in reader:
+                    if listing_id in seen:
+                        stats["duplicate_listing_id_count"] += 1
+                        duplicate_handle.write(
+                            json.dumps(
+                                {
+                                    "listing_id": listing_id,
+                                    "line_number": int(line_number),
+                                    "source_row_hash": source_row_hash,
+                                    "reason": "duplicate_listing_id",
+                                },
+                                sort_keys=True,
+                            )
+                            + "\n"
+                        )
+                        continue
+                    seen.add(listing_id)
+                    row = _listing_restriction_row(
+                        listing_id=listing_id,
+                        seller_id=seller_id,
+                        start_price_text=start_price_text,
+                        item_price_text=item_price_text,
+                        condition_text=condition_text,
+                        feedback_text=feedback_text,
+                        source_hash=source_hash,
+                        source_row_hash=source_row_hash,
+                    )
+                    output.write(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
+                    partition_rows[index] += 1
+                    _update_stats(stats, row["start_price"], row["condition_id"], row["used"], row["L1_violation"], row["L2_violation"])
+                    stats["accepted_unique_listing_count"] += 1
+                    seller_hash = row["seller_hash"]
+                    if seller_hash is not None:
+                        _update_seller_feedback(sellers_before, seller_hash, row["seller_feedback_positive_percent"])
+                        if row["eligible_l1_l2"]:
+                            _update_seller_feedback(sellers_after_l1_l2, seller_hash, row["seller_feedback_positive_percent"])
+    return stats, _seller_stats_from_maps(sellers_before, sellers_after_l1_l2), partition_rows
+
+
+def _listing_restriction_row(
+    *,
+    listing_id: str,
+    seller_id: str,
+    start_price_text: str,
+    item_price_text: str,
+    condition_text: str,
+    feedback_text: str,
+    source_hash: str,
+    source_row_hash: str,
+) -> dict[str, Any]:
+    start_price = _float_or_none(start_price_text)
+    item_price = _float_or_none(item_price_text)
+    condition_id = _int_or_none(condition_text)
+    seller_feedback = _float_or_none(feedback_text)
+    seller_hash = _hash_identifier(seller_id)
+    l1 = bool(start_price is not None and start_price > 1000)
+    l2 = bool(item_price is not None and start_price is not None and item_price > start_price)
+    used = None if condition_id is None else condition_id >= 3000
+    return {
+        "listing_id": listing_id,
+        "seller_hash": seller_hash,
+        "start_price": start_price,
+        "item_price": item_price,
+        "condition_id": condition_id,
+        "used": used,
+        "seller_feedback_positive_percent": seller_feedback,
+        "L1_violation": l1,
+        "L2_violation": l2,
+        "T1_violation": None,
+        "T2_buyer_violation": None,
+        "T2_seller_violation": None,
+        "T3_violation": None,
+        "T4_violation": None,
+        "T5_violation": None,
+        "eligible_l1_l2": not l1 and not l2,
+        "source_hash": source_hash,
+        "source_row_hash": source_row_hash,
+        "restriction_contract_version": FINAL_CONTRACT_VERSION,
+    }
+
+
+def _update_seller_feedback(store: dict[str, float | None], seller_hash: str, feedback: float | None) -> None:
+    current = store.get(seller_hash)
+    if seller_hash not in store:
+        store[seller_hash] = feedback
+    elif feedback is not None and current is not None:
+        store[seller_hash] = max(current, feedback)
+    elif feedback is not None:
+        store[seller_hash] = feedback
+
+
+def _seller_stats_from_maps(before: dict[str, float | None], after_l1_l2: dict[str, float | None]) -> dict[str, int]:
+    return {
+        "seller_count_before_l1_l2": len(before),
+        "seller_count_after_l1_l2": len(after_l1_l2),
+        "seller_feedback_nonmissing_denominator_before_l1_l2": sum(1 for value in before.values() if value is not None),
+        "seller_feedback_nonmissing_denominator_after_l1_l2": sum(1 for value in after_l1_l2.values() if value is not None),
     }
 
 
@@ -541,6 +711,11 @@ def _hash_identifier(value: str | None) -> str | None:
 
 def _row_hash(row: dict[str, str]) -> str:
     return hashlib.sha256(json.dumps(row, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest().upper()
+
+
+def _listing_row_hash(row: dict[str, str]) -> str:
+    payload = "\x1f".join(str(row.get(column, "")) for column in REAL_LISTING_COLUMNS)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest().upper()
 
 
 def _sha256_if_nonempty(path: Path) -> str | None:

@@ -39,6 +39,7 @@ from behavior_lab.datasets.criteo_uplift.uplift import simple_uplift_report
 from behavior_lab.datasets.nber_best_offer.acquire import fetch_codebook, fetch_full
 from behavior_lab.datasets.nber_best_offer.audit import audit as nber_audit
 from behavior_lab.datasets.nber_best_offer.audit import benchmark as nber_benchmark
+from behavior_lab.datasets.nber_best_offer.final_publication import finalize_final_publication_evidence
 from behavior_lab.datasets.nber_best_offer.full_listing_pass import build_full_listing_restrictions, inspect_full_listing_restrictions
 from behavior_lab.datasets.nber_best_offer.inventory import inventory_path
 from behavior_lab.datasets.nber_best_offer.normalize import build_sample_dataset, normalize_dataset
@@ -704,6 +705,17 @@ def command_nber_finalize_evidence(args: argparse.Namespace) -> None:
     _print_json(finalize_full_release_evidence(args.normalized_dir, independent_audit_artifact=args.independent_audit_artifact))
 
 
+def command_nber_final_publication_audit(args: argparse.Namespace) -> None:
+    _print_json(
+        finalize_final_publication_evidence(
+            args.normalized_dir,
+            output_dir=args.output_dir,
+            build_eligibility=not args.no_eligibility,
+            hash_eligibility_db=args.hash_eligibility_db,
+        )
+    )
+
+
 def command_nber_benchmark(args: argparse.Namespace) -> None:
     _print_json(nber_benchmark(args.normalized_dir))
 
@@ -915,6 +927,16 @@ def build_parser() -> argparse.ArgumentParser:
     nber_finalize.add_argument("--normalized-dir", required=True)
     nber_finalize.add_argument("--independent-audit-artifact", required=True)
     nber_finalize.set_defaults(func=command_nber_finalize_evidence)
+
+    nber_final_pub = nber_subparsers.add_parser(
+        "final-publication-audit",
+        help="Run deterministic v2 final-publication replication gates without training models",
+    )
+    nber_final_pub.add_argument("--normalized-dir", default=str(Path(os.environ.get("OFFERLAB_DATA_ROOT", r"C:\OfferLabData")) / "processed" / "nber_best_offer_full"))
+    nber_final_pub.add_argument("--output-dir", default=None, help="Defaults to the normalized directory")
+    nber_final_pub.add_argument("--no-eligibility", action="store_true", help="Do not materialize listing_eligibility_v2.sqlite")
+    nber_final_pub.add_argument("--hash-eligibility-db", action="store_true", help="Also SHA-256 hash the materialized eligibility SQLite file")
+    nber_final_pub.set_defaults(func=command_nber_final_publication_audit)
 
     nber_bench = nber_subparsers.add_parser("benchmark", help="Run leakage-safe baseline leaderboards")
     nber_bench.add_argument("--normalized-dir", required=True)

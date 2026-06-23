@@ -9,6 +9,17 @@ The pass writes a partitioned JSONL `listing_restrictions` table keyed by
 `null` until the thread-restriction forensics pass joins listing-level thread
 flags.
 
+The implementation uses a two-phase partitioned stream:
+
+1. Bucket source rows by `listing_id` hash.
+2. Deduplicate within each bucket, preserving the first source row and
+   quarantining later duplicate listing IDs.
+3. Emit final JSONL partitions with content hashes.
+
+This avoids a 98-million-row live SQLite duplicate index while preserving exact
+duplicate detection because all identical listing IDs land in the same bucket.
+A `bucket_progress.json` checkpoint records long-run source-row progress.
+
 Important implementation choices:
 
 - Missing `item_cndtn_id` and `fdbk_pstv_start` stay missing; they are not

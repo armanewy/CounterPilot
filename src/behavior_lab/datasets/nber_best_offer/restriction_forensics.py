@@ -45,6 +45,7 @@ def build_thread_restriction_forensics(
     *,
     bucket_count: int = 128,
     resume: bool = True,
+    drop_complete_duplicates: bool = True,
 ) -> dict[str, Any]:
     if bucket_count <= 0:
         raise RestrictionForensicsError("bucket_count must be positive")
@@ -69,6 +70,7 @@ def build_thread_restriction_forensics(
         "source_sha256": source_hash,
         "source_bytes": source_bytes,
         "bucket_count": bucket_count,
+        "drop_complete_duplicates": drop_complete_duplicates,
         "header_validation": header_validation,
     }
     if resume and manifest_path.exists():
@@ -83,11 +85,19 @@ def build_thread_restriction_forensics(
     work_dir.mkdir(parents=True)
     bucket_dir = work_dir / "thread_buckets"
     bucket_dir.mkdir()
+    dedupe_db_path = work_dir / "complete_duplicate_rows.sqlite"
     db_path = work_dir / "restriction_forensics.sqlite"
     report_path = work_dir / "listing_thread_flags.jsonl"
     malformed_path = work_dir / "malformed_threads.jsonl"
 
-    bucket_manifest = _bucket_thread_rows(threads_path, bucket_dir, malformed_path, bucket_count=bucket_count)
+    bucket_manifest = _bucket_thread_rows(
+        threads_path,
+        bucket_dir,
+        malformed_path,
+        dedupe_db_path=dedupe_db_path,
+        bucket_count=bucket_count,
+        drop_complete_duplicates=drop_complete_duplicates,
+    )
     conn = sqlite3.connect(db_path)
     try:
         _configure_sqlite(conn)
@@ -119,10 +129,11 @@ def build_thread_restriction_forensics(
         },
         "semantics": {
             "listing_level_propagation": True,
+            "complete_duplicate_policy": "When enabled, match load_csv_files.do by dropping complete duplicate thread records before paper_sample.do.",
             "T2": "Count buyer price proposals where offr_type_id in {0,1}; count seller proposals where offr_type_id == 2; more than three invalidates the listing.",
             "T3": "A status_id == 7 countered event must be followed by the required counterparty counter type.",
             "T4": "A status_id in {1,9} accepted event must be final in the listing-buyer thread.",
-            "T5": "Released code tags duplicate anon_item_id + anon_byr_id + src_cre_date before any duplicate-source deletion.",
+            "T5": "Released paper_sample.do tags duplicate anon_item_id + anon_byr_id + src_cre_date after load_csv_files.do complete-record duplicate drop; timestamp-level duplicates are not deleted before T5.",
         },
         "bucket_manifest": bucket_manifest,
         "observed": observed,
@@ -212,17 +223,35 @@ def evaluate_thread_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _bucket_thread_rows(threads_path: Path, bucket_dir: Path, malformed_path: Path, *, bucket_count: int) -> dict[str, Any]:
+def _bucket_thread_rows(
+    threads_path: Path,
+    bucket_dir: Path,
+    malformed_path: Path,
+    *,
+    dedupe_db_path: Path,
+    bucket_count: int,
+    drop_complete_duplicates: bool,
+) -> dict[str, Any]:
     handles = [(bucket_dir / f"bucket_{index:04d}.tsv").open("w", encoding="utf-8", newline="\n") for index in range(bucket_count)]
     bucket_rows = [0 for _ in range(bucket_count)]
     accepted_rows = 0
     malformed_rows = 0
+    duplicate_rows_removed = 0
+    dedupe_conn = _open_dedupe_db(dedupe_db_path) if drop_complete_duplicates else None
     with malformed_path.open("w", encoding="utf-8", newline="\n") as malformed:
         try:
             with _open_text(threads_path) as handle:
                 reader = csv.DictReader(handle)
                 writer_handles = [csv.writer(handle, delimiter="\t", lineterminator="\n") for handle in handles]
                 for ordinal, row in enumerate(reader, start=1):
+                    if dedupe_conn is not None:
+                        row_hash = _row_hash(row)
+                        cursor = dedupe_conn.execute("INSERT OR IGNORE INTO row_hashes VALUES (?)", (row_hash,))
+                        if cursor.rowcount == 0:
+                            duplicate_rows_removed += 1
+                            continue
+                        if (accepted_rows + duplicate_rows_removed) % 100_000 == 0:
+                            dedupe_conn.commit()
                     listing_id = str(row.get("anon_item_id", "")).strip()
                     buyer_id = str(row.get("anon_byr_id", "")).strip()
                     if not listing_id or not buyer_id:
@@ -245,6 +274,9 @@ def _bucket_thread_rows(threads_path: Path, bucket_dir: Path, malformed_path: Pa
                     bucket_rows[bucket] += 1
                     accepted_rows += 1
         finally:
+            if dedupe_conn is not None:
+                dedupe_conn.commit()
+                dedupe_conn.close()
             for handle in handles:
                 handle.close()
     return {
@@ -252,6 +284,8 @@ def _bucket_thread_rows(threads_path: Path, bucket_dir: Path, malformed_path: Pa
         "bucket_count": bucket_count,
         "accepted_rows": accepted_rows,
         "malformed_rows": malformed_rows,
+        "complete_duplicate_rows_removed": duplicate_rows_removed,
+        "drop_complete_duplicates": drop_complete_duplicates,
         "buckets": [
             {
                 "name": f"bucket_{index:04d}.tsv",
@@ -281,6 +315,14 @@ def _configure_sqlite(conn: sqlite3.Connection) -> None:
         ) WITHOUT ROWID;
         """
     )
+
+
+def _open_dedupe_db(path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA journal_mode=OFF")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("CREATE TABLE row_hashes (row_hash TEXT PRIMARY KEY) WITHOUT ROWID")
+    return conn
 
 
 def _process_buckets(conn: sqlite3.Connection, bucket_dir: Path, *, bucket_count: int) -> dict[str, Any]:

@@ -5,9 +5,11 @@ Offer publication contract. It does not train models and does not adjust target
 values.
 
 The implementation streams raw `anon_bo_threads.csv` rows into deterministic
-listing-buyer buckets, preserving `source_row_ordinal` as the secondary order
-when `src_cre_date` ties. Each listing-buyer thread is evaluated independently,
-then violations are propagated to the listing level.
+listing-buyer buckets, matching released `load_csv_files.do` by dropping
+complete duplicate thread records before sample construction. It preserves
+`source_row_ordinal` as the secondary order when `src_cre_date` ties. Each
+listing-buyer thread is evaluated independently, then violations are propagated
+to the listing level.
 
 Released-code semantics:
 

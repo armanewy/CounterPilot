@@ -61,6 +61,11 @@ class NberTable1ForensicsTests(unittest.TestCase):
                     listing_id TEXT,
                     buyer_id TEXT
                 );
+                CREATE TABLE buyer_offer_stats (
+                    buyer_id TEXT PRIMARY KEY,
+                    num_offrs INTEGER,
+                    num_threads INTEGER
+                );
                 """
             )
             conn.executemany(
@@ -73,6 +78,7 @@ class NberTable1ForensicsTests(unittest.TestCase):
                 ],
             )
             conn.executemany("INSERT INTO thread_summaries VALUES (?, ?)", [("l1", "b1"), ("l2", "b2"), ("l4", "b3")])
+            conn.executemany("INSERT INTO buyer_offer_stats VALUES (?, ?, ?)", [("b1", 1, 1), ("b2", 1, 1), ("b3", 1, 1)])
             conn.commit()
         finally:
             conn.close()

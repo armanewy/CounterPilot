@@ -35,6 +35,7 @@ def audit_table1_denominators(
     *,
     expected_targets: dict[str, int] | None = None,
     output_path: str | Path | None = None,
+    hash_database: bool = False,
 ) -> dict[str, Any]:
     db_path = _resolve_db_path(replication_db_or_normalized_dir)
     if not db_path.exists():
@@ -72,7 +73,8 @@ def audit_table1_denominators(
         "schema_version": TABLE1_FORENSICS_VERSION,
         "restriction_contract_version": FINAL_CONTRACT_VERSION,
         "replication_db": str(db_path.resolve()),
-        "replication_db_sha256": sha256_file(db_path),
+        "replication_db_sha256": sha256_file(db_path) if hash_database else None,
+        "replication_db_bytes": db_path.stat().st_size,
         "listing_level": listing,
         "seller_level": seller,
         "buyer_level": buyer,
@@ -104,7 +106,7 @@ def _resolve_db_path(path: str | Path | None) -> Path:
 
 def _require_tables(conn: sqlite3.Connection) -> None:
     tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    required = {"listing_sample", "thread_summaries"}
+    required = {"listing_sample", "thread_summaries", "buyer_offer_stats"}
     missing = sorted(required - tables)
     if missing:
         raise Table1ForensicsError(f"Replication database missing tables: {missing}")
@@ -168,10 +170,19 @@ def _buyer_level(conn: sqlite3.Connection) -> dict[str, Any]:
         conn,
         """
         SELECT
-            COUNT(DISTINCT CASE WHEN t.buyer_id IS NOT NULL AND t.buyer_id != '' THEN t.buyer_id END) AS buyer_count,
-            SUM(CASE WHEN t.buyer_id IS NULL THEN 1 ELSE 0 END) AS null_buyer_thread_rows,
-            SUM(CASE WHEN t.buyer_id = '' THEN 1 ELSE 0 END) AS empty_buyer_thread_rows,
-            SUM(CASE WHEN LOWER(t.buyer_id) IN ('null', 'none', 'nan', '.') THEN 1 ELSE 0 END) AS sentinel_buyer_thread_rows
+            COUNT(DISTINCT CASE WHEN l.buyer_id IS NOT NULL AND l.buyer_id != '' THEN l.buyer_id END) AS buyer_count,
+            SUM(CASE WHEN l.buyer_id IS NULL THEN 1 ELSE 0 END) AS null_buyer_listing_rows,
+            SUM(CASE WHEN l.buyer_id = '' THEN 1 ELSE 0 END) AS empty_buyer_listing_rows,
+            SUM(CASE WHEN LOWER(l.buyer_id) IN ('null', 'none', 'nan', '.') THEN 1 ELSE 0 END) AS sentinel_buyer_listing_rows
+        FROM listing_sample l
+        JOIN buyer_offer_stats b ON b.buyer_id = l.buyer_id
+        WHERE l.sample_with_t5 = 1
+        """,
+    )
+    thread_row = _one_row(
+        conn,
+        """
+        SELECT COUNT(DISTINCT CASE WHEN t.buyer_id IS NOT NULL AND t.buyer_id != '' THEN t.buyer_id END) AS retained_thread_offer_buyer_count
         FROM thread_summaries t
         JOIN listing_sample l ON l.listing_id = t.listing_id
         WHERE l.sample_with_t5 = 1
@@ -179,10 +190,12 @@ def _buyer_level(conn: sqlite3.Connection) -> dict[str, Any]:
     )
     return {
         "buyer_count": int(row["buyer_count"] or 0),
-        "null_buyer_thread_rows": int(row["null_buyer_thread_rows"] or 0),
-        "empty_buyer_thread_rows": int(row["empty_buyer_thread_rows"] or 0),
-        "sentinel_buyer_thread_rows": int(row["sentinel_buyer_thread_rows"] or 0),
-        "null_empty_and_sentinel_policy": "Excluded from distinct buyer count if present; all such rows are reported.",
+        "retained_thread_offer_buyer_count": int(thread_row["retained_thread_offer_buyer_count"] or 0),
+        "null_buyer_listing_rows": int(row["null_buyer_listing_rows"] or 0),
+        "empty_buyer_listing_rows": int(row["empty_buyer_listing_rows"] or 0),
+        "sentinel_buyer_listing_rows": int(row["sentinel_buyer_listing_rows"] or 0),
+        "released_code_denominator": "summary_stats_main.do builds buyer-level data by collapsing thread activity by anon_buyer_id, merging to anon_bo_lists by anon_buyer_id, imposing sample_id_list by listing, then collapsing by anon_buyer_id.",
+        "thread_offer_buyer_note": "Distinct retained thread offer buyers are reported separately and are not the final Table I buyer denominator.",
     }
 
 
