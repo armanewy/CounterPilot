@@ -29,6 +29,7 @@ This repository now implements the Month 1 transaction-surface foundation:
 - `counterpilot-ingest`
 - `counterpilot-inbox`
 - `counterpilot-audit`
+- `counterpilot-report`
 - `counterpilot-utility-report`
 - `counterpilot-rule-sim`
 - `counterpilot-shadow-recommend`
@@ -59,6 +60,9 @@ inventory age, amount conceded versus asking price, time from offer to payment,
 unpaid accepted offers, and refund/return-adjusted margin. The fixed-rule
 simulator answers "what would this simple rule have selected historically?"
 using observed contexts only. It is not a causal estimate.
+The transaction-ledger report documented in `docs/COUNTERPILOT_REPORTS.md`
+adds a merchant-facing JSON/Markdown view over complete and incomplete
+commerce transactions.
 
 Wave 4 adds shadow recommendations from transparent merchant rules only. A
 shadow recommendation is appended before the merchant decision, records the
@@ -103,6 +107,7 @@ python -m behavior_lab counterpilot-ingest --input C:\OfferLabData\counterpilot_
 python -m behavior_lab counterpilot-ingest --input C:\OfferLabData\counterpilot_templates\offer_opened.json
 python -m behavior_lab counterpilot-inbox --merchant-id merchant_demo_refurb_tech
 python -m behavior_lab counterpilot-audit --merchant-id merchant_demo_refurb_tech
+python -m behavior_lab counterpilot-report --data-dir C:\OfferLabData\counterpilot_core --format markdown --output report.md
 python -m behavior_lab counterpilot-utility-report --merchant-id merchant_demo_refurb_tech
 python -m behavior_lab counterpilot-rule-sim --merchant-id merchant_demo_refurb_tech --rule '{"rule_type":"counter_percent_above_offer","counter_markup_pct":0.08}'
 python -m behavior_lab counterpilot-shadow-recommend --merchant-id merchant_demo_refurb_tech --offer-id offer_current_001 --config '{"minimum_comparable_mature_outcomes":5,"floor_buffer":10.0}'

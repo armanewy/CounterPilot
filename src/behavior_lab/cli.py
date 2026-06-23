@@ -71,6 +71,11 @@ from behavior_lab.counterpilot_core import (
     transaction_create as counterpilot_transaction_create,
     transaction_inspect as counterpilot_transaction_inspect,
 )
+from behavior_lab.counterpilot_reports import (
+    DEFAULT_REPORT_DATA_DIR as COUNTERPILOT_REPORT_DEFAULT_DATA_DIR,
+    build_counterpilot_report,
+    counterpilot_report_markdown,
+)
 from behavior_lab.offerlab import (
     ingest_offerlab_snapshots,
     profit_audit,
@@ -316,6 +321,22 @@ def command_counterpilot_inbox(args: argparse.Namespace) -> None:
 
 def command_counterpilot_audit(args: argparse.Namespace) -> None:
     _print_json(counterpilot_audit(args.data_dir, merchant_id=args.merchant_id))
+
+
+def command_counterpilot_report(args: argparse.Namespace) -> None:
+    rule = json.loads(args.rule) if args.rule else None
+    report = build_counterpilot_report(args.data_dir, merchant_namespace=args.merchant_namespace, rule=rule)
+    if args.format == "markdown":
+        rendered = counterpilot_report_markdown(report)
+        if args.output:
+            Path(args.output).write_text(rendered, encoding="utf-8")
+        else:
+            print(rendered, end="")
+        return
+    if args.output:
+        Path(args.output).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    else:
+        _print_json(report)
 
 
 def command_counterpilot_utility_report(args: argparse.Namespace) -> None:
@@ -1017,6 +1038,14 @@ def build_parser() -> argparse.ArgumentParser:
     margin_audit.add_argument("--data-dir", default=str(COUNTERPILOT_DEFAULT_DATA_DIR))
     margin_audit.add_argument("--merchant-id")
     margin_audit.set_defaults(func=command_counterpilot_audit)
+
+    margin_report = subparsers.add_parser("counterpilot-report", help="Write a merchant-facing Counterpilot transaction report")
+    margin_report.add_argument("--data-dir", default=str(COUNTERPILOT_REPORT_DEFAULT_DATA_DIR))
+    margin_report.add_argument("--merchant-namespace")
+    margin_report.add_argument("--format", choices=["json", "markdown"], default="json")
+    margin_report.add_argument("--output")
+    margin_report.add_argument("--rule", help="Optional JSON deterministic rule for non-causal retrospective simulation")
+    margin_report.set_defaults(func=command_counterpilot_report)
 
     margin_utility = subparsers.add_parser(
         "counterpilot-utility-report",
