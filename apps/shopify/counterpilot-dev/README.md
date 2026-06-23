@@ -1,156 +1,113 @@
-# Shopify App Template - Extension Only
+# Counterpilot Shopify App Shell
 
-This is a template for building a [Shopify app](https://shopify.dev/docs/apps/getting-started) using [Preact](https://preactjs.com/) and [Vite](https://vite.dev/). It uses Shopify's [Direct API access](https://shopify.dev/docs/api/app-home#direct-api-access) and [App Bridge](https://shopify.dev/docs/api/app-bridge) to make authenticated calls to the Shopify Admin API directly from the browser — no server required.
+This directory contains the Shopify CLI app shell for Counterpilot.
 
-Rather than cloning this repo, follow the [Quick Start steps](#quick-start) below.
+Counterpilot is a Shopify make-an-offer app with one golden path:
 
-## Quick start
-
-### Prerequisites
-
-Before you begin, you'll need to [download and install the Shopify CLI](https://shopify.dev/docs/apps/tools/cli/getting-started) if you haven't already.
-
-### Setup
-
-```shell
-shopify app init --template=https://github.com/Shopify/shopify-app-template-extension-only
+```text
+shopper submits product-page offer
+-> merchant reviews in Counterpilot inbox
+-> merchant accepts, counters, or declines
+-> buyer accepts counter
+-> Shopify draft order / checkout is created
+-> paid/refund webhooks are ingested
+-> maturity window closes
+-> merchant sees true mature margin
 ```
 
-### Local Development
+This app shell currently contains the product-page theme app extension used in
+the development-store proof. It is not the complete production app server yet.
+The next implementation step is a backend for offer submission, merchant
+actions, buyer accept pages, draft order creation, webhook ingest, maturity
+jobs, and report generation.
 
-```shell
-shopify app dev
+## Current Extension
+
+```text
+extensions/counterpilot-offer-surface/
+  blocks/make_offer.liquid
+  blocks/cart_offer.liquid
+  assets/counterpilot-offer.js
+  assets/counterpilot-offer.css
 ```
 
-Press P to open the URL to your app. Once you click install, you can start development.
+Only product-page offers are in scope for the first beta. The cart block exists
+from earlier scaffolding but should remain disabled unless explicitly tested.
 
-Local development is powered by [Shopify CLI](https://shopify.dev/docs/apps/build/cli-for-apps/test-apps-locally). It logs into your account, connects to an app, provides environment variables, updates remote config, creates a tunnel and provides commands to generate extensions.
+## Setup
 
-## How it works
-
-### Authentication
-
-This template uses [Shopify managed installation](https://shopify.dev/docs/apps/build/authentication-authorization/app-installation). Shopify handles the OAuth flow and app installation automatically. Once installed, the app is fully embedded in the Shopify Admin.
-
-### Querying data
-
-This template uses [Direct API access](https://shopify.dev/docs/api/app-home#direct-api-access) — the Shopify Admin API is called directly from the browser using App Bridge. No server-side code is needed.
-
-This template comes pre-configured with examples of querying data using GraphQL with direct API access, and using [metaobjects](https://shopify.dev/docs/apps/custom-data/metaobjects) to store and retrieve structured app data — see [/shared/models/faq.ts](./shared/models/faq.ts).
-
-### App Bridge
-
-[App Bridge](https://shopify.dev/docs/api/app-bridge) is loaded automatically in embedded apps.
-
-### Polaris Web Components
-
-This template uses [Polaris Web Components](https://shopify.dev/docs/api/app-home/web-components) — the native custom element version of Polaris that works in any framework (including Preact). No additional package installation is required as they are provided automatically in the Shopify Admin iframe.
-
-## GraphQL Codegen
-
-This template is pre-configured with [GraphQL Codegen](https://the-guild.dev/graphql/codegen) to generate TypeScript types from your GraphQL queries.
-
-To regenerate types after updating queries:
+Install dependencies:
 
 ```shell
-npm run codegen
+npm install
 ```
 
-To watch for changes:
-
-```shell
-npm run codegen:watch
-```
-
-## Build
-
-Build the app by running:
-
-Using npm:
+Build the Shopify app:
 
 ```shell
 npm run build
 ```
 
-Using yarn:
+Run against a development store:
 
 ```shell
-yarn build
+shopify app dev --store <your-dev-store>.myshopify.com
 ```
 
-Using pnpm:
+Then:
 
-```shell
-pnpm run build
+1. Install the app in the development store.
+2. Open the theme editor.
+3. Go to `Products -> Default product`.
+4. Add the `Make an Offer` app block.
+5. Save the theme.
+6. Preview a sample product page.
+
+## Required Scopes
+
+The current dev-store proof uses least-privilege scopes for product reads,
+order reads, and draft-order creation:
+
+```text
+read_orders,read_products,write_draft_orders
 ```
 
-## Shopify Dev MCP
+Do not broaden scopes unless a specific product requirement needs it.
 
-This template is configured with the Shopify Dev MCP. This instructs [Cursor](https://cursor.com/), [GitHub Copilot](https://github.com/features/copilot), [Claude Code](https://claude.com/product/claude-code), and [Google Gemini CLI](https://github.com/google-gemini/gemini-cli) to use the Shopify Dev MCP.
+## Privacy Boundary
 
-For more information on the Shopify Dev MCP please read [the documentation](https://shopify.dev/docs/apps/build/devmcp).
+Do not commit:
 
-## Metafields and Metaobjects
+- `.env`
+- `.env.*`
+- `.shopify/`
+- access tokens
+- refresh tokens
+- checkout URLs
+- buyer names
+- buyer emails
+- addresses
+- phone numbers
+- raw buyer messages
+- `node_modules/`
 
-This template uses [metaobjects](https://shopify.dev/docs/apps/custom-data/metaobjects) and [metafields](https://shopify.dev/docs/apps/custom-data/metafields) to store structured app data without a custom database.
+The app shell `.gitignore` excludes local env files, Shopify CLI state, and
+dependencies. Keep operational customer data in server-side operational storage
+only; reports and research exports must stay PII-clean.
 
-### Metaobject: FAQ
+## What Not To Build Yet
 
-The template defines a `faq` metaobject type for storing FAQ entries. Each FAQ has a question, answer, a flag to control visibility on the FAQ page, and optional product associations.
+Do not add these to the Shopify app shell until the server-backed golden path is
+working:
 
-Defined in `shopify.app.toml`:
+- Automated counters.
+- AI negotiation.
+- Pricing recommendations.
+- Cart-level offers.
+- Multi-product bundled offers.
+- Billing.
+- Public App Store submission.
+- Cross-merchant analytics.
 
-```toml
-[metaobjects.app.faq]
-name = "FAQ"
-
-[metaobjects.app.faq.fields.question]
-name = "Question"
-type = "single_line_text_field"
-required = true
-
-[metaobjects.app.faq.fields.answer]
-name = "Answer"
-type = "multi_line_text_field"
-required = true
-
-[metaobjects.app.faq.fields.show_on_faq_page]
-name = "Show on FAQ page"
-type = "boolean"
-
-[metaobjects.app.faq.fields.products]
-name = "Products"
-type = "list.product_reference"
-```
-
-### Metafield: Product FAQ
-
-A metafield definition links individual products to a FAQ metaobject entry, allowing merchants to associate a FAQ with specific products.
-
-```toml
-[product.metafields.app.faq]
-name = "FAQ"
-description = "FAQ for this product"
-type = "metaobject_reference<$app:faq>"
-access.admin = "merchant_read_write"
-```
-
-These definitions are automatically synced to Shopify when you run `shopify app dev` or `shopify app deploy`. See [/shared/models/faq.ts](./shared/models/faq.ts) for the client-side model that reads and writes these metaobjects via the Admin GraphQL API.
-
-## Resources
-
-Preact & Vite:
-
-- [Preact docs](https://preactjs.com/guide/v10/getting-started)
-- [Vite docs](https://vite.dev/)
-
-Shopify:
-
-- [Intro to Shopify apps](https://shopify.dev/docs/apps/getting-started)
-- [Direct API access](https://shopify.dev/docs/api/app-home#direct-api-access)
-- [Shopify CLI](https://shopify.dev/docs/apps/tools/cli)
-- [App Bridge](https://shopify.dev/docs/api/app-bridge)
-- [Polaris Web Components](https://shopify.dev/docs/api/app-home/web-components)
-- [Metaobjects](https://shopify.dev/docs/apps/custom-data/metaobjects)
-- [App extensions](https://shopify.dev/docs/apps/app-extensions/list)
-- [Shopify Functions](https://shopify.dev/docs/api/functions)
+The immediate job is plumbing, not intelligence: make the manual offer loop work
+end to end and prove mature margin.
