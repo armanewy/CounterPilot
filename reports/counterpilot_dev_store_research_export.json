@@ -1,0 +1,84 @@
+{
+  "consent_lineage": [
+    {
+      "active": true,
+      "consent_policy_version": "counterpilot-ml-consent-v1",
+      "granted_at": "2026-06-22T09:50:00+00:00",
+      "granted_purposes": [
+        "merchant_specific_model_training",
+        "merchant_specific_policy_evaluation",
+        "merchant_specific_shadow_recommendations"
+      ],
+      "merchant_id": "merchant_counterpilot_dev",
+      "policy_hash": "c88f4b089e3bbc38160d5bbba18d1f8c68d14968a9db2e46b83fe2fdc1faa945",
+      "prohibited_purposes": [
+        "cross_merchant_training"
+      ],
+      "purpose": "merchant_specific_model_training",
+      "record_hash": "420f474380f74fb446f75c4c1628bd5473be144873783473a7a2d40492c40d6a",
+      "record_id": "counterpilot_consent_72cfe958415d7cc44909d965",
+      "revoked_at": null,
+      "store_id": "store_counterpilot_dev"
+    }
+  ],
+  "dataset_lineage": {
+    "dataset_id": "98834d1dd427d3f7e9b294de16087952431025aa43c092a9182ac5933c47d3c7",
+    "event_count": 1,
+    "event_hashes": [
+      "bb25179435ad61d541896a4fc61f4b79f659636a74151f540eef2877050fed71"
+    ],
+    "merchant_store_pairs": [
+      {
+        "merchant_id": "merchant_counterpilot_dev",
+        "store_id": "store_counterpilot_dev"
+      }
+    ],
+    "research_record_type": "counterpilot_research_event"
+  },
+  "model_features": [
+    {
+      "asking_price_minor": 69995,
+      "buyer_offer_amount_minor": 56000,
+      "category": "refurbished technology",
+      "counter_amount_minor": 61000,
+      "financial_cost_basis_minor": 42000,
+      "financial_mature_contribution_margin_minor": 15500,
+      "financial_reconciled_fees_minor": 0,
+      "financial_reconciled_fulfillment_costs_minor": 3500,
+      "financial_refund_total_minor": 0,
+      "surface": "product_page_offer"
+    }
+  ],
+  "purpose": "merchant_specific_model_training",
+  "rows": [
+    {
+      "decision": {
+        "amount_minor": 61000,
+        "selected_action": "counter_at_amount"
+      },
+      "event_hash": "bb25179435ad61d541896a4fc61f4b79f659636a74151f540eef2877050fed71",
+      "features": {
+        "asking_price_minor": 69995,
+        "buyer_offer_amount_minor": 56000,
+        "category": "refurbished technology",
+        "counter_amount_minor": 61000,
+        "financial_cost_basis_minor": 42000,
+        "financial_mature_contribution_margin_minor": 15500,
+        "financial_reconciled_fees_minor": 0,
+        "financial_reconciled_fulfillment_costs_minor": 3500,
+        "financial_refund_total_minor": 0,
+        "surface": "product_page_offer"
+      },
+      "merchant_id": "merchant_counterpilot_dev",
+      "outcome": {
+        "buyer_paid": true,
+        "return_window_matured": true,
+        "returned": false
+      },
+      "pseudonymous_buyer_id": "cp_buyer_3cb2f61c91953ad5bf73291a15d5b04a",
+      "pseudonymous_session_id": "cp_session_47f8f41f480c0fa291ef369977d0eae8",
+      "store_id": "store_counterpilot_dev"
+    }
+  ],
+  "schema_version": "counterpilot_research_export.v1"
+}

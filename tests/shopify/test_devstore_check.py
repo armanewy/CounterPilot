@@ -62,9 +62,14 @@ class CounterpilotDevStoreCheckTests(unittest.TestCase):
                 {
                     "app_version": "0.1-dev",
                     "transaction_id": "cp_txn_abc",
-                    "event_ids": ["offer", "paid", "mature"],
+                    "event_ids": ["offer", "shopify_order_created_123456789", "paid", "mature"],
                     "state_transition_sequence": ["offer_submitted", "paid", "mature"],
-                    "shopify_resource_ids": {"order_gid": "gid://shopify/Order/123"},
+                    "shopify_resource_ids": {
+                        "draft_order_gid": "gid://shopify/DraftOrder/456",
+                        "order_gid": "gid://shopify/Order/123",
+                        "product_gid": "gid://shopify/Product/789",
+                        "variant_gid": "gid://shopify/ProductVariant/012",
+                    },
                     "final_mature_margin_components": {"mature_contribution_margin_minor": 16166},
                     "report": {"schema_version": "counterpilot_merchant_report.v1"},
                     "research_export": {"schema_version": "counterpilot_research_export.v1", "rows": []},
@@ -81,7 +86,13 @@ class CounterpilotDevStoreCheckTests(unittest.TestCase):
             self.assertEqual(artifact["store_mode"], "development")
             self.assertFalse(artifact["production_evidence"])
             self.assertNotIn("gid://shopify", rendered)
-            self.assertIn("order_gid", artifact["shopify_resource_hashes"])
+            self.assertIn("order_resource_hash", artifact["shopify_resource_hashes"])
+            self.assertIn("draft_order_resource_hash", artifact["shopify_resource_hashes"])
+            self.assertIn("product_resource_hash", artifact["shopify_resource_hashes"])
+            self.assertIn("variant_resource_hash", artifact["shopify_resource_hashes"])
+            self.assertNotIn("order_gid", rendered)
+            self.assertNotIn("shopify_order_created_123456789", rendered)
+            self.assertTrue(any(event_id.startswith("event_reference_") for event_id in artifact["event_ids"]))
 
             with self.assertRaises(ValueError):
                 write_redacted_devstore_proof_artifact({"email": "buyer@example.com"}, output_path=Path(tmp) / "bad.json")

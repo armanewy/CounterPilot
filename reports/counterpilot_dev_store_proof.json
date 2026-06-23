@@ -1,0 +1,86 @@
+{
+  "app_version": "0.4.0",
+  "event_ids": [
+    "cp_txn_950d1205959b2ff1_offer_submitted",
+    "cp_txn_950d1205959b2ff1_merchant_countered",
+    "cp_txn_950d1205959b2ff1_buyer_accepted",
+    "cp_txn_950d1205959b2ff1_checkout_created",
+    "event_reference_7c980e84bf47013467b6a639",
+    "event_reference_76dddffc9371720f2bad5c2c",
+    "cp_txn_950d1205959b2ff1_mature"
+  ],
+  "final_mature_margin_components": {
+    "cost_basis_minor": 42000,
+    "currency": "USD",
+    "final_sale_price_minor": 61000,
+    "formula": "61000 - 42000 - 0 - 3500 - 0 = 15500",
+    "fulfillment_and_shipping_cost_minor": 3500,
+    "mature_contribution_margin_minor": 15500,
+    "payment_platform_fees_minor": 0,
+    "refund_total_minor": 0
+  },
+  "git_commit": "f95d8207b78d3bf67d8a12fe76d41707c8addb4c",
+  "manual_steps_completed": {
+    "buyer_acceptance_recorded_in_counterpilot": true,
+    "buyer_offer_recorded_in_counterpilot": true,
+    "counterpilot_product_block_enabled_and_saved": true,
+    "development_app_created": true,
+    "development_store_created": true,
+    "least_privilege_scopes_configured": true,
+    "mature_outcome_recorded": true,
+    "merchant_counter_recorded_in_counterpilot": true,
+    "merchant_report_generated": true,
+    "order_created_ingested": true,
+    "paid_event_ingested": true,
+    "product_page_offer_block_rendered": true,
+    "research_export_generated": true,
+    "shopify_cli_authenticated": true,
+    "shopify_draft_order_created": true,
+    "shopify_partner_account_created": true,
+    "test_checkout_paid": true,
+    "theme_app_extension_generated": true
+  },
+  "pii_scan": {
+    "at_sign_present": false,
+    "checked_outputs": [
+      "reports\\counterpilot_dev_store_report.md",
+      "reports\\counterpilot_dev_store_research_export.json"
+    ],
+    "checkout_link_present": false,
+    "passed": true,
+    "raw_shopify_identifiers_present": false,
+    "secret_tokens_present": false
+  },
+  "production_evidence": false,
+  "report_hash": "f3a097206e1233d8fac47b4ab1257b76be3c09734c9d5a6c6606150a86564116",
+  "research_export_hash": "a39fd1cdbe4603008208b3710f506e9f77704adc964bcbdbf42c33db855a5e5d",
+  "schema_version": "counterpilot_dev_store_proof.v1",
+  "shopify_resource_hashes": {
+    "draft_order_resource_hash": "0659e7735c20430ce06679e32b91b0cd0aab0e0278d0591b154be7eaf58735c7",
+    "order_resource_hash": "04fee471384be819df36cfdcc8866856447a4b783c4aabac80a7e218092928be",
+    "product_resource_hash": "4b0383aa3fb3776fe9a8f754670b7ef06178542bffcc6f461552a4e5429ed2dc",
+    "variant_resource_hash": "98c5993756e8e70644c65f35b6b62dcd4030271a0948c1101f66a3047af77062"
+  },
+  "skipped_steps": [
+    {
+      "reason": "No refund was issued in the paid dev-store test order; return maturity was deliberately shortened for this development proof with refund_total_minor=0.",
+      "step": "real refund or return event"
+    },
+    {
+      "reason": "Shopify test payment/dev-store events were ingested with test=true and production_evidence=false.",
+      "step": "production evidence"
+    }
+  ],
+  "state_transition_sequence": [
+    "offer_submitted",
+    "merchant_countered",
+    "buyer_accepted",
+    "checkout_created",
+    "order_created",
+    "paid",
+    "mature"
+  ],
+  "store_mode": "development",
+  "timestamp": "2026-06-23T15:10:00+00:00",
+  "transaction_id": "cp_txn_950d1205959b2ff1"
+}

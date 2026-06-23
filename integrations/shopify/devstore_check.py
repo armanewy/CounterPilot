@@ -137,7 +137,7 @@ def write_redacted_devstore_proof_artifact(
         "store_mode": "development",
         "timestamp": timestamp or utc_now(),
         "transaction_id": str(proof.get("transaction_id") or ""),
-        "event_ids": [str(item) for item in proof.get("event_ids", [])],
+        "event_ids": [_event_reference(str(item)) for item in proof.get("event_ids", [])],
         "state_transition_sequence": [str(item) for item in proof.get("state_transition_sequence", [])],
         "shopify_resource_hashes": _hash_resource_ids(proof.get("shopify_resource_ids", {})),
         "final_mature_margin_components": proof.get("final_mature_margin_components", {}),
@@ -196,7 +196,26 @@ def _namespace(values: Mapping[str, str]) -> str | None:
 def _hash_resource_ids(value: Any) -> dict[str, str]:
     if not isinstance(value, dict):
         return {}
-    return {str(key): stable_hash(str(item)) for key, item in sorted(value.items())}
+    return {_resource_hash_label(str(key)): stable_hash(str(item)) for key, item in sorted(value.items())}
+
+
+def _resource_hash_label(key: str) -> str:
+    lowered = key.lower()
+    for suffix in ["_gid", "_id", "_ids", "gid", "id", "ids"]:
+        if lowered.endswith(suffix):
+            lowered = lowered[: -len(suffix)]
+            break
+    lowered = lowered.strip("_") or "resource"
+    tokens = [token for token in lowered.replace("-", "_").split("_") if token and token not in {"shopify", "gid", "id", "ids"}]
+    label = "_".join(tokens) or "resource"
+    return f"{label}_resource_hash"
+
+
+def _event_reference(value: str) -> str:
+    lowered = value.lower()
+    if "gid://shopify" in lowered or "shopify" in lowered:
+        return "event_reference_" + stable_hash(value)[:24]
+    return value
 
 
 def _reject_forbidden_proof_fields(value: Any, *, path: str = "") -> None:
