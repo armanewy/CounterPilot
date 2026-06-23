@@ -212,6 +212,14 @@ class CounterpilotStateMachineTests(unittest.TestCase):
             self.assertEqual(snapshot["event_count"], 2)
             self.assertIn(snapshot["current_state"], {"merchant_accepted", "merchant_declined"})
 
+    def test_terminal_decision_cannot_be_reordered_by_event_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            machine = TransactionStateMachine(tmp)
+            machine.append_event(_submit())
+            machine.append_event(_event("merchant_declined", event_id="e_decline", occurred_at="2026-06-22T10:05:00+00:00", **_actions("decline")))
+            with self.assertRaises(CounterpilotStateError):
+                machine.append_event(_event("merchant_accepted", event_id="e_accept", occurred_at="2026-06-22T10:05:00+00:00", **_actions("accept")))
+
     def test_cancellation_after_payment_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             machine = TransactionStateMachine(tmp)

@@ -115,10 +115,10 @@ The app shell includes backend routes for:
 - Shopify `orders/create` and `orders/paid` webhook ingest.
 - Shopify `refunds/create` webhook ingest.
 - Shopify return status webhook ingest for maturity exposure.
+- CLI maturity job.
 
-The next implementation needs backend routes or jobs for:
+The remaining implementation needs backend routes or jobs for:
 
-- Maturity job.
 - Report generation.
 
 Use Shopify-native rails where possible:
@@ -127,6 +127,41 @@ Use Shopify-native rails where possible:
 - App proxy route for storefront-to-backend requests.
 - Admin GraphQL for draft orders.
 - Webhooks for order/refund/return/app lifecycle.
+
+## Maturity Job
+
+Create an explicit gitignored margin config before running maturity:
+
+```json
+{
+  "schema_version": "counterpilot.margin_config.v1",
+  "maturity_window_days": 0,
+  "default_product_cost_minor": 42000,
+  "default_shipping_cost_minor": 3500,
+  "default_platform_fee_minor": 0,
+  "default_return_loss_minor": 0,
+  "currency": "USD"
+}
+```
+
+Save it at:
+
+```text
+.counterpilot-data/margin_config.json
+```
+
+Then run:
+
+```powershell
+cd apps\shopify\counterpilot-dev
+npm run counterpilot:mature
+```
+
+The job appends sanitized `mature` events only for paid negotiated
+transactions whose maturity window has closed, whose refund currency matches
+the config, and whose return exposure and reconciliation state are closed. It
+does not expose raw Shopify IDs, checkout URLs, tokens, buyer contact fields,
+or raw buyer messages.
 
 ## Demo Checklist
 
@@ -145,7 +180,7 @@ Before showing the product to another person:
 11. Refund handling is either exercised or explicitly skipped with reason.
 12. Return exposure handling is either exercised or explicitly skipped with
     reason.
-13. Maturity is recorded.
+13. Maturity is recorded with `npm run counterpilot:mature`.
 14. Merchant report is generated.
 15. Report/proof/export pass PII scans.
 

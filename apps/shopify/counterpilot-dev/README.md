@@ -18,7 +18,7 @@ shopper submits product-page offer
 This app shell currently contains the product-page theme app extension and a
 minimal local offer intake server used in the development-store proof. It is
 not the complete production app server yet. The next implementation step is
-maturity jobs and report generation.
+report generation from maturity events.
 
 ## Current Extension
 
@@ -51,6 +51,12 @@ Run the local Counterpilot offer intake server:
 
 ```shell
 npm run counterpilot:server
+```
+
+Run the local maturity job:
+
+```shell
+npm run counterpilot:mature
 ```
 
 The local server exposes:
@@ -137,6 +143,28 @@ after `paid`. Return events track only maturity exposure:
 not overwrite payment/refund lifecycle state. Raw return and order references
 are stored only in the gitignored `.counterpilot-data/return_refs.jsonl`.
 
+The maturity job is an admin/CLI job, not a buyer-facing route. It reads the
+append-only offer event log plus operational order, refund, and return
+reference logs; finds paid negotiated transactions whose maturity window has
+closed; blocks open return exposure and unresolved reconciliation holds; and
+appends a sanitized `mature` event to `.counterpilot-data/offers.jsonl`.
+Repeated runs are idempotent for the same maturity inputs through
+`maturity_input_hash`. A later refund changes the input hash and can append a
+corrected maturity event. The job fails closed unless an explicit gitignored
+margin config exists:
+
+```json
+{
+  "schema_version": "counterpilot.margin_config.v1",
+  "maturity_window_days": 0,
+  "default_product_cost_minor": 42000,
+  "default_shipping_cost_minor": 3500,
+  "default_platform_fee_minor": 0,
+  "default_return_loss_minor": 0,
+  "currency": "USD"
+}
+```
+
 Counterpilot treats `offer_amount_minor`, `counter_amount_minor`, and
 `accepted_amount_minor` as per-unit prices. Order-level negotiated revenue is
 `accepted_amount_minor * quantity`.
@@ -174,6 +202,7 @@ Do not commit:
 - `.env`
 - `.env.*`
 - `.shopify/`
+- `.counterpilot-data/`
 - access tokens
 - refresh tokens
 - checkout URLs

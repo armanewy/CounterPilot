@@ -8,6 +8,7 @@
   "scripts": {
     "shopify": "shopify",
     "build": "shopify app build",
+    "counterpilot:mature": "node server/run-maturity.mjs",
     "counterpilot:server": "node server/counterpilot-server.mjs",
     "dev": "shopify app dev",
     "info": "shopify app info",

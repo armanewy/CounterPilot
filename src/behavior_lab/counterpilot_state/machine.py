@@ -198,8 +198,16 @@ class TransactionStateMachine:
         ]
 
     def _validate_new_event_against_history(self, event: dict[str, Any], existing_events: list[dict[str, Any]]) -> None:
+        before = _replay(existing_events)
         replay = _replay(existing_events + [event])
         event_id = event["event_id"]
+        before_applied_ids = {item["event_id"] for item in before["applied_events"]}
+        after_applied_ids = {item["event_id"] for item in replay["applied_events"]}
+        invalidated_existing = sorted(before_applied_ids - after_applied_ids)
+        if invalidated_existing:
+            raise CounterpilotStateError(
+                f"invalid transition event {event_id}: would invalidate existing applied events {invalidated_existing}"
+            )
         event_errors = [error for error in replay["errors"] if error.get("event_id") == event_id]
         event_pending = [pending for pending in replay["pending"] if pending["event"]["event_id"] == event_id]
         if not event_errors and not event_pending:

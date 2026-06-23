@@ -66,6 +66,7 @@ const REFUND_WEBHOOK_READY_STATES = new Set([
   "paid",
   "partially_refunded",
   "refunded",
+  "mature",
 ]);
 
 const RETURN_WEBHOOK_READY_STATES = new Set([
@@ -620,6 +621,21 @@ function normalizeMerchantPayload(payload, action) {
   };
 }
 
+function clearMaturityFields(snapshot) {
+  delete snapshot.matured_at;
+  delete snapshot.maturity_window_days;
+  delete snapshot.refund_total_minor;
+  delete snapshot.net_revenue_minor;
+  delete snapshot.product_cost_minor;
+  delete snapshot.maturity_shipping_cost_minor;
+  delete snapshot.platform_fee_minor;
+  delete snapshot.return_loss_minor;
+  delete snapshot.mature_margin_minor;
+  delete snapshot.mature_currency;
+  delete snapshot.margin_config_source;
+  delete snapshot.maturity_input_hash;
+}
+
 export function buildOfferSnapshots(events) {
   const snapshots = new Map();
   for (const event of events) {
@@ -717,6 +733,7 @@ export function buildOfferSnapshots(events) {
     }
     if (event.event_type === "paid") {
       snapshot.lifecycle_state = event.lifecycle_state;
+      snapshot.payment_lifecycle_state = event.lifecycle_state;
       snapshot.event_type = event.event_type;
       snapshot.updated_at = event.occurred_at;
       snapshot.paid_at = event.paid_at;
@@ -726,7 +743,11 @@ export function buildOfferSnapshots(events) {
       snapshot.production_evidence = event.production_evidence;
     }
     if (event.event_type === "refund_recorded") {
+      if (snapshot.lifecycle_state === "mature") {
+        clearMaturityFields(snapshot);
+      }
       snapshot.lifecycle_state = event.lifecycle_state;
+      snapshot.payment_lifecycle_state = event.lifecycle_state;
       snapshot.event_type = event.event_type;
       snapshot.updated_at = event.occurred_at;
       snapshot.refund_recorded_at = event.occurred_at;
@@ -749,13 +770,41 @@ export function buildOfferSnapshots(events) {
       snapshot.return_exposure_state = event.return_exposure_state;
       snapshot.total_return_line_items = event.total_return_line_items;
       snapshot.return_production_evidence = event.production_evidence;
+      if (snapshot.lifecycle_state === "mature") {
+        clearMaturityFields(snapshot);
+        snapshot.lifecycle_state = snapshot.payment_lifecycle_state ?? "paid";
+        snapshot.event_type = event.event_type;
+      }
+    }
+    if (event.event_type === "mature") {
+      snapshot.lifecycle_state = event.lifecycle_state;
+      snapshot.payment_lifecycle_state =
+        event.payment_lifecycle_state ??
+        snapshot.payment_lifecycle_state ??
+        "paid";
+      snapshot.event_type = event.event_type;
+      snapshot.updated_at = event.occurred_at;
+      snapshot.matured_at = event.matured_at;
+      snapshot.maturity_window_days = event.maturity_window_days;
+      snapshot.refund_total_minor = event.refund_total_minor;
+      snapshot.net_revenue_minor = event.net_revenue_minor;
+      snapshot.product_cost_minor = event.product_cost_minor;
+      snapshot.maturity_shipping_cost_minor = event.shipping_cost_minor;
+      snapshot.platform_fee_minor = event.platform_fee_minor;
+      snapshot.return_loss_minor = event.return_loss_minor;
+      snapshot.mature_margin_minor = event.mature_margin_minor;
+      snapshot.mature_currency = event.currency;
+      snapshot.margin_config_source = event.margin_config_source;
+      snapshot.maturity_input_hash = event.maturity_input_hash;
+      snapshot.return_exposure_state = event.return_exposure_state;
+      snapshot.production_evidence = event.production_evidence;
     }
   }
   return snapshots;
 }
 
 export function sanitizeOfferForInbox(record) {
-  return {
+  const sanitized = {
     transaction_id: record.transaction_id,
     lifecycle_state: record.lifecycle_state,
     event_type: record.event_type,
@@ -809,6 +858,23 @@ export function sanitizeOfferForInbox(record) {
     quantity: record.quantity,
     buyer_contact_reference: record.buyer_contact_reference,
   };
+  if (record.lifecycle_state === "mature") {
+    Object.assign(sanitized, {
+      matured_at: record.matured_at,
+      maturity_window_days: record.maturity_window_days,
+      refund_total_minor: record.refund_total_minor,
+      net_revenue_minor: record.net_revenue_minor,
+      product_cost_minor: record.product_cost_minor,
+      maturity_shipping_cost_minor: record.maturity_shipping_cost_minor,
+      platform_fee_minor: record.platform_fee_minor,
+      return_loss_minor: record.return_loss_minor,
+      mature_margin_minor: record.mature_margin_minor,
+      mature_currency: record.mature_currency,
+      margin_config_source: record.margin_config_source,
+      maturity_input_hash: record.maturity_input_hash,
+    });
+  }
+  return sanitized;
 }
 
 function getSnapshotOrThrow(events, transactionId, storeId) {

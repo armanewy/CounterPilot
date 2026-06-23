@@ -13,11 +13,12 @@ passes end to end.
 6. Counterpilot creates a draft order / checkout flow.
 7. Order paid webhook is ingested.
 8. Refund event is handled if present.
-9. Maturity job closes the lifecycle.
-10. Merchant report is generated.
-11. Report contains no raw Shopify GIDs, checkout URLs, tokens, names, emails,
+9. Open return exposure blocks maturity until closed.
+10. Maturity job closes the lifecycle.
+11. Merchant report is generated.
+12. Report contains no raw Shopify GIDs, checkout URLs, tokens, names, emails,
     addresses, phone numbers, or raw buyer messages.
-12. Dev/test runs are marked `production_evidence: false`.
+13. Dev/test runs are marked `production_evidence: false`.
 
 ## Required State Sequence
 
