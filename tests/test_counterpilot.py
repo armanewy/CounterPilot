@@ -9,21 +9,21 @@ import unittest
 
 import _bootstrap  # noqa: F401
 
-from behavior_lab.marginpilot import (
-    MarginPilotError,
-    ingest_marginpilot_events,
-    marginpilot_audit,
-    marginpilot_experiment_assign,
-    marginpilot_experiment_preregister,
-    marginpilot_experiment_record_outcome,
-    marginpilot_experiment_report,
-    marginpilot_inbox,
-    marginpilot_rule_simulation,
-    marginpilot_shadow_recommend,
-    marginpilot_utility_report,
-    sample_marginpilot_events,
-    validate_marginpilot_event,
-    write_marginpilot_templates,
+from behavior_lab.counterpilot import (
+    CounterpilotError,
+    ingest_counterpilot_events,
+    counterpilot_audit,
+    counterpilot_experiment_assign,
+    counterpilot_experiment_preregister,
+    counterpilot_experiment_record_outcome,
+    counterpilot_experiment_report,
+    counterpilot_inbox,
+    counterpilot_rule_simulation,
+    counterpilot_shadow_recommend,
+    counterpilot_utility_report,
+    sample_counterpilot_events,
+    validate_counterpilot_event,
+    write_counterpilot_templates,
 )
 
 
@@ -31,24 +31,24 @@ def _write_jsonl(path: Path, events: list[dict]) -> None:
     path.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
 
 
-class MarginPilotTests(unittest.TestCase):
+class CounterpilotTests(unittest.TestCase):
     def test_templates_include_consent_and_month_one_scope(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            manifest = write_marginpilot_templates(Path(tmp) / "templates")
-            self.assertEqual(manifest["product_id"], "marginpilot_negotiated_commerce")
+            manifest = write_counterpilot_templates(Path(tmp) / "templates")
+            self.assertEqual(manifest["product_id"], "counterpilot_negotiated_commerce")
             self.assertIn("merchant_consent", manifest["events"])
             self.assertFalse(manifest["data_rights"]["cross_merchant_pooling_default"])
             self.assertIn("offer and quote event capture", manifest["month_1_scope"])
 
     def test_ingest_inbox_accounting_and_audit_are_consent_gated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, [events["merchant_consent"], events["offer_opened"]])
-            result = ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            result = ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
             self.assertEqual(result.imported, 2)
 
-            inbox = marginpilot_inbox(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
+            inbox = counterpilot_inbox(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
             self.assertEqual(inbox["open_offer_count"], 1)
             self.assertFalse(inbox["executes_seller_actions"])
             economics = inbox["open_offers"][0]["economics"]
@@ -57,7 +57,7 @@ class MarginPilotTests(unittest.TestCase):
             self.assertFalse(accept["violates_merchant_floor"])
             self.assertTrue(inbox["open_offers"][0]["merchant_specific_learning_authorized"])
 
-            audit = marginpilot_audit(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
+            audit = counterpilot_audit(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
             self.assertFalse(audit["profit_optimization_gate"]["passed"])
             self.assertTrue(audit["profit_optimization_gate"]["checks"]["merchant_specific_learning_consent"])
             self.assertFalse(audit["automation_allowed"])
@@ -65,13 +65,13 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_free_shipping_counter_keeps_merchant_shipping_cost(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             events["offer_opened"]["available_actions"].append({"action": "free_shipping_counter", "amount": 760.0})
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, [events["merchant_consent"], events["offer_opened"]])
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
 
-            inbox = marginpilot_inbox(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
+            inbox = counterpilot_inbox(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
             economics = inbox["open_offers"][0]["economics"]
             free_shipping = next(row for row in economics if row["action"] == "free_shipping_counter")
 
@@ -80,12 +80,12 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_audit_reports_mature_margin_without_training(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, list(events.values()))
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
 
-            audit = marginpilot_audit(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
+            audit = counterpilot_audit(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
 
             self.assertEqual(audit["counts"]["mature_paid_outcomes"], 1)
             self.assertEqual(audit["mature_contribution_margin"]["total"], 171.66)
@@ -94,12 +94,12 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_utility_report_summarizes_reconciled_merchant_economics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, list(events.values()))
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
 
-            report = marginpilot_utility_report(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
+            report = counterpilot_utility_report(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
 
             self.assertFalse(report["causal_claim"])
             self.assertEqual(report["model_training"], "not_run")
@@ -115,12 +115,12 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_fixed_rule_simulation_is_historical_and_not_causal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, list(events.values()))
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
 
-            simulation = marginpilot_rule_simulation(
+            simulation = counterpilot_rule_simulation(
                 Path(tmp) / "data",
                 merchant_id="merchant_demo_refurb_tech",
                 rule={"rule_type": "counter_percent_above_offer", "counter_markup_pct": 0.0556},
@@ -136,13 +136,13 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_utility_report_does_not_label_declined_outcomes_as_accepted_margin(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             events["merchant_decision"]["selected_action"] = {"action": "decline"}
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, list(events.values()))
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
 
-            report = marginpilot_utility_report(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
+            report = counterpilot_utility_report(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
 
             self.assertEqual(report["offer_volume_and_acceptance_funnel"]["accepted_or_countered"], 0)
             self.assertEqual(report["mature_margin_per_accepted_offer"], [])
@@ -150,13 +150,13 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_rule_simulation_does_not_reuse_outcome_when_actions_differ(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             events["merchant_decision"]["selected_action"] = {"action": "decline"}
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, list(events.values()))
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
 
-            simulation = marginpilot_rule_simulation(
+            simulation = counterpilot_rule_simulation(
                 Path(tmp) / "data",
                 merchant_id="merchant_demo_refurb_tech",
                 rule={"rule_type": "counter_percent_above_offer", "counter_markup_pct": 0.0556},
@@ -169,7 +169,7 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_shadow_recommendation_records_transparent_counter_without_automation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             current_offer = json.loads(json.dumps(events["offer_opened"]))
             current_offer["event_id"] = "offer_current_001"
             current_offer["offer_id"] = "offer_current_001"
@@ -177,9 +177,9 @@ class MarginPilotTests(unittest.TestCase):
             current_offer["observation_cutoff"] = "2026-07-23T10:00:00-04:00"
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, [events["merchant_consent"], events["offer_opened"], events["merchant_decision"], events["outcome_matured"], current_offer])
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
 
-            recommendation = marginpilot_shadow_recommend(
+            recommendation = counterpilot_shadow_recommend(
                 Path(tmp) / "data",
                 merchant_id="merchant_demo_refurb_tech",
                 offer_id="offer_current_001",
@@ -195,7 +195,7 @@ class MarginPilotTests(unittest.TestCase):
             self.assertEqual(recommendation["recommendation"]["amount"], 760.0)
             self.assertEqual(recommendation["evidence"]["comparable_mature_outcomes"], 1)
 
-            duplicate = marginpilot_shadow_recommend(
+            duplicate = counterpilot_shadow_recommend(
                 Path(tmp) / "data",
                 merchant_id="merchant_demo_refurb_tech",
                 offer_id="offer_current_001",
@@ -203,8 +203,8 @@ class MarginPilotTests(unittest.TestCase):
                 generated_at="2026-07-23T10:02:00-04:00",
             )
             self.assertEqual(duplicate["recommendation_id"], recommendation["recommendation_id"])
-            with self.assertRaises(MarginPilotError):
-                marginpilot_shadow_recommend(
+            with self.assertRaises(CounterpilotError):
+                counterpilot_shadow_recommend(
                     Path(tmp) / "data",
                     merchant_id="merchant_demo_refurb_tech",
                     offer_id="offer_current_001",
@@ -212,12 +212,12 @@ class MarginPilotTests(unittest.TestCase):
                     generated_at="2026-07-23T10:03:00-04:00",
                 )
 
-            audit_events = marginpilot_utility_report(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
+            audit_events = counterpilot_utility_report(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
             self.assertEqual(audit_events["offer_volume_and_acceptance_funnel"]["offers_opened"], 2)
 
     def test_shadow_recommendation_internal_id_does_not_trip_pii_scanner(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             current_offer = json.loads(json.dumps(events["offer_opened"]))
             current_offer["event_id"] = "offer_config_change"
             current_offer["offer_id"] = "offer_config_change"
@@ -225,9 +225,9 @@ class MarginPilotTests(unittest.TestCase):
             current_offer["observation_cutoff"] = "2026-07-23T10:00:00-04:00"
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, [events["merchant_consent"], events["offer_opened"], events["merchant_decision"], events["outcome_matured"], current_offer])
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
 
-            recommendation = marginpilot_shadow_recommend(
+            recommendation = counterpilot_shadow_recommend(
                 Path(tmp) / "data",
                 merchant_id="merchant_demo_refurb_tech",
                 offer_id="offer_config_change",
@@ -239,20 +239,20 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_shadow_recommendation_cannot_append_after_merchant_decision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, [events["merchant_consent"], events["offer_opened"], events["merchant_decision"]])
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
 
-            with self.assertRaises(MarginPilotError):
-                marginpilot_shadow_recommend(
+            with self.assertRaises(CounterpilotError):
+                counterpilot_shadow_recommend(
                     Path(tmp) / "data",
                     merchant_id="merchant_demo_refurb_tech",
                     offer_id="offer_demo_001",
                     generated_at="2026-06-22T10:06:00-04:00",
                 )
 
-            preview = marginpilot_shadow_recommend(
+            preview = counterpilot_shadow_recommend(
                 Path(tmp) / "data",
                 merchant_id="merchant_demo_refurb_tech",
                 offer_id="offer_demo_001",
@@ -264,7 +264,7 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_shadow_recommendation_abstains_for_missing_cost_basis_or_sensitive_features(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             current_offer = json.loads(json.dumps(events["offer_opened"]))
             current_offer["event_id"] = "offer_current_missing_cost"
             current_offer["offer_id"] = "offer_current_missing_cost"
@@ -273,9 +273,9 @@ class MarginPilotTests(unittest.TestCase):
             current_offer["pre_decision_context"]["cost_basis"] = None
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, [events["merchant_consent"], events["offer_opened"], events["merchant_decision"], events["outcome_matured"], current_offer])
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
 
-            missing_cost = marginpilot_shadow_recommend(
+            missing_cost = counterpilot_shadow_recommend(
                 Path(tmp) / "data",
                 merchant_id="merchant_demo_refurb_tech",
                 offer_id="offer_current_missing_cost",
@@ -295,9 +295,9 @@ class MarginPilotTests(unittest.TestCase):
             sensitive_offer["pre_decision_context"]["buyer_zip"] = "10001"
             sensitive_path = Path(tmp) / "sensitive.json"
             _write_jsonl(sensitive_path, [sensitive_offer])
-            ingest_marginpilot_events(sensitive_path, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(sensitive_path, data_dir=Path(tmp) / "data")
 
-            sensitive = marginpilot_shadow_recommend(
+            sensitive = counterpilot_shadow_recommend(
                 Path(tmp) / "data",
                 merchant_id="merchant_demo_refurb_tech",
                 offer_id="offer_current_sensitive",
@@ -316,9 +316,9 @@ class MarginPilotTests(unittest.TestCase):
             protected_offer["pre_decision_context"]["buyer_age"] = 72
             protected_path = Path(tmp) / "protected.json"
             _write_jsonl(protected_path, [protected_offer])
-            ingest_marginpilot_events(protected_path, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(protected_path, data_dir=Path(tmp) / "data")
 
-            protected = marginpilot_shadow_recommend(
+            protected = counterpilot_shadow_recommend(
                 Path(tmp) / "data",
                 merchant_id="merchant_demo_refurb_tech",
                 offer_id="offer_current_protected",
@@ -331,7 +331,7 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_experiment_shadow_recommendation_exposure_preregisters_assigns_and_reports(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             current_offer = json.loads(json.dumps(events["offer_opened"]))
             current_offer["event_id"] = "offer_experiment_001"
             current_offer["offer_id"] = "offer_experiment_001"
@@ -339,9 +339,9 @@ class MarginPilotTests(unittest.TestCase):
             current_offer["observation_cutoff"] = "2026-07-23T10:00:00-04:00"
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, [events["merchant_consent"], current_offer])
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
 
-            prereg = marginpilot_experiment_preregister(
+            prereg = counterpilot_experiment_preregister(
                 Path(tmp) / "data",
                 experiment_id="exp_shadow_adoption_001",
                 experiment_type="shadow_recommendation_exposure",
@@ -349,7 +349,7 @@ class MarginPilotTests(unittest.TestCase):
                 planned_units=4,
                 assignment_probability=0.5,
             )
-            duplicate_prereg = marginpilot_experiment_preregister(
+            duplicate_prereg = counterpilot_experiment_preregister(
                 Path(tmp) / "data",
                 experiment_id="exp_shadow_adoption_001",
                 experiment_type="shadow_recommendation_exposure",
@@ -358,22 +358,22 @@ class MarginPilotTests(unittest.TestCase):
                 assignment_probability=0.5,
             )
             self.assertEqual(duplicate_prereg["preregistration_hash"], prereg["preregistration_hash"])
-            with self.assertRaises(MarginPilotError):
-                marginpilot_experiment_assign(
+            with self.assertRaises(CounterpilotError):
+                counterpilot_experiment_assign(
                     Path(tmp) / "data",
                     experiment_id=prereg["experiment_id"],
                     merchant_id="merchant_demo_refurb_tech",
                     offer_id="offer_experiment_001",
                     assigned_at="2026-06-23T10:01:00-04:00",
                 )
-            assignment = marginpilot_experiment_assign(
+            assignment = counterpilot_experiment_assign(
                 Path(tmp) / "data",
                 experiment_id=prereg["experiment_id"],
                 merchant_id="merchant_demo_refurb_tech",
                 offer_id="offer_experiment_001",
                 assigned_at="2026-07-23T10:01:00-04:00",
             )
-            duplicate = marginpilot_experiment_assign(
+            duplicate = counterpilot_experiment_assign(
                 Path(tmp) / "data",
                 experiment_id=prereg["experiment_id"],
                 merchant_id="merchant_demo_refurb_tech",
@@ -387,8 +387,8 @@ class MarginPilotTests(unittest.TestCase):
             decision["occurred_at"] = "2026-07-23T10:05:00-04:00"
             decision_path = Path(tmp) / "decision.jsonl"
             _write_jsonl(decision_path, [decision])
-            ingest_marginpilot_events(decision_path, data_dir=Path(tmp) / "data")
-            replay_after_decision = marginpilot_experiment_assign(
+            ingest_counterpilot_events(decision_path, data_dir=Path(tmp) / "data")
+            replay_after_decision = counterpilot_experiment_assign(
                 Path(tmp) / "data",
                 experiment_id=prereg["experiment_id"],
                 merchant_id="merchant_demo_refurb_tech",
@@ -396,14 +396,14 @@ class MarginPilotTests(unittest.TestCase):
                 assigned_at="2026-07-23T10:06:00-04:00",
             )
             self.assertEqual(replay_after_decision["assignment_id"], assignment["assignment_id"])
-            outcome = marginpilot_experiment_record_outcome(
+            outcome = counterpilot_experiment_record_outcome(
                 Path(tmp) / "data",
                 assignment_id=assignment["assignment_id"],
                 outcomes={"merchant_adopted_recommendation": True},
                 recorded_at="2026-07-23T10:20:00-04:00",
             )
             self.assertEqual(outcome["primary_outcome"], "merchant_adopted_recommendation")
-            report = marginpilot_experiment_report(Path(tmp) / "data", experiment_id=prereg["experiment_id"])
+            report = counterpilot_experiment_report(Path(tmp) / "data", experiment_id=prereg["experiment_id"])
             self.assertEqual(report["assignments"]["total"], 1)
             self.assertEqual(report["outcomes_recorded"], 1)
             self.assertEqual(report["analysis_population"], "available_mature_outcomes")
@@ -413,7 +413,7 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_offer_policy_experiment_requires_guardrails_and_blocks_sensitive_targeting(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             current_offer = json.loads(json.dumps(events["offer_opened"]))
             current_offer["event_id"] = "offer_policy_001"
             current_offer["offer_id"] = "offer_policy_001"
@@ -421,17 +421,17 @@ class MarginPilotTests(unittest.TestCase):
             current_offer["observation_cutoff"] = "2026-07-23T10:00:00-04:00"
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, [events["merchant_consent"], current_offer])
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
 
-            with self.assertRaises(MarginPilotError):
-                marginpilot_experiment_preregister(
+            with self.assertRaises(CounterpilotError):
+                counterpilot_experiment_preregister(
                     Path(tmp) / "data",
                     experiment_id="exp_policy_missing_guardrails",
                     experiment_type="offer_policy_comparison",
                     merchant_id="merchant_demo_refurb_tech",
                     planned_units=10,
                 )
-            prereg = marginpilot_experiment_preregister(
+            prereg = counterpilot_experiment_preregister(
                 Path(tmp) / "data",
                 experiment_id="exp_policy_margin_001",
                 experiment_type="offer_policy_comparison",
@@ -439,14 +439,14 @@ class MarginPilotTests(unittest.TestCase):
                 planned_units=10,
                 guardrails={"minimum_net_floor": 75.0, "maximum_concession_rate": 0.25},
             )
-            assignment = marginpilot_experiment_assign(
+            assignment = counterpilot_experiment_assign(
                 Path(tmp) / "data",
                 experiment_id=prereg["experiment_id"],
                 merchant_id="merchant_demo_refurb_tech",
                 offer_id="offer_policy_001",
                 assigned_at="2026-07-23T10:01:00-04:00",
             )
-            outcome = marginpilot_experiment_record_outcome(
+            outcome = counterpilot_experiment_record_outcome(
                 Path(tmp) / "data",
                 assignment_id=assignment["assignment_id"],
                 outcomes={"mature_contribution_margin_per_eligible_negotiation": 171.66},
@@ -462,9 +462,9 @@ class MarginPilotTests(unittest.TestCase):
             sensitive_offer["pre_decision_context"]["buyer_gender"] = "unknown"
             sensitive_path = Path(tmp) / "sensitive_policy.jsonl"
             _write_jsonl(sensitive_path, [sensitive_offer])
-            ingest_marginpilot_events(sensitive_path, data_dir=Path(tmp) / "data")
-            with self.assertRaises(MarginPilotError):
-                marginpilot_experiment_assign(
+            ingest_counterpilot_events(sensitive_path, data_dir=Path(tmp) / "data")
+            with self.assertRaises(CounterpilotError):
+                counterpilot_experiment_assign(
                     Path(tmp) / "data",
                     experiment_id=prereg["experiment_id"],
                     merchant_id="merchant_demo_refurb_tech",
@@ -473,7 +473,7 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_shadow_experiment_control_holdout_blocks_shadow_recommendation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             current_offer = json.loads(json.dumps(events["offer_opened"]))
             current_offer["event_id"] = "offer_holdout_001"
             current_offer["offer_id"] = "offer_holdout_001"
@@ -481,8 +481,8 @@ class MarginPilotTests(unittest.TestCase):
             current_offer["observation_cutoff"] = "2026-07-23T10:00:00-04:00"
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, [events["merchant_consent"], events["offer_opened"], events["merchant_decision"], events["outcome_matured"], current_offer])
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
-            prereg = marginpilot_experiment_preregister(
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
+            prereg = counterpilot_experiment_preregister(
                 Path(tmp) / "data",
                 experiment_id="exp_shadow_holdout_001",
                 experiment_type="shadow_recommendation_exposure",
@@ -490,7 +490,7 @@ class MarginPilotTests(unittest.TestCase):
                 planned_units=5,
                 assignment_probability=0.0 + 1e-9,
             )
-            assignment = marginpilot_experiment_assign(
+            assignment = counterpilot_experiment_assign(
                 Path(tmp) / "data",
                 experiment_id=prereg["experiment_id"],
                 merchant_id="merchant_demo_refurb_tech",
@@ -498,8 +498,8 @@ class MarginPilotTests(unittest.TestCase):
                 assigned_at="2026-07-23T10:01:00-04:00",
             )
             self.assertEqual(assignment["assigned_arm"], "control")
-            with self.assertRaises(MarginPilotError):
-                marginpilot_shadow_recommend(
+            with self.assertRaises(CounterpilotError):
+                counterpilot_shadow_recommend(
                     Path(tmp) / "data",
                     merchant_id="merchant_demo_refurb_tech",
                     offer_id="offer_holdout_001",
@@ -507,7 +507,7 @@ class MarginPilotTests(unittest.TestCase):
                     generated_at="2026-07-23T10:02:00-04:00",
                 )
 
-            second = marginpilot_experiment_preregister(
+            second = counterpilot_experiment_preregister(
                 Path(tmp) / "data",
                 experiment_id="exp_shadow_overlap_001",
                 experiment_type="shadow_recommendation_exposure",
@@ -515,7 +515,7 @@ class MarginPilotTests(unittest.TestCase):
                 planned_units=5,
                 assignment_probability=0.999999999,
             )
-            second_assignment = marginpilot_experiment_assign(
+            second_assignment = counterpilot_experiment_assign(
                 Path(tmp) / "data",
                 experiment_id=second["experiment_id"],
                 merchant_id="merchant_demo_refurb_tech",
@@ -523,8 +523,8 @@ class MarginPilotTests(unittest.TestCase):
                 assigned_at="2026-07-23T10:03:00-04:00",
             )
             self.assertEqual(second_assignment["assigned_arm"], "treatment")
-            with self.assertRaises(MarginPilotError):
-                marginpilot_shadow_recommend(
+            with self.assertRaises(CounterpilotError):
+                counterpilot_shadow_recommend(
                     Path(tmp) / "data",
                     merchant_id="merchant_demo_refurb_tech",
                     offer_id="offer_holdout_001",
@@ -534,7 +534,7 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_experiment_assignment_must_precede_shadow_recommendation_exposure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             current_offer = json.loads(json.dumps(events["offer_opened"]))
             current_offer["event_id"] = "offer_exposure_first"
             current_offer["offer_id"] = "offer_exposure_first"
@@ -542,23 +542,23 @@ class MarginPilotTests(unittest.TestCase):
             current_offer["observation_cutoff"] = "2026-07-23T10:00:00-04:00"
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, [events["merchant_consent"], events["offer_opened"], events["merchant_decision"], events["outcome_matured"], current_offer])
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
-            marginpilot_shadow_recommend(
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
+            counterpilot_shadow_recommend(
                 Path(tmp) / "data",
                 merchant_id="merchant_demo_refurb_tech",
                 offer_id="offer_exposure_first",
                 config={"minimum_comparable_mature_outcomes": 1, "floor_buffer": 60.0},
                 generated_at="2026-07-23T10:01:00-04:00",
             )
-            prereg = marginpilot_experiment_preregister(
+            prereg = counterpilot_experiment_preregister(
                 Path(tmp) / "data",
                 experiment_id="exp_shadow_after_exposure",
                 experiment_type="shadow_recommendation_exposure",
                 merchant_id="merchant_demo_refurb_tech",
                 planned_units=5,
             )
-            with self.assertRaises(MarginPilotError):
-                marginpilot_experiment_assign(
+            with self.assertRaises(CounterpilotError):
+                counterpilot_experiment_assign(
                     Path(tmp) / "data",
                     experiment_id=prereg["experiment_id"],
                     merchant_id="merchant_demo_refurb_tech",
@@ -568,7 +568,7 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_inbox_scopes_consent_and_decisions_by_merchant(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             merchant_a_consent = events["merchant_consent"]
             merchant_a_offer = events["offer_opened"]
             merchant_a_decision = events["merchant_decision"]
@@ -580,9 +580,9 @@ class MarginPilotTests(unittest.TestCase):
 
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, [merchant_a_consent, merchant_a_offer, merchant_a_decision, merchant_b_offer])
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
 
-            inbox = marginpilot_inbox(Path(tmp) / "data")
+            inbox = counterpilot_inbox(Path(tmp) / "data")
 
             self.assertEqual(inbox["open_offer_count"], 1)
             self.assertEqual(inbox["open_offers"][0]["merchant_id"], "merchant_without_consent")
@@ -590,7 +590,7 @@ class MarginPilotTests(unittest.TestCase):
 
     def test_audit_blocks_cross_merchant_pooling_and_bad_threads(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            events = sample_marginpilot_events()
+            events = sample_counterpilot_events()
             merchant_a_consent = events["merchant_consent"]
             merchant_a_offer = events["offer_opened"]
             merchant_b_offer = json.loads(json.dumps(events["offer_opened"]))
@@ -605,10 +605,10 @@ class MarginPilotTests(unittest.TestCase):
 
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, [merchant_a_consent, merchant_a_offer, merchant_b_offer, bad_decision])
-            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            ingest_counterpilot_events(source, data_dir=Path(tmp) / "data")
 
-            aggregate = marginpilot_audit(Path(tmp) / "data")
-            merchant_a = marginpilot_audit(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
+            aggregate = counterpilot_audit(Path(tmp) / "data")
+            merchant_a = counterpilot_audit(Path(tmp) / "data", merchant_id="merchant_demo_refurb_tech")
 
             self.assertFalse(aggregate["profit_optimization_gate"]["checks"]["single_merchant_namespace"])
             self.assertFalse(aggregate["data_rights"]["merchant_specific_learning_authorized"])
@@ -616,12 +616,12 @@ class MarginPilotTests(unittest.TestCase):
             self.assertIn("unavailable action", merchant_a["profit_optimization_gate"]["event_thread_integrity"]["errors"][0])
 
     def test_rejects_customer_pii_and_post_decision_context(self) -> None:
-        validate_marginpilot_event(sample_marginpilot_events()["offer_opened"])
+        validate_counterpilot_event(sample_counterpilot_events()["offer_opened"])
 
-        event = sample_marginpilot_events()["offer_opened"]
+        event = sample_counterpilot_events()["offer_opened"]
         event["pre_decision_context"]["buyer_email"] = "person@example.com"
-        with self.assertRaises(MarginPilotError):
-            validate_marginpilot_event(event)
+        with self.assertRaises(CounterpilotError):
+            validate_counterpilot_event(event)
 
         pii_cases = [
             ("buyer", {"id": "buyer_123"}),
@@ -639,42 +639,42 @@ class MarginPilotTests(unittest.TestCase):
             ("source_reference", "gid://shopify/Customer/123"),
         ]
         for key, value in pii_cases:
-            event = sample_marginpilot_events()["offer_opened"]
+            event = sample_counterpilot_events()["offer_opened"]
             event["pre_decision_context"][key] = value
             with self.subTest(key=key):
-                with self.assertRaises(MarginPilotError):
-                    validate_marginpilot_event(event)
+                with self.assertRaises(CounterpilotError):
+                    validate_counterpilot_event(event)
 
-        event = sample_marginpilot_events()["offer_opened"]
+        event = sample_counterpilot_events()["offer_opened"]
         event["pre_decision_context"]["final_sale_price"] = 760.0
-        with self.assertRaises(MarginPilotError):
-            validate_marginpilot_event(event)
+        with self.assertRaises(CounterpilotError):
+            validate_counterpilot_event(event)
 
-        event = sample_marginpilot_events()["offer_opened"]
+        event = sample_counterpilot_events()["offer_opened"]
         event["available_actions"].append({"action": "manual_other"})
-        with self.assertRaises(MarginPilotError):
-            validate_marginpilot_event(event)
+        with self.assertRaises(CounterpilotError):
+            validate_counterpilot_event(event)
 
     def test_paid_mature_outcomes_require_component_reconciliation(self) -> None:
-        event = sample_marginpilot_events()["outcome_matured"]
-        validate_marginpilot_event(event)
+        event = sample_counterpilot_events()["outcome_matured"]
+        validate_counterpilot_event(event)
 
-        event = sample_marginpilot_events()["outcome_matured"]
+        event = sample_counterpilot_events()["outcome_matured"]
         del event["outcome"]["actual_fees"]
-        with self.assertRaises(MarginPilotError):
-            validate_marginpilot_event(event)
+        with self.assertRaises(CounterpilotError):
+            validate_counterpilot_event(event)
 
-        event = sample_marginpilot_events()["outcome_matured"]
+        event = sample_counterpilot_events()["outcome_matured"]
         event["outcome"]["mature_contribution_margin"] = 999999.0
-        with self.assertRaises(MarginPilotError):
-            validate_marginpilot_event(event)
+        with self.assertRaises(CounterpilotError):
+            validate_counterpilot_event(event)
 
     def test_cli_template_ingest_and_audit_smoke(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             templates = Path(tmp) / "templates"
             data = Path(tmp) / "data"
             subprocess.run(
-                [sys.executable, "-m", "behavior_lab", "marginpilot-template", "--output-dir", str(templates)],
+                [sys.executable, "-m", "behavior_lab", "counterpilot-template", "--output-dir", str(templates)],
                 check=True,
                 cwd=Path(__file__).resolve().parents[1],
                 capture_output=True,
@@ -684,14 +684,14 @@ class MarginPilotTests(unittest.TestCase):
             source = Path(tmp) / "events.jsonl"
             _write_jsonl(source, events)
             subprocess.run(
-                [sys.executable, "-m", "behavior_lab", "marginpilot-ingest", "--input", str(source), "--data-dir", str(data)],
+                [sys.executable, "-m", "behavior_lab", "counterpilot-ingest", "--input", str(source), "--data-dir", str(data)],
                 check=True,
                 cwd=Path(__file__).resolve().parents[1],
                 capture_output=True,
                 text=True,
             )
             audited = subprocess.run(
-                [sys.executable, "-m", "behavior_lab", "marginpilot-audit", "--data-dir", str(data), "--merchant-id", "merchant_demo_refurb_tech"],
+                [sys.executable, "-m", "behavior_lab", "counterpilot-audit", "--data-dir", str(data), "--merchant-id", "merchant_demo_refurb_tech"],
                 check=True,
                 cwd=Path(__file__).resolve().parents[1],
                 capture_output=True,

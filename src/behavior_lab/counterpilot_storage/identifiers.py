@@ -76,7 +76,7 @@ class EphemeralMappingLayer:
             }
         ).encode("utf-8")
         digest = hmac.new(secret, body, hashlib.sha256).hexdigest()
-        pseudonymous_id = f"mp_{mapped_namespace}_{digest[:32]}"
+        pseudonymous_id = f"cp_{mapped_namespace}_{digest[:32]}"
         self._entries[pseudonymous_id] = _MappingEntry(
             merchant_id=merchant,
             store_id=store,

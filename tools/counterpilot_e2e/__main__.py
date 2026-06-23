@@ -3,11 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 
-from tools.marginpilot_e2e.runner import run_development_store_e2e
+from tools.counterpilot_e2e.runner import run_development_store_e2e
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run deterministic MarginPilot Shopify development-store E2E proof.")
+    parser = argparse.ArgumentParser(description="Run deterministic Counterpilot Shopify development-store E2E proof.")
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--report-path")
     parser.add_argument("--json", action="store_true", help="Print the full report JSON.")

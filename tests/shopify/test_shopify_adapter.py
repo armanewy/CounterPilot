@@ -24,7 +24,7 @@ def _offer() -> ShopifyOfferInput:
     return ShopifyOfferInput(
         merchant_id="merchant_demo_refurb",
         store_id="store_demo_shopify",
-        store_domain="marginpilot-dev-store.myshopify.com",
+        store_domain="counterpilot-dev-store.myshopify.com",
         product_gid="gid://shopify/Product/100",
         variant_gid="gid://shopify/ProductVariant/200",
         sku="refurb-pc-i7",
@@ -44,7 +44,7 @@ def _webhook(topic: str, delivery_id: str, payload: dict) -> tuple[bytes, dict[s
     raw = json.dumps(payload, sort_keys=True).encode("utf-8")
     return raw, {
         "X-Shopify-Hmac-Sha256": sign_webhook(raw, SECRET),
-        "X-Shopify-Shop-Domain": "marginpilot-dev-store.myshopify.com",
+        "X-Shopify-Shop-Domain": "counterpilot-dev-store.myshopify.com",
         "X-Shopify-Webhook-Id": delivery_id,
         "X-Shopify-Topic": topic,
     }
@@ -153,7 +153,7 @@ class ShopifyAdapterTests(unittest.TestCase):
             installed = adapter.install_app_token(
                 merchant_id="merchant_demo_refurb",
                 store_id="store_demo_shopify",
-                store_domain="marginpilot-dev-store.myshopify.com",
+                store_domain="counterpilot-dev-store.myshopify.com",
                 access_token=token,
                 scopes=REQUIRED_DEVELOPMENT_SCOPES,
                 installed_at="2026-06-22T09:00:00+00:00",
@@ -193,7 +193,7 @@ class ShopifyAdapterTests(unittest.TestCase):
             adapter.install_app_token(
                 merchant_id="merchant_demo_refurb",
                 store_id="store_demo_shopify",
-                store_domain="marginpilot-dev-store.myshopify.com",
+                store_domain="counterpilot-dev-store.myshopify.com",
                 access_token="shpat_development_secret_token",
                 scopes=REQUIRED_DEVELOPMENT_SCOPES,
                 installed_at="2026-06-22T09:00:00+00:00",

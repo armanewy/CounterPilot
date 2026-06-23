@@ -12,13 +12,13 @@ from behavior_lab.core import parse_time, stable_hash, utc_now
 from behavior_lab.ledger import ImmutableLedger
 
 
-MARGINPILOT_PRODUCT_ID = "marginpilot_negotiated_commerce"
-MARGINPILOT_SCHEMA_VERSION = "marginpilot_event.v1"
-MARGINPILOT_RECORD_TYPE = "marginpilot_event"
-MARGINPILOT_EXPERIMENT_PREREG_RECORD_TYPE = "marginpilot_experiment_preregistration"
-MARGINPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE = "marginpilot_experiment_assignment"
-MARGINPILOT_EXPERIMENT_OUTCOME_RECORD_TYPE = "marginpilot_experiment_outcome"
-DEFAULT_DATA_DIR = Path(r"C:\OfferLabData\marginpilot")
+COUNTERPILOT_PRODUCT_ID = "counterpilot_negotiated_commerce"
+COUNTERPILOT_SCHEMA_VERSION = "counterpilot_event.v1"
+COUNTERPILOT_RECORD_TYPE = "counterpilot_event"
+COUNTERPILOT_EXPERIMENT_PREREG_RECORD_TYPE = "counterpilot_experiment_preregistration"
+COUNTERPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE = "counterpilot_experiment_assignment"
+COUNTERPILOT_EXPERIMENT_OUTCOME_RECORD_TYPE = "counterpilot_experiment_outcome"
+DEFAULT_DATA_DIR = Path(r"C:\OfferLabData\counterpilot")
 
 EVENT_TYPES = {"merchant_consent", "offer_opened", "shadow_recommendation", "merchant_decision", "outcome_matured"}
 SURFACES = {"product_page_offer", "cart_offer", "quote_request", "merchant_entered"}
@@ -116,12 +116,12 @@ MONEY_FIELDS = {
 }
 
 
-class MarginPilotError(ValueError):
+class CounterpilotError(ValueError):
     pass
 
 
 @dataclass(frozen=True)
-class MarginPilotIngestResult:
+class CounterpilotIngestResult:
     product_id: str
     imported: int
     skipped_existing: int
@@ -129,13 +129,13 @@ class MarginPilotIngestResult:
     event_hashes: list[str]
 
 
-def sample_marginpilot_events() -> dict[str, dict[str, Any]]:
+def sample_counterpilot_events() -> dict[str, dict[str, Any]]:
     now = "2026-06-22T10:00:00-04:00"
     merchant_id = "merchant_demo_refurb_tech"
     offer_id = "offer_demo_001"
     return {
         "merchant_consent": {
-            "schema_version": MARGINPILOT_SCHEMA_VERSION,
+            "schema_version": COUNTERPILOT_SCHEMA_VERSION,
             "event_type": "merchant_consent",
             "event_id": "consent_demo_001",
             "merchant_id": merchant_id,
@@ -144,7 +144,7 @@ def sample_marginpilot_events() -> dict[str, dict[str, Any]]:
                 "merchant_specific_learning_authorized": True,
                 "cross_merchant_pooling_authorized": False,
                 "authorized_uses": ["merchant_specific_shadow_recommendations", "merchant_specific_policy_experiments"],
-                "written_consent_reference": "signed_marginpilot_consent_v1",
+                "written_consent_reference": "signed_counterpilot_consent_v1",
                 "consent_text_hash": stable_hash(
                     {
                         "scope": "merchant-specific learning only",
@@ -157,7 +157,7 @@ def sample_marginpilot_events() -> dict[str, dict[str, Any]]:
             "provenance": {"source": "manual_template"},
         },
         "offer_opened": {
-            "schema_version": MARGINPILOT_SCHEMA_VERSION,
+            "schema_version": COUNTERPILOT_SCHEMA_VERSION,
             "event_type": "offer_opened",
             "event_id": offer_id,
             "merchant_id": merchant_id,
@@ -196,7 +196,7 @@ def sample_marginpilot_events() -> dict[str, dict[str, Any]]:
             "provenance": {"source": "manual_template"},
         },
         "merchant_decision": {
-            "schema_version": MARGINPILOT_SCHEMA_VERSION,
+            "schema_version": COUNTERPILOT_SCHEMA_VERSION,
             "event_type": "merchant_decision",
             "event_id": "decision_demo_001",
             "merchant_id": merchant_id,
@@ -211,7 +211,7 @@ def sample_marginpilot_events() -> dict[str, dict[str, Any]]:
             "provenance": {"source": "manual_template"},
         },
         "outcome_matured": {
-            "schema_version": MARGINPILOT_SCHEMA_VERSION,
+            "schema_version": COUNTERPILOT_SCHEMA_VERSION,
             "event_type": "outcome_matured",
             "event_id": "outcome_demo_001",
             "merchant_id": merchant_id,
@@ -237,15 +237,15 @@ def sample_marginpilot_events() -> dict[str, dict[str, Any]]:
     }
 
 
-def write_marginpilot_templates(output_dir: str | Path) -> dict[str, Any]:
+def write_counterpilot_templates(output_dir: str | Path) -> dict[str, Any]:
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
-    events = sample_marginpilot_events()
+    events = sample_counterpilot_events()
     for name, event in events.items():
         (destination / f"{name}.json").write_text(json.dumps(event, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     manifest = {
-        "schema_version": "marginpilot_templates.v1",
-        "product_id": MARGINPILOT_PRODUCT_ID,
+        "schema_version": "counterpilot_templates.v1",
+        "product_id": COUNTERPILOT_PRODUCT_ID,
         "output_dir": str(destination.resolve()),
         "events": {name: f"{name}.json" for name in sorted(events)},
         "data_rights": {
@@ -261,11 +261,11 @@ def write_marginpilot_templates(output_dir: str | Path) -> dict[str, Any]:
             "no automatic negotiation",
         ],
     }
-    (destination / "marginpilot_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (destination / "counterpilot_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return manifest
 
 
-def load_marginpilot_events(path: str | Path) -> list[dict[str, Any]]:
+def load_counterpilot_events(path: str | Path) -> list[dict[str, Any]]:
     source = Path(path)
     text = source.read_text(encoding="utf-8")
     if not text.strip():
@@ -282,9 +282,9 @@ def load_marginpilot_events(path: str | Path) -> list[dict[str, Any]]:
             try:
                 item = json.loads(line)
             except json.JSONDecodeError as exc:
-                raise MarginPilotError(f"Invalid JSONL at line {line_number}") from exc
+                raise CounterpilotError(f"Invalid JSONL at line {line_number}") from exc
             if not isinstance(item, dict):
-                raise MarginPilotError(f"Event at line {line_number} must be an object")
+                raise CounterpilotError(f"Event at line {line_number} must be an object")
             events.append(item)
         return events
     if isinstance(payload, dict) and isinstance(payload.get("events"), list):
@@ -294,33 +294,33 @@ def load_marginpilot_events(path: str | Path) -> list[dict[str, Any]]:
     elif isinstance(payload, dict):
         events = [payload]
     else:
-        raise MarginPilotError("Expected JSON object, array, envelope, or JSONL")
+        raise CounterpilotError("Expected JSON object, array, envelope, or JSONL")
     if not all(isinstance(item, dict) for item in events):
-        raise MarginPilotError("All events must be JSON objects")
+        raise CounterpilotError("All events must be JSON objects")
     return list(events)
 
 
-def ingest_marginpilot_events(path: str | Path, *, data_dir: str | Path = DEFAULT_DATA_DIR) -> MarginPilotIngestResult:
+def ingest_counterpilot_events(path: str | Path, *, data_dir: str | Path = DEFAULT_DATA_DIR) -> CounterpilotIngestResult:
     ledger = ImmutableLedger(Path(data_dir) / "ledger.jsonl")
     imported = 0
     skipped = 0
     hashes: list[str] = []
-    for raw in load_marginpilot_events(path):
-        event = with_event_hash(validate_marginpilot_event(dict(raw)))
-        record_id = f"marginpilot_{event['merchant_id']}_{event['event_type']}_{event['event_id']}"
-        existing = ledger.find_record(record_id, MARGINPILOT_RECORD_TYPE)
+    for raw in load_counterpilot_events(path):
+        event = with_event_hash(validate_counterpilot_event(dict(raw)))
+        record_id = f"counterpilot_{event['merchant_id']}_{event['event_type']}_{event['event_id']}"
+        existing = ledger.find_record(record_id, COUNTERPILOT_RECORD_TYPE)
         if existing is not None:
             if existing.get("payload") != event:
-                raise MarginPilotError(f"Existing event {record_id!r} differs from imported event")
+                raise CounterpilotError(f"Existing event {record_id!r} differs from imported event")
             skipped += 1
             hashes.append(str(event["event_hash"]))
             continue
-        ledger.append(MARGINPILOT_RECORD_TYPE, event, record_id=record_id, unique_record_id=True)
+        ledger.append(COUNTERPILOT_RECORD_TYPE, event, record_id=record_id, unique_record_id=True)
         imported += 1
         hashes.append(str(event["event_hash"]))
     ledger.verify_hash_chain()
-    return MarginPilotIngestResult(
-        product_id=MARGINPILOT_PRODUCT_ID,
+    return CounterpilotIngestResult(
+        product_id=COUNTERPILOT_PRODUCT_ID,
         imported=imported,
         skipped_existing=skipped,
         ledger=str(ledger.path.resolve()),
@@ -328,15 +328,15 @@ def ingest_marginpilot_events(path: str | Path, *, data_dir: str | Path = DEFAUL
     )
 
 
-def validate_marginpilot_event(event: dict[str, Any]) -> dict[str, Any]:
-    if event.get("schema_version") != MARGINPILOT_SCHEMA_VERSION:
-        raise MarginPilotError(f"schema_version must be {MARGINPILOT_SCHEMA_VERSION!r}")
+def validate_counterpilot_event(event: dict[str, Any]) -> dict[str, Any]:
+    if event.get("schema_version") != COUNTERPILOT_SCHEMA_VERSION:
+        raise CounterpilotError(f"schema_version must be {COUNTERPILOT_SCHEMA_VERSION!r}")
     event_type = event.get("event_type")
     if event_type not in EVENT_TYPES:
-        raise MarginPilotError(f"event_type must be one of {sorted(EVENT_TYPES)}")
+        raise CounterpilotError(f"event_type must be one of {sorted(EVENT_TYPES)}")
     for key in ["event_id", "merchant_id", "occurred_at"]:
         if not isinstance(event.get(key), str) or not str(event[key]).strip():
-            raise MarginPilotError(f"{key} must be a non-empty string")
+            raise CounterpilotError(f"{key} must be a non-empty string")
     parse_time(str(event["occurred_at"]))
     _reject_pii(event)
     if event_type == "merchant_consent":
@@ -351,7 +351,7 @@ def validate_marginpilot_event(event: dict[str, Any]) -> dict[str, Any]:
         _validate_outcome(event)
     provenance = event.get("provenance")
     if not isinstance(provenance, dict):
-        raise MarginPilotError("provenance must be an object")
+        raise CounterpilotError("provenance must be an object")
     return event
 
 
@@ -367,7 +367,7 @@ def with_event_hash(event: dict[str, Any]) -> dict[str, Any]:
     return prepared
 
 
-def marginpilot_inbox(data_dir: str | Path = DEFAULT_DATA_DIR, *, merchant_id: str | None = None) -> dict[str, Any]:
+def counterpilot_inbox(data_dir: str | Path = DEFAULT_DATA_DIR, *, merchant_id: str | None = None) -> dict[str, Any]:
     events = _events(data_dir, merchant_id=merchant_id)
     opened = [event for event in events if event["event_type"] == "offer_opened"]
     decided_offer_ids = {_merchant_offer_key(event) for event in events if event["event_type"] == "merchant_decision"}
@@ -392,8 +392,8 @@ def marginpilot_inbox(data_dir: str | Path = DEFAULT_DATA_DIR, *, merchant_id: s
             }
         )
     return {
-        "schema_version": "marginpilot_inbox.v1",
-        "product_id": MARGINPILOT_PRODUCT_ID,
+        "schema_version": "counterpilot_inbox.v1",
+        "product_id": COUNTERPILOT_PRODUCT_ID,
         "merchant_id": merchant_id,
         "ledger": str((Path(data_dir) / "ledger.jsonl").resolve()),
         "open_offers": rows,
@@ -402,7 +402,7 @@ def marginpilot_inbox(data_dir: str | Path = DEFAULT_DATA_DIR, *, merchant_id: s
     }
 
 
-def marginpilot_audit(data_dir: str | Path = DEFAULT_DATA_DIR, *, merchant_id: str | None = None) -> dict[str, Any]:
+def counterpilot_audit(data_dir: str | Path = DEFAULT_DATA_DIR, *, merchant_id: str | None = None) -> dict[str, Any]:
     events = _events(data_dir, merchant_id=merchant_id)
     offers = [event for event in events if event["event_type"] == "offer_opened"]
     decisions = [event for event in events if event["event_type"] == "merchant_decision"]
@@ -428,8 +428,8 @@ def marginpilot_audit(data_dir: str | Path = DEFAULT_DATA_DIR, *, merchant_id: s
         "no_customer_pii_detected": _payloads_have_no_pii(events),
     }
     return {
-        "schema_version": "marginpilot_audit.v1",
-        "product_id": MARGINPILOT_PRODUCT_ID,
+        "schema_version": "counterpilot_audit.v1",
+        "product_id": COUNTERPILOT_PRODUCT_ID,
         "merchant_id": merchant_id,
         "merchant_namespaces": merchant_ids,
         "ledger": str((Path(data_dir) / "ledger.jsonl").resolve()),
@@ -470,7 +470,7 @@ def marginpilot_audit(data_dir: str | Path = DEFAULT_DATA_DIR, *, merchant_id: s
     }
 
 
-def marginpilot_utility_report(data_dir: str | Path = DEFAULT_DATA_DIR, *, merchant_id: str | None = None) -> dict[str, Any]:
+def counterpilot_utility_report(data_dir: str | Path = DEFAULT_DATA_DIR, *, merchant_id: str | None = None) -> dict[str, Any]:
     events = _events(data_dir, merchant_id=merchant_id)
     threads = _offer_threads(events)
     decided_threads = [thread for thread in threads if thread["decision"] is not None]
@@ -489,8 +489,8 @@ def marginpilot_utility_report(data_dir: str | Path = DEFAULT_DATA_DIR, *, merch
     concessions = [_concession_row(thread) for thread in decided_threads]
     concessions = [row for row in concessions if row is not None]
     return {
-        "schema_version": "marginpilot_merchant_utility_report.v1",
-        "product_id": MARGINPILOT_PRODUCT_ID,
+        "schema_version": "counterpilot_merchant_utility_report.v1",
+        "product_id": COUNTERPILOT_PRODUCT_ID,
         "merchant_id": merchant_id,
         "ledger": str((Path(data_dir) / "ledger.jsonl").resolve()),
         "model_training": "not_run",
@@ -526,7 +526,7 @@ def marginpilot_utility_report(data_dir: str | Path = DEFAULT_DATA_DIR, *, merch
     }
 
 
-def marginpilot_rule_simulation(
+def counterpilot_rule_simulation(
     data_dir: str | Path = DEFAULT_DATA_DIR,
     *,
     rule: dict[str, Any] | None = None,
@@ -556,8 +556,8 @@ def marginpilot_rule_simulation(
     comparable = [row for row in rows if row["observed_mature_margin"] is not None]
     matched = [row for row in comparable if row["actions_match"]]
     return {
-        "schema_version": "marginpilot_rule_simulation.v1",
-        "product_id": MARGINPILOT_PRODUCT_ID,
+        "schema_version": "counterpilot_rule_simulation.v1",
+        "product_id": COUNTERPILOT_PRODUCT_ID,
         "merchant_id": merchant_id,
         "rule": rule_body,
         "not_causal": True,
@@ -577,7 +577,7 @@ def marginpilot_rule_simulation(
     }
 
 
-def marginpilot_shadow_recommend(
+def counterpilot_shadow_recommend(
     data_dir: str | Path = DEFAULT_DATA_DIR,
     *,
     merchant_id: str,
@@ -594,34 +594,34 @@ def marginpilot_shadow_recommend(
     threads = _offer_threads(events)
     target = next((thread for thread in threads if thread["offer"]["offer_id"] == offer_id), None)
     if target is None:
-        raise MarginPilotError(f"offer_id not found for shadow recommendation: {offer_id}")
+        raise CounterpilotError(f"offer_id not found for shadow recommendation: {offer_id}")
     holdouts = _shadow_holdout_assignments(ImmutableLedger(data_root / "ledger.jsonl"), merchant_id=merchant_id, offer_id=offer_id)
     if any(assignment["assigned_arm"] == "control" for assignment in holdouts):
-        raise MarginPilotError("persistent holdout control assignment blocks shadow recommendation exposure")
+        raise CounterpilotError("persistent holdout control assignment blocks shadow recommendation exposure")
     if target["decision"] is not None:
         if append:
-            raise MarginPilotError("shadow recommendations must be generated before merchant decision")
+            raise CounterpilotError("shadow recommendations must be generated before merchant decision")
         recommendation = _shadow_abstain(target, generated_at, config_body, ["merchant_decision_already_recorded"], comparable_threads=[])
     else:
         recommendation = _build_shadow_recommendation(target, threads, generated_at, config_body)
     if append:
         event = _shadow_recommendation_event(recommendation, target)
         ledger = ImmutableLedger(data_root / "ledger.jsonl")
-        record_id = f"marginpilot_{merchant_id}_shadow_recommendation_{event['event_id']}"
+        record_id = f"counterpilot_{merchant_id}_shadow_recommendation_{event['event_id']}"
         existing_shadow = _existing_shadow_recommendation(events, merchant_id=merchant_id, offer_id=offer_id)
         if existing_shadow is not None:
             if existing_shadow["recommendation"].get("recommendation_id") != recommendation["recommendation_id"]:
-                raise MarginPilotError("shadow recommendation already exists for this offer with a different policy config")
+                raise CounterpilotError("shadow recommendation already exists for this offer with a different policy config")
             return existing_shadow["recommendation"]
-        existing = ledger.find_record(record_id, MARGINPILOT_RECORD_TYPE)
+        existing = ledger.find_record(record_id, COUNTERPILOT_RECORD_TYPE)
         if existing is None:
-            ledger.append(MARGINPILOT_RECORD_TYPE, with_event_hash(validate_marginpilot_event(event)), record_id=record_id, unique_record_id=True)
-        elif existing.get("payload") != with_event_hash(validate_marginpilot_event(event)):
-            raise MarginPilotError(f"Existing shadow recommendation {record_id!r} differs from generated event")
+            ledger.append(COUNTERPILOT_RECORD_TYPE, with_event_hash(validate_counterpilot_event(event)), record_id=record_id, unique_record_id=True)
+        elif existing.get("payload") != with_event_hash(validate_counterpilot_event(event)):
+            raise CounterpilotError(f"Existing shadow recommendation {record_id!r} differs from generated event")
     return recommendation
 
 
-def marginpilot_experiment_preregister(
+def counterpilot_experiment_preregister(
     data_dir: str | Path = DEFAULT_DATA_DIR,
     *,
     experiment_id: str,
@@ -637,19 +637,19 @@ def marginpilot_experiment_preregister(
     stratification_fields: list[str] | None = None,
 ) -> dict[str, Any]:
     if experiment_type not in EXPERIMENT_TYPES:
-        raise MarginPilotError(f"unknown experiment_type: {experiment_type!r}")
+        raise CounterpilotError(f"unknown experiment_type: {experiment_type!r}")
     if not isinstance(experiment_id, str) or not experiment_id.strip():
-        raise MarginPilotError("experiment_id is required")
+        raise CounterpilotError("experiment_id is required")
     if planned_units <= 0:
-        raise MarginPilotError("planned_units must be positive")
+        raise CounterpilotError("planned_units must be positive")
     if not 0.0 < assignment_probability < 1.0:
-        raise MarginPilotError("assignment_probability must be strictly between 0 and 1")
+        raise CounterpilotError("assignment_probability must be strictly between 0 and 1")
     treatment, control, outcome, unit = _experiment_defaults(experiment_type, treatment_policy, control_policy, primary_outcome, unit_of_randomization)
     if treatment == control:
-        raise MarginPilotError("treatment and control policies must differ")
+        raise CounterpilotError("treatment and control policies must differ")
     guardrail_body = _validate_experiment_guardrails(experiment_type, guardrails or {})
     payload = {
-        "schema_version": "marginpilot_experiment_preregistration.v1",
+        "schema_version": "counterpilot_experiment_preregistration.v1",
         "experiment_id": experiment_id,
         "experiment_type": experiment_type,
         "merchant_id": merchant_id,
@@ -668,18 +668,18 @@ def marginpilot_experiment_preregister(
     }
     payload["preregistration_hash"] = stable_hash(payload)
     payload["created_at"] = utc_now()
-    record_id = f"marginpilot_experiment_prereg_{experiment_id}"
+    record_id = f"counterpilot_experiment_prereg_{experiment_id}"
     ledger = ImmutableLedger(Path(data_dir) / "ledger.jsonl")
-    existing = ledger.find_record(record_id, MARGINPILOT_EXPERIMENT_PREREG_RECORD_TYPE)
+    existing = ledger.find_record(record_id, COUNTERPILOT_EXPERIMENT_PREREG_RECORD_TYPE)
     if existing is not None:
         if existing["payload"].get("preregistration_hash") != payload["preregistration_hash"]:
-            raise MarginPilotError("experiment_id already preregistered with different payload")
+            raise CounterpilotError("experiment_id already preregistered with different payload")
         return existing["payload"]
-    ledger.append(MARGINPILOT_EXPERIMENT_PREREG_RECORD_TYPE, payload, record_id=record_id, unique_record_id=True)
+    ledger.append(COUNTERPILOT_EXPERIMENT_PREREG_RECORD_TYPE, payload, record_id=record_id, unique_record_id=True)
     return payload
 
 
-def marginpilot_experiment_assign(
+def counterpilot_experiment_assign(
     data_dir: str | Path = DEFAULT_DATA_DIR,
     *,
     experiment_id: str,
@@ -691,44 +691,44 @@ def marginpilot_experiment_assign(
     ledger = ImmutableLedger(data_root / "ledger.jsonl")
     prereg = _experiment_preregistration(ledger, experiment_id)
     if prereg["merchant_id"] != merchant_id:
-        raise MarginPilotError("experiment merchant_id does not match assignment merchant_id")
+        raise CounterpilotError("experiment merchant_id does not match assignment merchant_id")
     events = _events(data_root, merchant_id=merchant_id)
     threads = _offer_threads(events)
     target = next((thread for thread in threads if thread["offer"]["offer_id"] == offer_id), None)
     if target is None:
-        raise MarginPilotError(f"offer_id not found for experiment assignment: {offer_id}")
+        raise CounterpilotError(f"offer_id not found for experiment assignment: {offer_id}")
     existing = _existing_experiment_assignment(ledger, experiment_id=experiment_id, merchant_id=merchant_id, offer_id=offer_id)
     if existing is not None:
         return existing
     if _existing_shadow_recommendation(events, merchant_id=merchant_id, offer_id=offer_id) is not None:
-        raise MarginPilotError("experiment assignment must occur before shadow recommendation exposure")
+        raise CounterpilotError("experiment assignment must occur before shadow recommendation exposure")
     if target["decision"] is not None:
-        raise MarginPilotError("experiment assignment must occur before merchant decision")
+        raise CounterpilotError("experiment assignment must occur before merchant decision")
     if target["outcome"] is not None:
-        raise MarginPilotError("experiment assignment must occur before outcome is recorded")
+        raise CounterpilotError("experiment assignment must occur before outcome is recorded")
     if _contains_shadow_sensitive_feature(target["offer"]["pre_decision_context"]):
-        raise MarginPilotError("experiment assignment refuses customer-level sensitive targeting features")
+        raise CounterpilotError("experiment assignment refuses customer-level sensitive targeting features")
     assignment_time = assigned_at or utc_now()
     parse_time(assignment_time)
     if parse_time(assignment_time) < parse_time(str(prereg["created_at"])):
-        raise MarginPilotError("assignment may not be backdated before preregistration")
+        raise CounterpilotError("assignment may not be backdated before preregistration")
     if parse_time(assignment_time) < parse_time(str(target["offer"]["occurred_at"])):
-        raise MarginPilotError("assignment may not occur before offer opening")
+        raise CounterpilotError("assignment may not occur before offer opening")
     assignments = [
         record["payload"]
-        for record in ledger.scan(MARGINPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE)
+        for record in ledger.scan(COUNTERPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE)
         if record["payload"].get("experiment_id") == experiment_id
     ]
     if len(assignments) >= int(prereg["planned_units"]):
-        raise MarginPilotError("experiment planned_units assignment limit reached")
+        raise CounterpilotError("experiment planned_units assignment limit reached")
     assignment_index = len(assignments)
     probability = float(prereg["assignment_probability"])
     draw = int(stable_hash({"experiment_id": experiment_id, "offer_id": offer_id, "preregistration_hash": prereg["preregistration_hash"]})[:16], 16) / float(16**16)
     assigned_arm = "treatment" if draw < probability else "control"
     block = _experiment_block(target["offer"]["pre_decision_context"])
     payload = {
-        "schema_version": "marginpilot_experiment_assignment.v1",
-        "assignment_id": "mp_exp_assign_" + stable_hash({"experiment_id": experiment_id, "offer_id": offer_id})[:24],
+        "schema_version": "counterpilot_experiment_assignment.v1",
+        "assignment_id": "cp_exp_assign_" + stable_hash({"experiment_id": experiment_id, "offer_id": offer_id})[:24],
         "experiment_id": experiment_id,
         "merchant_id": merchant_id,
         "offer_id": offer_id,
@@ -745,7 +745,7 @@ def marginpilot_experiment_assign(
     }
     parse_time(payload["assigned_at"])
     ledger.append(
-        MARGINPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE,
+        COUNTERPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE,
         payload,
         record_id=payload["assignment_id"],
         unique_record_id=True,
@@ -753,7 +753,7 @@ def marginpilot_experiment_assign(
     return payload
 
 
-def marginpilot_experiment_record_outcome(
+def counterpilot_experiment_record_outcome(
     data_dir: str | Path = DEFAULT_DATA_DIR,
     *,
     assignment_id: str,
@@ -766,10 +766,10 @@ def marginpilot_experiment_record_outcome(
     assignment = _assignment_by_id(ledger, assignment_id)
     prereg = _experiment_preregistration(ledger, assignment["experiment_id"])
     if prereg["primary_outcome"] not in outcomes:
-        raise MarginPilotError(f"outcome missing primary outcome {prereg['primary_outcome']!r}")
-    existing = ledger.find_record(f"marginpilot_experiment_outcome_{assignment_id}", MARGINPILOT_EXPERIMENT_OUTCOME_RECORD_TYPE)
+        raise CounterpilotError(f"outcome missing primary outcome {prereg['primary_outcome']!r}")
+    existing = ledger.find_record(f"counterpilot_experiment_outcome_{assignment_id}", COUNTERPILOT_EXPERIMENT_OUTCOME_RECORD_TYPE)
     payload = {
-        "schema_version": "marginpilot_experiment_outcome.v1",
+        "schema_version": "counterpilot_experiment_outcome.v1",
         "assignment_id": assignment_id,
         "experiment_id": assignment["experiment_id"],
         "merchant_id": assignment["merchant_id"],
@@ -781,32 +781,32 @@ def marginpilot_experiment_record_outcome(
     }
     parse_time(payload["recorded_at"])
     if parse_time(payload["recorded_at"]) < parse_time(str(assignment["assigned_at"])):
-        raise MarginPilotError("experiment outcome may not be recorded before assignment")
+        raise CounterpilotError("experiment outcome may not be recorded before assignment")
     _validate_experiment_outcome_value(payload["outcomes"][prereg["primary_outcome"]], prereg["primary_outcome"])
     if existing is not None:
         if existing["payload"] != payload:
-            raise MarginPilotError("experiment outcome already exists with a different payload")
+            raise CounterpilotError("experiment outcome already exists with a different payload")
         return existing["payload"]
     ledger.append(
-        MARGINPILOT_EXPERIMENT_OUTCOME_RECORD_TYPE,
+        COUNTERPILOT_EXPERIMENT_OUTCOME_RECORD_TYPE,
         payload,
-        record_id=f"marginpilot_experiment_outcome_{assignment_id}",
+        record_id=f"counterpilot_experiment_outcome_{assignment_id}",
         unique_record_id=True,
     )
     return payload
 
 
-def marginpilot_experiment_report(data_dir: str | Path = DEFAULT_DATA_DIR, *, experiment_id: str) -> dict[str, Any]:
+def counterpilot_experiment_report(data_dir: str | Path = DEFAULT_DATA_DIR, *, experiment_id: str) -> dict[str, Any]:
     ledger = ImmutableLedger(Path(data_dir) / "ledger.jsonl")
     prereg = _experiment_preregistration(ledger, experiment_id)
     assignments = [
         record["payload"]
-        for record in ledger.scan(MARGINPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE)
+        for record in ledger.scan(COUNTERPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE)
         if record["payload"].get("experiment_id") == experiment_id
     ]
     outcomes_by_assignment = {
         record["payload"]["assignment_id"]: record["payload"]
-        for record in ledger.scan(MARGINPILOT_EXPERIMENT_OUTCOME_RECORD_TYPE)
+        for record in ledger.scan(COUNTERPILOT_EXPERIMENT_OUTCOME_RECORD_TYPE)
         if record["payload"].get("experiment_id") == experiment_id
     }
     rows = []
@@ -824,7 +824,7 @@ def marginpilot_experiment_report(data_dir: str | Path = DEFAULT_DATA_DIR, *, ex
         if row["primary_value"] is not None:
             by_block[block]["observed_outcomes"] += 1
     return {
-        "schema_version": "marginpilot_experiment_report.v1",
+        "schema_version": "counterpilot_experiment_report.v1",
         "experiment_id": experiment_id,
         "experiment_type": prereg["experiment_type"],
         "primary_outcome": prereg["primary_outcome"],
@@ -846,7 +846,7 @@ def marginpilot_experiment_report(data_dir: str | Path = DEFAULT_DATA_DIR, *, ex
 
 def _events(data_dir: str | Path, *, merchant_id: str | None) -> list[dict[str, Any]]:
     ledger = ImmutableLedger(Path(data_dir) / "ledger.jsonl")
-    events = ledger.payloads(MARGINPILOT_RECORD_TYPE)
+    events = ledger.payloads(COUNTERPILOT_RECORD_TYPE)
     if merchant_id is not None:
         events = [event for event in events if event.get("merchant_id") == merchant_id]
     return events
@@ -883,7 +883,7 @@ def _payloads_have_no_pii(events: list[dict[str, Any]]) -> bool:
     try:
         for event in events:
             _reject_pii(event)
-    except MarginPilotError:
+    except CounterpilotError:
         return False
     return True
 
@@ -983,7 +983,7 @@ def _experiment_defaults(
             unit_of_randomization or "eligible_negotiation_session",
         )
     return (
-        treatment_policy or "marginpilot_counter_rule",
+        treatment_policy or "counterpilot_counter_rule",
         control_policy or "fixed_merchant_counter_rule",
         primary_outcome or "mature_contribution_margin_per_eligible_negotiation",
         unit_of_randomization or "listing_or_negotiation_session",
@@ -996,29 +996,29 @@ def _validate_experiment_guardrails(experiment_type: str, guardrails: dict[str, 
         required = ["minimum_net_floor", "maximum_concession_rate"]
         missing = [key for key in required if key not in body]
         if missing:
-            raise MarginPilotError(f"offer_policy_comparison requires guardrails: {missing}")
+            raise CounterpilotError(f"offer_policy_comparison requires guardrails: {missing}")
         if float(body["minimum_net_floor"]) < 0:
-            raise MarginPilotError("minimum_net_floor may not be negative")
+            raise CounterpilotError("minimum_net_floor may not be negative")
         if not 0.0 <= float(body["maximum_concession_rate"]) <= 1.0:
-            raise MarginPilotError("maximum_concession_rate must be in [0, 1]")
+            raise CounterpilotError("maximum_concession_rate must be in [0, 1]")
     body.setdefault("persistent_holdout", True)
     body.setdefault("no_customer_level_sensitive_targeting", True)
     if body["persistent_holdout"] is not True:
-        raise MarginPilotError("experiments require persistent_holdout true")
+        raise CounterpilotError("experiments require persistent_holdout true")
     if body["no_customer_level_sensitive_targeting"] is not True:
-        raise MarginPilotError("experiments require no customer-level sensitive targeting")
+        raise CounterpilotError("experiments require no customer-level sensitive targeting")
     return body
 
 
 def _experiment_preregistration(ledger: ImmutableLedger, experiment_id: str) -> dict[str, Any]:
-    record = ledger.find_record(f"marginpilot_experiment_prereg_{experiment_id}", MARGINPILOT_EXPERIMENT_PREREG_RECORD_TYPE)
+    record = ledger.find_record(f"counterpilot_experiment_prereg_{experiment_id}", COUNTERPILOT_EXPERIMENT_PREREG_RECORD_TYPE)
     if record is None:
-        raise MarginPilotError(f"unknown MarginPilot experiment_id: {experiment_id}")
+        raise CounterpilotError(f"unknown Counterpilot experiment_id: {experiment_id}")
     return record["payload"]
 
 
 def _existing_experiment_assignment(ledger: ImmutableLedger, *, experiment_id: str, merchant_id: str, offer_id: str) -> dict[str, Any] | None:
-    for record in ledger.scan(MARGINPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE):
+    for record in ledger.scan(COUNTERPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE):
         payload = record["payload"]
         if payload.get("experiment_id") == experiment_id and payload.get("merchant_id") == merchant_id and payload.get("offer_id") == offer_id:
             return payload
@@ -1027,13 +1027,13 @@ def _existing_experiment_assignment(ledger: ImmutableLedger, *, experiment_id: s
 
 def _shadow_holdout_assignments(ledger: ImmutableLedger, *, merchant_id: str, offer_id: str) -> list[dict[str, Any]]:
     matches = []
-    for record in ledger.scan(MARGINPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE):
+    for record in ledger.scan(COUNTERPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE):
         payload = record["payload"]
         if payload.get("merchant_id") != merchant_id or payload.get("offer_id") != offer_id:
             continue
         try:
             prereg = _experiment_preregistration(ledger, str(payload["experiment_id"]))
-        except MarginPilotError:
+        except CounterpilotError:
             continue
         if prereg.get("experiment_type") == "shadow_recommendation_exposure":
             matches.append(payload)
@@ -1041,9 +1041,9 @@ def _shadow_holdout_assignments(ledger: ImmutableLedger, *, merchant_id: str, of
 
 
 def _assignment_by_id(ledger: ImmutableLedger, assignment_id: str) -> dict[str, Any]:
-    record = ledger.find_record(assignment_id, MARGINPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE)
+    record = ledger.find_record(assignment_id, COUNTERPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE)
     if record is None:
-        raise MarginPilotError(f"unknown MarginPilot assignment_id: {assignment_id}")
+        raise CounterpilotError(f"unknown Counterpilot assignment_id: {assignment_id}")
     return record["payload"]
 
 
@@ -1065,10 +1065,10 @@ def _experiment_block(context: dict[str, Any]) -> dict[str, str]:
 def _validate_experiment_outcome_value(value: Any, outcome_name: str) -> None:
     if outcome_name == "merchant_adopted_recommendation":
         if not isinstance(value, bool):
-            raise MarginPilotError("merchant_adopted_recommendation must be boolean")
+            raise CounterpilotError("merchant_adopted_recommendation must be boolean")
         return
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
-        raise MarginPilotError(f"{outcome_name} must be numeric")
+        raise CounterpilotError(f"{outcome_name} must be numeric")
 
 
 def _normalize_shadow_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -1078,11 +1078,11 @@ def _normalize_shadow_config(config: dict[str, Any]) -> dict[str, Any]:
         "traffic_max_age_hours": float(config.get("traffic_max_age_hours", 168.0)),
     }
     if body["floor_buffer"] < 0:
-        raise MarginPilotError("floor_buffer may not be negative")
+        raise CounterpilotError("floor_buffer may not be negative")
     if body["minimum_comparable_mature_outcomes"] < 1:
-        raise MarginPilotError("minimum_comparable_mature_outcomes must be positive")
+        raise CounterpilotError("minimum_comparable_mature_outcomes must be positive")
     if body["traffic_max_age_hours"] <= 0:
-        raise MarginPilotError("traffic_max_age_hours must be positive")
+        raise CounterpilotError("traffic_max_age_hours must be positive")
     return body
 
 
@@ -1180,7 +1180,7 @@ def _shadow_payload(
 ) -> dict[str, Any]:
     offer = target["offer"]
     body = {
-        "schema_version": "marginpilot_shadow_recommendation.v1",
+        "schema_version": "counterpilot_shadow_recommendation.v1",
         "recommendation_id": "shadow_" + stable_hash(
             {
                 "config": config,
@@ -1222,7 +1222,7 @@ def _shadow_payload(
 
 def _shadow_recommendation_event(recommendation: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
     return {
-        "schema_version": MARGINPILOT_SCHEMA_VERSION,
+        "schema_version": COUNTERPILOT_SCHEMA_VERSION,
         "event_type": "shadow_recommendation",
         "event_id": str(recommendation["recommendation_id"]),
         "merchant_id": recommendation["merchant_id"],
@@ -1230,7 +1230,7 @@ def _shadow_recommendation_event(recommendation: dict[str, Any], target: dict[st
         "occurred_at": recommendation["generated_at"],
         "recommendation": recommendation,
         "provenance": {
-            "source": "marginpilot_shadow_recommend",
+            "source": "counterpilot_shadow_recommend",
             "offer_event_hash": target["offer"].get("event_hash"),
             "sequence": "recommendation_generated_before_merchant_decision",
         },
@@ -1461,7 +1461,7 @@ def _merchant_value_statement(final_sales: list[float], mature_margins: list[flo
 def _normalize_rule(rule: dict[str, Any]) -> dict[str, Any]:
     rule_type = str(rule.get("rule_type") or "counter_percent_above_offer")
     if rule_type not in {"counter_percent_above_offer", "accept_if_margin_then_counter", "decline_below_margin_floor"}:
-        raise MarginPilotError(f"unknown fixed rule type: {rule_type!r}")
+        raise CounterpilotError(f"unknown fixed rule type: {rule_type!r}")
     normalized = {
         "rule_type": rule_type,
         "counter_markup_pct": float(rule.get("counter_markup_pct", 0.08)),
@@ -1469,11 +1469,11 @@ def _normalize_rule(rule: dict[str, Any]) -> dict[str, Any]:
         "min_margin_buffer": float(rule.get("min_margin_buffer", 0.0)),
     }
     if normalized["counter_markup_pct"] < 0:
-        raise MarginPilotError("counter_markup_pct may not be negative")
+        raise CounterpilotError("counter_markup_pct may not be negative")
     if normalized["max_counter_to_asking_ratio"] <= 0:
-        raise MarginPilotError("max_counter_to_asking_ratio must be positive")
+        raise CounterpilotError("max_counter_to_asking_ratio must be positive")
     if normalized["min_margin_buffer"] < 0:
-        raise MarginPilotError("min_margin_buffer may not be negative")
+        raise CounterpilotError("min_margin_buffer may not be negative")
     return normalized
 
 
@@ -1545,121 +1545,121 @@ def _action_signature(action: dict[str, Any]) -> tuple[str, float | None]:
 def _validate_consent(event: dict[str, Any]) -> None:
     consent = event.get("consent")
     if not isinstance(consent, dict):
-        raise MarginPilotError("merchant_consent requires consent object")
+        raise CounterpilotError("merchant_consent requires consent object")
     if consent.get("merchant_specific_learning_authorized") is not True:
-        raise MarginPilotError("merchant_specific_learning_authorized must be true for MarginPilot learning consent")
+        raise CounterpilotError("merchant_specific_learning_authorized must be true for Counterpilot learning consent")
     if consent.get("cross_merchant_pooling_authorized") not in {True, False}:
-        raise MarginPilotError("cross_merchant_pooling_authorized must be explicit true/false")
+        raise CounterpilotError("cross_merchant_pooling_authorized must be explicit true/false")
     if consent.get("pii_exclusion_acknowledged") is not True:
-        raise MarginPilotError("pii_exclusion_acknowledged must be true")
+        raise CounterpilotError("pii_exclusion_acknowledged must be true")
     if not isinstance(consent.get("authorized_uses"), list) or not consent["authorized_uses"]:
-        raise MarginPilotError("authorized_uses must be a non-empty list")
+        raise CounterpilotError("authorized_uses must be a non-empty list")
     if not isinstance(consent.get("written_consent_reference"), str) or not consent["written_consent_reference"].strip():
-        raise MarginPilotError("written_consent_reference is required")
+        raise CounterpilotError("written_consent_reference is required")
     if not isinstance(consent.get("consent_text_hash"), str) or not consent["consent_text_hash"].strip():
-        raise MarginPilotError("consent_text_hash is required")
+        raise CounterpilotError("consent_text_hash is required")
 
 
 def _validate_offer_opened(event: dict[str, Any]) -> None:
     for key in ["offer_id", "listing_id", "surface", "observation_cutoff"]:
         if not isinstance(event.get(key), str) or not str(event[key]).strip():
-            raise MarginPilotError(f"offer_opened requires non-empty {key}")
+            raise CounterpilotError(f"offer_opened requires non-empty {key}")
     if event["surface"] not in SURFACES:
-        raise MarginPilotError(f"surface must be one of {sorted(SURFACES)}")
+        raise CounterpilotError(f"surface must be one of {sorted(SURFACES)}")
     if parse_time(str(event["observation_cutoff"])) > parse_time(str(event["occurred_at"])):
-        raise MarginPilotError("observation_cutoff may not be after occurred_at")
+        raise CounterpilotError("observation_cutoff may not be after occurred_at")
     context = event.get("pre_decision_context")
     if not isinstance(context, dict):
-        raise MarginPilotError("pre_decision_context must be an object")
+        raise CounterpilotError("pre_decision_context must be an object")
     _reject_post_decision_context(context)
     required = ["listing_id", "category", "currency", "asking_price", "buyer_offer_amount", "platform_fee_rate", "shipping_cost", "merchant_floor_mature_margin"]
     missing = [key for key in required if key not in context]
     if missing:
-        raise MarginPilotError(f"pre_decision_context missing fields: {missing}")
+        raise CounterpilotError(f"pre_decision_context missing fields: {missing}")
     if context["listing_id"] != event["listing_id"]:
-        raise MarginPilotError("pre_decision_context.listing_id must match listing_id")
+        raise CounterpilotError("pre_decision_context.listing_id must match listing_id")
     _validate_money_mapping(context)
     if context.get("cost_basis") is not None and float(context["cost_basis"]) < 0:
-        raise MarginPilotError("cost_basis may not be negative")
+        raise CounterpilotError("cost_basis may not be negative")
     actions = event.get("available_actions")
     if not isinstance(actions, list) or not actions:
-        raise MarginPilotError("available_actions must be a non-empty list")
+        raise CounterpilotError("available_actions must be a non-empty list")
     for action in actions:
         normalized = _normalize_action(action)
         if normalized["action"] == "manual_other":
-            raise MarginPilotError("available_actions must enumerate concrete surface actions, not manual_other")
+            raise CounterpilotError("available_actions must enumerate concrete surface actions, not manual_other")
 
 
 def _validate_merchant_decision(event: dict[str, Any]) -> None:
     if not isinstance(event.get("offer_id"), str) or not event["offer_id"].strip():
-        raise MarginPilotError("merchant_decision requires offer_id")
+        raise CounterpilotError("merchant_decision requires offer_id")
     action = _normalize_action(event.get("selected_action"))
     if action["action"] not in MERCHANT_DECISIONS:
-        raise MarginPilotError("selected_action is not a merchant decision")
+        raise CounterpilotError("selected_action is not a merchant decision")
     assignment = event.get("assignment")
     if not isinstance(assignment, dict):
-        raise MarginPilotError("merchant_decision requires assignment object")
+        raise CounterpilotError("merchant_decision requires assignment object")
     probability = assignment.get("assignment_probability")
     if probability is None or not 0 < float(probability) <= 1:
-        raise MarginPilotError("assignment_probability must be in (0, 1]")
+        raise CounterpilotError("assignment_probability must be in (0, 1]")
     if bool(assignment.get("randomized")) and float(probability) in {0.0, 1.0}:
-        raise MarginPilotError("randomized decisions require non-degenerate assignment_probability")
+        raise CounterpilotError("randomized decisions require non-degenerate assignment_probability")
 
 
 def _validate_shadow_recommendation(event: dict[str, Any]) -> None:
     if not isinstance(event.get("offer_id"), str) or not event["offer_id"].strip():
-        raise MarginPilotError("shadow_recommendation requires offer_id")
+        raise CounterpilotError("shadow_recommendation requires offer_id")
     recommendation = event.get("recommendation")
     if not isinstance(recommendation, dict):
-        raise MarginPilotError("shadow_recommendation requires recommendation object")
+        raise CounterpilotError("shadow_recommendation requires recommendation object")
     if recommendation.get("system_mode") != "shadow_only":
-        raise MarginPilotError("shadow recommendations must be shadow_only")
+        raise CounterpilotError("shadow recommendations must be shadow_only")
     if recommendation.get("automation_allowed") is not False:
-        raise MarginPilotError("shadow recommendations may not allow automation")
+        raise CounterpilotError("shadow recommendations may not allow automation")
     if recommendation.get("model_training") != "not_run":
-        raise MarginPilotError("shadow recommendations may not train models")
+        raise CounterpilotError("shadow recommendations may not train models")
     if recommendation.get("no_customer_targeting") is not True:
-        raise MarginPilotError("shadow recommendations must declare no customer targeting")
+        raise CounterpilotError("shadow recommendations must declare no customer targeting")
     action = recommendation.get("recommendation", {}).get("action")
     if action not in SHADOW_ACTION_TYPES:
-        raise MarginPilotError("shadow recommendation action is invalid")
+        raise CounterpilotError("shadow recommendation action is invalid")
     if not isinstance(recommendation.get("available_actions_snapshot"), list):
-        raise MarginPilotError("shadow recommendation must record available_actions_snapshot")
+        raise CounterpilotError("shadow recommendation must record available_actions_snapshot")
     if recommendation.get("executed_action") is not None:
-        raise MarginPilotError("shadow recommendation may not execute a seller action")
+        raise CounterpilotError("shadow recommendation may not execute a seller action")
 
 
 def _validate_outcome(event: dict[str, Any]) -> None:
     for key in ["offer_id", "order_id"]:
         if not isinstance(event.get(key), str) or not event[key].strip():
-            raise MarginPilotError(f"outcome_matured requires {key}")
+            raise CounterpilotError(f"outcome_matured requires {key}")
     outcome = event.get("outcome")
     if not isinstance(outcome, dict):
-        raise MarginPilotError("outcome must be an object")
+        raise CounterpilotError("outcome must be an object")
     for key in ["buyer_paid", "returned", "cancelled", "return_window_matured"]:
         if not isinstance(outcome.get(key), bool):
-            raise MarginPilotError(f"outcome.{key} must be boolean")
+            raise CounterpilotError(f"outcome.{key} must be boolean")
     _validate_money_mapping(outcome)
     if outcome["return_window_matured"] is not True:
-        raise MarginPilotError("outcome_matured requires return_window_matured true")
+        raise CounterpilotError("outcome_matured requires return_window_matured true")
     if outcome["buyer_paid"] and outcome.get("mature_contribution_margin") is None:
-        raise MarginPilotError("paid mature outcomes require mature_contribution_margin")
+        raise CounterpilotError("paid mature outcomes require mature_contribution_margin")
     if outcome["buyer_paid"]:
         _validate_mature_margin_components(outcome)
 
 
 def _normalize_action(action: Any) -> dict[str, Any]:
     if not isinstance(action, dict):
-        raise MarginPilotError("action must be an object")
+        raise CounterpilotError("action must be an object")
     action_name = action.get("action")
     if action_name not in ACTION_TYPES and action_name != "manual_other":
-        raise MarginPilotError(f"unknown action: {action_name!r}")
+        raise CounterpilotError(f"unknown action: {action_name!r}")
     amount = action.get("amount")
     if action_name in {"accept", "counter_at_amount", "free_shipping_counter", "bundle_counter"}:
         if amount is None or float(amount) <= 0:
-            raise MarginPilotError(f"{action_name} requires positive amount")
+            raise CounterpilotError(f"{action_name} requires positive amount")
     elif amount is not None:
-        raise MarginPilotError(f"{action_name} may not include amount")
+        raise CounterpilotError(f"{action_name} may not include amount")
     return {"action": action_name, "amount": round(float(amount), 2) if amount is not None else None}
 
 
@@ -1713,13 +1713,13 @@ def _reject_pii(value: Any, *, path: str = "") -> None:
         for key, item in value.items():
             key_text = str(key)
             if _is_pii_key(key_text, path):
-                raise MarginPilotError(f"customer PII field is not allowed: {path + key_text}")
+                raise CounterpilotError(f"customer PII field is not allowed: {path + key_text}")
             _reject_pii(item, path=f"{path}{key_text}.")
     elif isinstance(value, list):
         for index, item in enumerate(value):
             _reject_pii(item, path=f"{path}{index}.")
     elif isinstance(value, str) and _is_pii_value(value):
-        raise MarginPilotError(f"customer PII value is not allowed at: {path.rstrip('.')}")
+        raise CounterpilotError(f"customer PII value is not allowed at: {path.rstrip('.')}")
 
 
 def _is_pii_key(key: str, path: str) -> bool:
@@ -1751,20 +1751,20 @@ def _key_tokens(text: str) -> set[str]:
 
 
 def _is_pii_value(text: str) -> bool:
-    if _is_internal_marginpilot_token(text):
+    if _is_internal_counterpilot_token(text):
         return False
     return any(pattern.search(text) for pattern in PII_VALUE_PATTERNS)
 
 
-def _is_internal_marginpilot_token(text: str) -> bool:
+def _is_internal_counterpilot_token(text: str) -> bool:
     lowered = text.strip().lower()
-    return bool(re.fullmatch(r"shadow_[a-f0-9]{16,64}", lowered))
+    return bool(re.fullmatch(r"shadow_[a-f0-9]{16,64}", lowered) or re.fullmatch(r"[a-f0-9]{16,64}", lowered))
 
 
 def _reject_post_decision_context(context: dict[str, Any]) -> None:
     forbidden = sorted(set(context) & POST_DECISION_CONTEXT_KEYS)
     if forbidden:
-        raise MarginPilotError(f"pre_decision_context contains post-decision fields: {forbidden}")
+        raise CounterpilotError(f"pre_decision_context contains post-decision fields: {forbidden}")
 
 
 def _validate_money_mapping(value: dict[str, Any]) -> None:
@@ -1772,14 +1772,14 @@ def _validate_money_mapping(value: dict[str, Any]) -> None:
         if key not in MONEY_FIELDS or item is None:
             continue
         if isinstance(item, bool) or not isinstance(item, (int, float)):
-            raise MarginPilotError(f"{key} must be numeric")
+            raise CounterpilotError(f"{key} must be numeric")
         if not math.isfinite(float(item)):
-            raise MarginPilotError(f"{key} must be finite")
+            raise CounterpilotError(f"{key} must be finite")
         if key != "mature_contribution_margin" and float(item) < 0:
-            raise MarginPilotError(f"{key} may not be negative")
+            raise CounterpilotError(f"{key} may not be negative")
     rate = value.get("platform_fee_rate")
     if rate is not None and not 0 <= float(rate) < 1:
-        raise MarginPilotError("platform_fee_rate must be in [0, 1)")
+        raise CounterpilotError("platform_fee_rate must be in [0, 1)")
 
 
 def _validate_mature_margin_components(outcome: dict[str, Any]) -> None:
@@ -1794,7 +1794,7 @@ def _validate_mature_margin_components(outcome: dict[str, Any]) -> None:
     ]
     missing = [key for key in required if outcome.get(key) is None]
     if missing:
-        raise MarginPilotError(f"paid mature outcomes require margin component evidence: {missing}")
+        raise CounterpilotError(f"paid mature outcomes require margin component evidence: {missing}")
     computed = (
         float(outcome["final_sale_price"])
         - float(outcome["actual_fees"])
@@ -1805,7 +1805,7 @@ def _validate_mature_margin_components(outcome: dict[str, Any]) -> None:
     )
     reported = float(outcome["mature_contribution_margin"])
     if abs(round(computed, 2) - round(reported, 2)) > 0.01:
-        raise MarginPilotError(
+        raise CounterpilotError(
             f"mature_contribution_margin {reported:.2f} does not match component evidence {computed:.2f}"
         )
 

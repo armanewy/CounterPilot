@@ -1,18 +1,18 @@
 <div
-  class="marginpilot-offer marginpilot-offer--cart"
-  data-marginpilot-cart-offer
-  data-marginpilot-visible="{{ block.settings.enabled }}"
+  class="counterpilot-offer counterpilot-offer--cart"
+  data-counterpilot-cart-offer
+  data-counterpilot-visible="{{ block.settings.enabled }}"
 >
   {% if block.settings.enabled %}
-    <button type="button" class="marginpilot-offer__button" data-marginpilot-open>
+    <button type="button" class="counterpilot-offer__button" data-counterpilot-open>
       {{ block.settings.button_label }}
     </button>
-    <form class="marginpilot-offer__form" data-marginpilot-form hidden>
-      <label class="marginpilot-offer__label">
+    <form class="counterpilot-offer__form" data-counterpilot-form hidden>
+      <label class="counterpilot-offer__label">
         Cart offer amount
-        <input class="marginpilot-offer__input" name="offer_amount" inputmode="decimal" autocomplete="off">
+        <input class="counterpilot-offer__input" name="offer_amount" inputmode="decimal" autocomplete="off">
       </label>
-      <button type="submit" class="marginpilot-offer__submit">Submit offer</button>
+      <button type="submit" class="counterpilot-offer__submit">Submit offer</button>
     </form>
   {% endif %}
 </div>
@@ -21,8 +21,8 @@
 {
   "name": "Cart Offer",
   "target": "section",
-  "stylesheet": "marginpilot-offer.css",
-  "javascript": "marginpilot-offer.js",
+  "stylesheet": "counterpilot-offer.css",
+  "javascript": "counterpilot-offer.js",
   "enabled_on": {
     "templates": ["cart"]
   },

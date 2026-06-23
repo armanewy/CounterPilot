@@ -11,21 +11,21 @@ from typing import Any, Mapping, Protocol
 
 from behavior_lab.core import parse_time, stable_hash, utc_now
 from behavior_lab.ledger import ImmutableLedger
-from behavior_lab.marginpilot_storage.consent import (
+from behavior_lab.counterpilot_storage.consent import (
     CROSS_MERCHANT_TRAINING,
     ConsentLedger,
     ConsentRequiredError,
     MERCHANT_SPECIFIC_MODEL_TRAINING,
 )
-from behavior_lab.marginpilot_storage.identifiers import EphemeralMappingLayer
-from behavior_lab.marginpilot_storage.pii import BoundaryViolation, assert_no_pii
+from behavior_lab.counterpilot_storage.identifiers import EphemeralMappingLayer
+from behavior_lab.counterpilot_storage.pii import BoundaryViolation, assert_no_pii
 
 
-OPERATIONAL_COLLECTION = "marginpilot_operational_transactions"
-OPERATIONAL_TOMBSTONE_COLLECTION = "marginpilot_operational_tombstones"
-RESEARCH_RECORD_TYPE = "marginpilot_research_event"
-OPERATIONAL_SCHEMA_VERSION = "marginpilot_operational_transaction.v1"
-RESEARCH_SCHEMA_VERSION = "marginpilot_research_event.v1"
+OPERATIONAL_COLLECTION = "counterpilot_operational_transactions"
+OPERATIONAL_TOMBSTONE_COLLECTION = "counterpilot_operational_tombstones"
+RESEARCH_RECORD_TYPE = "counterpilot_research_event"
+OPERATIONAL_SCHEMA_VERSION = "counterpilot_operational_transaction.v1"
+RESEARCH_SCHEMA_VERSION = "counterpilot_research_event.v1"
 
 ALLOWED_OPERATIONAL_CUSTOMER_KEYS = {
     "billing_address",
@@ -329,14 +329,14 @@ class OperationalTransactionStore:
             "deletion_reason": reason,
             "merchant_id": merchant_id,
             "operational_storage_id": storage_id,
-            "schema_version": "marginpilot_operational_tombstone.v1",
+            "schema_version": "counterpilot_operational_tombstone.v1",
             "store_id": store_id,
         }
         self.adapter.write(
             OPERATIONAL_TOMBSTONE_COLLECTION,
             storage_id,
             json.dumps(tombstone, sort_keys=True, ensure_ascii=True).encode("utf-8"),
-            metadata={"merchant_id": merchant_id, "schema_version": "marginpilot_operational_tombstone.v1", "store_id": store_id},
+            metadata={"merchant_id": merchant_id, "schema_version": "counterpilot_operational_tombstone.v1", "store_id": store_id},
         )
         return {"deleted": existed, "tombstone": tombstone}
 
@@ -481,7 +481,7 @@ class ResearchEventStore:
 
     def append(self, event: ResearchEventRecord) -> dict[str, Any]:
         payload = event.to_payload()
-        record_id = f"marginpilot_research_{stable_hash(payload)[:24]}"
+        record_id = f"counterpilot_research_{stable_hash(payload)[:24]}"
         return self.ledger.append(RESEARCH_RECORD_TYPE, payload, record_id=record_id, unique_record_id=True)
 
     def events(self) -> list[dict[str, Any]]:
@@ -558,7 +558,7 @@ def build_model_feature_matrix(source: TrainingDataset) -> list[dict[str, Any]]:
     if isinstance(source, OperationalTransactionStore):
         raise BoundaryViolation("model features must be built from research datasets, not operational stores")
     if not isinstance(source, TrainingDataset):
-        raise BoundaryViolation("model features require a MarginPilot TrainingDataset")
+        raise BoundaryViolation("model features require a Counterpilot TrainingDataset")
     matrix = [dict(row["features"]) for row in source.rows]
     assert_no_pii(matrix, label="model feature matrix")
     return matrix
@@ -584,7 +584,7 @@ def production_artifact_manifest(
         "metrics": dict(metrics or {}),
         "model_id": model_id,
         "purpose": dataset.purpose,
-        "schema_version": "marginpilot_production_artifact.v1",
+        "schema_version": "counterpilot_production_artifact.v1",
     }
     parse_time(payload["created_at"])
     assert_no_pii(payload, label="production artifact")

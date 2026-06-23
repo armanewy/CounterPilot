@@ -120,7 +120,7 @@ def campaign_002_definition() -> dict[str, Any]:
         "campaign_id": OFFERLAB_CAMPAIGN_ID,
         "campaign_schema_version": OFFERLAB_CAMPAIGN_SCHEMA_VERSION,
         "title": "Campaign 002 - eBay seller offers",
-        "working_names": ["OfferLab", "MarginPilot"],
+        "working_names": ["OfferLab", "Counterpilot"],
         "commercial_goal": "Optimize seller-side offer and pricing decisions for realized contribution margin.",
         "stage": "read_only_profit_audit",
         "primary_metric": "mature_contribution_margin_per_listing_day",

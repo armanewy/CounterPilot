@@ -1,13 +1,13 @@
-# MarginPilot State Machine
+# Counterpilot State Machine
 
-MarginPilot transaction state is deterministic and append-only. The state
+Counterpilot transaction state is deterministic and append-only. The state
 machine records one negotiated commerce transaction from offer submission to a
 mature economic outcome. It does not call Shopify, train models, recommend
 prices, or execute seller actions.
 
 ## Event Contract
 
-Each transition event uses schema `marginpilot.transaction_event.v1` and must
+Each transition event uses schema `counterpilot.transaction_event.v1` and must
 include:
 
 - `event_id`

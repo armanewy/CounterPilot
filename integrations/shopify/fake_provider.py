@@ -6,14 +6,14 @@ from integrations.shopify.provider import DraftOrderRequest, DraftOrderResult
 
 
 class DeterministicFakeShopifyProvider:
-    def __init__(self, *, store_domain: str = "marginpilot-dev-store.myshopify.com"):
+    def __init__(self, *, store_domain: str = "counterpilot-dev-store.myshopify.com"):
         self.store_domain = store_domain
         self.created_draft_orders: list[dict] = []
 
     def create_discounted_draft_order(self, payload: DraftOrderRequest) -> DraftOrderResult:
         sequence = len(self.created_draft_orders) + 1
         draft_order_id = f"gid://shopify/DraftOrder/{1000 + sequence}"
-        invoice_url = f"https://{self.store_domain}/invoices/marginpilot-{sequence}"
+        invoice_url = f"https://{self.store_domain}/invoices/counterpilot-{sequence}"
         result = DraftOrderResult(
             draft_order_id=draft_order_id,
             invoice_url=invoice_url,

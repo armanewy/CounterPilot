@@ -7,9 +7,9 @@ from typing import Any, Mapping
 
 from behavior_lab.core import stable_hash
 from behavior_lab.ledger import DuplicateRecordError, ImmutableLedger
-from behavior_lab.marginpilot_core import consent_grant, research_export
-from behavior_lab.marginpilot_state import MARGINPILOT_STATE_SCHEMA_VERSION, TransactionStateMachine, money
-from behavior_lab.marginpilot_storage import (
+from behavior_lab.counterpilot_core import consent_grant, research_export
+from behavior_lab.counterpilot_state import COUNTERPILOT_STATE_SCHEMA_VERSION, TransactionStateMachine, money
+from behavior_lab.counterpilot_storage import (
     MERCHANT_SPECIFIC_MODEL_TRAINING,
     ConsentLedger,
     EphemeralMappingLayer,
@@ -24,8 +24,8 @@ from integrations.shopify.token_store import ShopifyTokenRecord, ShopifyTokenSto
 from integrations.shopify.webhooks import ShopifyWebhookError, verify_webhook_hmac
 
 
-SHOPIFY_ADAPTER_SCHEMA_VERSION = "marginpilot.shopify_adapter.v1"
-SHOPIFY_WEBHOOK_DELIVERY_RECORD_TYPE = "marginpilot_shopify_webhook_delivery"
+SHOPIFY_ADAPTER_SCHEMA_VERSION = "counterpilot.shopify_adapter.v1"
+SHOPIFY_WEBHOOK_DELIVERY_RECORD_TYPE = "counterpilot_shopify_webhook_delivery"
 SHOPIFY_RESOURCE_ID_KEYS = {
     "checkout_gid",
     "draft_order_gid",
@@ -127,7 +127,7 @@ class ShopifyDevelopmentAdapter:
         transaction_ids = sorted(
             {
                 event["transaction_id"]
-                for event in self.state.ledger.payloads("marginpilot_transaction_event")
+                for event in self.state.ledger.payloads("counterpilot_transaction_event")
                 if event.get("merchant_namespace") == namespace
             }
         )
@@ -142,11 +142,11 @@ class ShopifyDevelopmentAdapter:
                     "transaction_id": transaction_id,
                 }
             )
-        return {"schema_version": "marginpilot.shopify_offer_inbox.v1", "merchant_namespace": namespace, "offers": rows}
+        return {"schema_version": "counterpilot.shopify_offer_inbox.v1", "merchant_namespace": namespace, "offers": rows}
 
     def submit_offer(self, offer: ShopifyOfferInput, *, occurred_at: str) -> dict[str, Any]:
         _validate_offer_input(offer)
-        transaction_id = "mp_txn_" + stable_hash(
+        transaction_id = "cp_txn_" + stable_hash(
             {
                 "merchant_id": offer.merchant_id,
                 "store_id": offer.store_id,
@@ -364,7 +364,7 @@ class ShopifyDevelopmentAdapter:
         if operational is None:
             raise ShopifyWebhookError("missing operational checkout record")
         return {
-            "schema_version": "marginpilot.shopify_checkout_delivery.v1",
+            "schema_version": "counterpilot.shopify_checkout_delivery.v1",
             "contact_delivery_reference": operational.contact_delivery_reference,
             "checkout_url": operational.checkout_url_reference,
         }
@@ -443,7 +443,7 @@ class ShopifyDevelopmentAdapter:
         mature_margin_minor: int,
     ) -> dict[str, Any]:
         namespace = _namespace(offer.merchant_id, offer.store_id)
-        events = self.state.ledger.payloads("marginpilot_transaction_event")
+        events = self.state.ledger.payloads("counterpilot_transaction_event")
         checkout_amount_minor = _checkout_amount_minor(
             events,
             namespace=namespace,
@@ -477,7 +477,7 @@ class ShopifyDevelopmentAdapter:
             namespace=namespace,
             transaction_id=transaction_id,
             occurred_at=occurred_at,
-            source="marginpilot_return_window",
+            source="counterpilot_return_window",
             mature_outcome={
                 "payment_resolution": "paid",
                 "refund_return_maturity_date": return_maturity_at,
@@ -690,7 +690,7 @@ def _claim_delivery(
         "body_hash": stable_hash(raw_body.decode("utf-8", errors="replace")),
         "delivery_id": delivery_id,
         "merchant_id": merchant_id,
-        "schema_version": "marginpilot.shopify_webhook_delivery.v1",
+        "schema_version": "counterpilot.shopify_webhook_delivery.v1",
         "shop_domain": shop_domain,
         "store_id": store_id,
         "topic": topic.lower().replace(".", "/"),
@@ -801,7 +801,7 @@ def _namespace(merchant_id: str, store_id: str) -> str:
 
 def _event(transition_to: str, *, event_id: str, namespace: str, transaction_id: str, occurred_at: str, source: str, currency: str = "USD", received_at: str | None = None, idempotency_key: str | None = None, **extra: Any) -> dict[str, Any]:
     body = {
-        "schema_version": MARGINPILOT_STATE_SCHEMA_VERSION,
+        "schema_version": COUNTERPILOT_STATE_SCHEMA_VERSION,
         "event_id": event_id,
         "merchant_namespace": namespace,
         "transaction_id": transaction_id,

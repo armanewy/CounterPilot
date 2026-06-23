@@ -1,19 +1,19 @@
 <div
-  class="marginpilot-offer"
-  data-marginpilot-product-gid="gid://shopify/Product/{{ product.id }}"
-  data-marginpilot-visible="{{ block.settings.enabled }}"
+  class="counterpilot-offer"
+  data-counterpilot-product-gid="gid://shopify/Product/{{ product.id }}"
+  data-counterpilot-visible="{{ block.settings.enabled }}"
 >
   {% if block.settings.enabled %}
-    <button type="button" class="marginpilot-offer__button" data-marginpilot-open>
+    <button type="button" class="counterpilot-offer__button" data-counterpilot-open>
       {{ block.settings.button_label }}
     </button>
-    <form class="marginpilot-offer__form" data-marginpilot-form hidden>
+    <form class="counterpilot-offer__form" data-counterpilot-form hidden>
       <input type="hidden" name="product_gid" value="gid://shopify/Product/{{ product.id }}">
-      <label class="marginpilot-offer__label">
+      <label class="counterpilot-offer__label">
         Offer amount
-        <input class="marginpilot-offer__input" name="offer_amount" inputmode="decimal" autocomplete="off">
+        <input class="counterpilot-offer__input" name="offer_amount" inputmode="decimal" autocomplete="off">
       </label>
-      <button type="submit" class="marginpilot-offer__submit">Submit offer</button>
+      <button type="submit" class="counterpilot-offer__submit">Submit offer</button>
     </form>
   {% endif %}
 </div>
@@ -22,8 +22,8 @@
 {
   "name": "Make an Offer",
   "target": "section",
-  "stylesheet": "marginpilot-offer.css",
-  "javascript": "marginpilot-offer.js",
+  "stylesheet": "counterpilot-offer.css",
+  "javascript": "counterpilot-offer.js",
   "enabled_on": {
     "templates": ["product"]
   },

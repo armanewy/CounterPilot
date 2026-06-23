@@ -7,7 +7,7 @@ from urllib.parse import parse_qsl, urlparse
 
 
 class BoundaryViolation(ValueError):
-    """Raised when data crosses a MarginPilot storage boundary unsafely."""
+    """Raised when data crosses a Counterpilot storage boundary unsafely."""
 
 
 class PIIScanError(BoundaryViolation):
@@ -210,8 +210,8 @@ def _is_sensitive_url(text: str) -> bool:
 
 def _looks_like_internal_token(text: str) -> bool:
     stripped = text.strip().lower()
-    if re.fullmatch(r"mp_[a-z0-9_]+_[a-f0-9]{16,64}", stripped):
+    if re.fullmatch(r"cp_[a-z0-9_]+_[a-f0-9]{16,64}", stripped):
         return True
-    if re.fullmatch(r"marginpilot_[a-z0-9_]+_[a-f0-9]{8,64}", stripped):
+    if re.fullmatch(r"counterpilot_[a-z0-9_]+_[a-f0-9]{8,64}", stripped):
         return True
     return bool(re.fullmatch(r"[a-f0-9]{24,128}", stripped))

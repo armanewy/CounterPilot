@@ -6,7 +6,7 @@ from typing import Any, Iterable
 
 from behavior_lab.core import parse_time, stable_hash, utc_now
 from behavior_lab.ledger import ImmutableLedger
-from behavior_lab.marginpilot_storage.pii import BoundaryViolation, assert_no_pii
+from behavior_lab.counterpilot_storage.pii import BoundaryViolation, assert_no_pii
 
 
 MERCHANT_SPECIFIC_MODEL_TRAINING = "merchant_specific_model_training"
@@ -15,7 +15,7 @@ CROSS_MERCHANT_TRAINING = "cross_merchant_training"
 PRODUCTION_ARTIFACT_EXPORT = "production_artifact_export"
 POLICY_EXPERIMENTS = "merchant_specific_policy_experiments"
 
-CONSENT_RECORD_TYPE = "marginpilot_consent_record"
+CONSENT_RECORD_TYPE = "counterpilot_consent_record"
 
 
 class ConsentRequiredError(BoundaryViolation):
@@ -67,7 +67,7 @@ class ConsentLedger:
     def append(self, record: ConsentRecord) -> dict[str, Any]:
         payload = record.to_payload()
         assert_no_pii(payload, label="consent record")
-        record_id = "marginpilot_consent_" + stable_hash(payload)[:24]
+        record_id = "counterpilot_consent_" + stable_hash(payload)[:24]
         return self.ledger.append(CONSENT_RECORD_TYPE, payload, record_id=record_id, unique_record_id=True)
 
     def revoke(

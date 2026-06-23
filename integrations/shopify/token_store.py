@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from behavior_lab.core import parse_time, stable_hash
-from behavior_lab.marginpilot_storage import EncryptedAtRestAdapter, LocalFileEncryptedAtRestAdapter
+from behavior_lab.counterpilot_storage import EncryptedAtRestAdapter, LocalFileEncryptedAtRestAdapter
 
 
-SHOPIFY_TOKEN_SCHEMA_VERSION = "marginpilot.shopify_token.v1"
-SHOPIFY_TOKEN_COLLECTION = "marginpilot_shopify_tokens"
+SHOPIFY_TOKEN_SCHEMA_VERSION = "counterpilot.shopify_token.v1"
+SHOPIFY_TOKEN_COLLECTION = "counterpilot_shopify_tokens"
 
 REQUIRED_DEVELOPMENT_SCOPES = (
     "read_orders",

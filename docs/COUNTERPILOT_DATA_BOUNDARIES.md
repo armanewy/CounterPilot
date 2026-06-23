@@ -1,6 +1,6 @@
-# MarginPilot Data Boundaries
+# Counterpilot Data Boundaries
 
-Wave 1B separates MarginPilot commerce operations from research use.
+Wave 1B separates Counterpilot commerce operations from research use.
 
 ## Stores
 

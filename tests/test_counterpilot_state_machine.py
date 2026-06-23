@@ -6,9 +6,9 @@ import unittest
 
 import _bootstrap  # noqa: F401
 
-from behavior_lab.marginpilot_state import (
-    MARGINPILOT_STATE_SCHEMA_VERSION,
-    MarginPilotStateError,
+from behavior_lab.counterpilot_state import (
+    COUNTERPILOT_STATE_SCHEMA_VERSION,
+    CounterpilotStateError,
     TransactionStateMachine,
     money,
 )
@@ -26,7 +26,7 @@ def _event(
     **extra: object,
 ) -> dict:
     payload = {
-        "schema_version": MARGINPILOT_STATE_SCHEMA_VERSION,
+        "schema_version": COUNTERPILOT_STATE_SCHEMA_VERSION,
         "event_id": event_id,
         "merchant_namespace": merchant_namespace,
         "transaction_id": transaction_id,
@@ -68,7 +68,7 @@ def _submit(event_id: str = "e_offer", merchant_namespace: str = "merchant_a", t
     )
 
 
-class MarginPilotStateMachineTests(unittest.TestCase):
+class CounterpilotStateMachineTests(unittest.TestCase):
     def test_complete_local_commerce_path_reaches_mature(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             machine = TransactionStateMachine(tmp)
@@ -146,7 +146,7 @@ class MarginPilotStateMachineTests(unittest.TestCase):
             machine.append_event(refund)
             replay = dict(refund)
             replay["idempotency_key"] = "delivery_002"
-            with self.assertRaises(MarginPilotStateError):
+            with self.assertRaises(CounterpilotStateError):
                 machine.append_event(replay)
 
     def test_refund_before_local_order_created_is_stored_then_reconciled(self) -> None:
@@ -179,7 +179,7 @@ class MarginPilotStateMachineTests(unittest.TestCase):
             machine = TransactionStateMachine(tmp)
             machine.append_event(_submit())
             machine.append_event(_event("offer_expired", event_id="e_expire", occurred_at="2026-06-22T10:30:00+00:00"))
-            with self.assertRaises(MarginPilotStateError):
+            with self.assertRaises(CounterpilotStateError):
                 machine.append_event(_event("buyer_accepted", event_id="e_late", occurred_at="2026-06-22T10:31:00+00:00", source="buyer"))
 
     def test_two_concurrent_counters_are_rejected(self) -> None:
@@ -187,7 +187,7 @@ class MarginPilotStateMachineTests(unittest.TestCase):
             machine = TransactionStateMachine(tmp)
             machine.append_event(_submit())
             machine.append_event(_event("merchant_countered", event_id="e_counter_1", occurred_at="2026-06-22T10:05:00+00:00", **_actions("counter")))
-            with self.assertRaises(MarginPilotStateError):
+            with self.assertRaises(CounterpilotStateError):
                 machine.append_event(_event("merchant_countered", event_id="e_counter_2", occurred_at="2026-06-22T10:05:01+00:00", **_actions("counter")))
 
     def test_concurrent_terminal_decisions_are_atomically_rejected(self) -> None:
@@ -201,7 +201,7 @@ class MarginPilotStateMachineTests(unittest.TestCase):
                 try:
                     machine.append_event(payload)
                     return "imported"
-                except MarginPilotStateError:
+                except CounterpilotStateError:
                     return "rejected"
 
             with ThreadPoolExecutor(max_workers=2) as pool:
@@ -220,7 +220,7 @@ class MarginPilotStateMachineTests(unittest.TestCase):
             machine.append_event(_event("checkout_created", event_id="e_checkout", occurred_at="2026-06-22T10:02:00+00:00", **_actions("create_checkout")))
             machine.append_event(_event("order_created", event_id="e_order", occurred_at="2026-06-22T10:03:00+00:00", source="shopify_webhook"))
             machine.append_event(_event("paid", event_id="e_paid", occurred_at="2026-06-22T10:04:00+00:00", source="shopify_webhook"))
-            with self.assertRaises(MarginPilotStateError):
+            with self.assertRaises(CounterpilotStateError):
                 machine.append_event(_event("cancelled", event_id="e_cancel", occurred_at="2026-06-22T10:05:00+00:00", source="shopify_webhook", **_actions("cancel")))
 
     def test_partial_refund_full_refund_and_return_reopening(self) -> None:
@@ -244,7 +244,7 @@ class MarginPilotStateMachineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             machine = TransactionStateMachine(tmp)
             machine.append_event(_submit())
-            with self.assertRaises(MarginPilotStateError):
+            with self.assertRaises(CounterpilotStateError):
                 machine.append_event(
                     _event(
                         "merchant_accepted",
@@ -301,7 +301,7 @@ class MarginPilotStateMachineTests(unittest.TestCase):
             machine = TransactionStateMachine(tmp)
             bad = _submit()
             bad["buyer_message"] = "please email person@example.com"
-            with self.assertRaises(MarginPilotStateError):
+            with self.assertRaises(CounterpilotStateError):
                 machine.append_event(bad)
 
     def test_mature_requires_reconciled_components(self) -> None:
@@ -312,7 +312,7 @@ class MarginPilotStateMachineTests(unittest.TestCase):
             machine.append_event(_event("checkout_created", event_id="e_checkout", occurred_at="2026-06-22T10:02:00+00:00", **_actions("create_checkout")))
             machine.append_event(_event("order_created", event_id="e_order", occurred_at="2026-06-22T10:03:00+00:00", source="shopify_webhook"))
             machine.append_event(_event("paid", event_id="e_paid", occurred_at="2026-06-22T10:04:00+00:00", source="shopify_webhook"))
-            with self.assertRaises(MarginPilotStateError):
+            with self.assertRaises(CounterpilotStateError):
                 machine.append_event(
                     _event(
                         "mature",

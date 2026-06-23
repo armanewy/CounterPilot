@@ -1,9 +1,9 @@
-.marginpilot-offer {
+.counterpilot-offer {
   margin: 1rem 0;
 }
 
-.marginpilot-offer__button,
-.marginpilot-offer__submit {
+.counterpilot-offer__button,
+.counterpilot-offer__submit {
   border: 1px solid currentColor;
   background: transparent;
   color: inherit;
@@ -11,19 +11,19 @@
   padding: 0.65rem 0.9rem;
 }
 
-.marginpilot-offer__form {
+.counterpilot-offer__form {
   display: grid;
   gap: 0.75rem;
   margin-top: 0.75rem;
   max-width: 24rem;
 }
 
-.marginpilot-offer__label {
+.counterpilot-offer__label {
   display: grid;
   gap: 0.35rem;
 }
 
-.marginpilot-offer__input {
+.counterpilot-offer__input {
   border: 1px solid currentColor;
   padding: 0.6rem 0.7rem;
 }

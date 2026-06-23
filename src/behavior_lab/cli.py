@@ -47,29 +47,29 @@ from behavior_lab.datasets.nber_best_offer.replication import replication_check,
 from behavior_lab.datasets.nber_best_offer.source_inventory import inventory_official_sources, public_summary, run_source_inventory
 from behavior_lab.datasets.nber_best_offer.source_schema import inspect_schema
 from behavior_lab.datasets.open_bandit.ope import evaluate_policy
-from behavior_lab.marginpilot import (
-    DEFAULT_DATA_DIR as MARGINPILOT_DEFAULT_DATA_DIR,
-    ingest_marginpilot_events,
-    marginpilot_audit,
-    marginpilot_experiment_assign,
-    marginpilot_experiment_preregister,
-    marginpilot_experiment_record_outcome,
-    marginpilot_experiment_report,
-    marginpilot_inbox,
-    marginpilot_rule_simulation,
-    marginpilot_shadow_recommend,
-    marginpilot_utility_report,
-    write_marginpilot_templates,
+from behavior_lab.counterpilot import (
+    DEFAULT_DATA_DIR as COUNTERPILOT_DEFAULT_DATA_DIR,
+    ingest_counterpilot_events,
+    counterpilot_audit,
+    counterpilot_experiment_assign,
+    counterpilot_experiment_preregister,
+    counterpilot_experiment_record_outcome,
+    counterpilot_experiment_report,
+    counterpilot_inbox,
+    counterpilot_rule_simulation,
+    counterpilot_shadow_recommend,
+    counterpilot_utility_report,
+    write_counterpilot_templates,
 )
-from behavior_lab.marginpilot_core import (
-    DEFAULT_CORE_DATA_DIR as MARGINPILOT_CORE_DEFAULT_DATA_DIR,
-    consent_grant as marginpilot_consent_grant,
-    consent_revoke as marginpilot_consent_revoke,
-    event_append as marginpilot_event_append,
-    research_export as marginpilot_research_export,
-    run_local_commerce_fixture as marginpilot_run_local_fixture,
-    transaction_create as marginpilot_transaction_create,
-    transaction_inspect as marginpilot_transaction_inspect,
+from behavior_lab.counterpilot_core import (
+    DEFAULT_CORE_DATA_DIR as COUNTERPILOT_CORE_DEFAULT_DATA_DIR,
+    consent_grant as counterpilot_consent_grant,
+    consent_revoke as counterpilot_consent_revoke,
+    event_append as counterpilot_event_append,
+    research_export as counterpilot_research_export,
+    run_local_commerce_fixture as counterpilot_run_local_fixture,
+    transaction_create as counterpilot_transaction_create,
+    transaction_inspect as counterpilot_transaction_inspect,
 )
 from behavior_lab.offerlab import (
     ingest_offerlab_snapshots,
@@ -302,43 +302,43 @@ def command_offerlab_recommend(args: argparse.Namespace) -> None:
     _print_json(recommend_offer_action(snapshots[0], data_dir=args.data_dir, config=config))
 
 
-def command_marginpilot_template(args: argparse.Namespace) -> None:
-    _print_json(write_marginpilot_templates(args.output_dir))
+def command_counterpilot_template(args: argparse.Namespace) -> None:
+    _print_json(write_counterpilot_templates(args.output_dir))
 
 
-def command_marginpilot_ingest(args: argparse.Namespace) -> None:
-    _print_json(asdict(ingest_marginpilot_events(args.input, data_dir=args.data_dir)))
+def command_counterpilot_ingest(args: argparse.Namespace) -> None:
+    _print_json(asdict(ingest_counterpilot_events(args.input, data_dir=args.data_dir)))
 
 
-def command_marginpilot_inbox(args: argparse.Namespace) -> None:
-    _print_json(marginpilot_inbox(args.data_dir, merchant_id=args.merchant_id))
+def command_counterpilot_inbox(args: argparse.Namespace) -> None:
+    _print_json(counterpilot_inbox(args.data_dir, merchant_id=args.merchant_id))
 
 
-def command_marginpilot_audit(args: argparse.Namespace) -> None:
-    _print_json(marginpilot_audit(args.data_dir, merchant_id=args.merchant_id))
+def command_counterpilot_audit(args: argparse.Namespace) -> None:
+    _print_json(counterpilot_audit(args.data_dir, merchant_id=args.merchant_id))
 
 
-def command_marginpilot_utility_report(args: argparse.Namespace) -> None:
-    _print_json(marginpilot_utility_report(args.data_dir, merchant_id=args.merchant_id))
+def command_counterpilot_utility_report(args: argparse.Namespace) -> None:
+    _print_json(counterpilot_utility_report(args.data_dir, merchant_id=args.merchant_id))
 
 
-def command_marginpilot_rule_simulation(args: argparse.Namespace) -> None:
+def command_counterpilot_rule_simulation(args: argparse.Namespace) -> None:
     rule: dict[str, Any] = {}
     if args.rule_file:
         rule = json.loads(Path(args.rule_file).read_text(encoding="utf-8"))
     elif args.rule:
         rule = json.loads(args.rule)
-    _print_json(marginpilot_rule_simulation(args.data_dir, merchant_id=args.merchant_id, rule=rule))
+    _print_json(counterpilot_rule_simulation(args.data_dir, merchant_id=args.merchant_id, rule=rule))
 
 
-def command_marginpilot_shadow_recommend(args: argparse.Namespace) -> None:
+def command_counterpilot_shadow_recommend(args: argparse.Namespace) -> None:
     config: dict[str, Any] = {}
     if args.config_file:
         config = json.loads(Path(args.config_file).read_text(encoding="utf-8"))
     elif args.config:
         config = json.loads(args.config)
     _print_json(
-        marginpilot_shadow_recommend(
+        counterpilot_shadow_recommend(
             args.data_dir,
             merchant_id=args.merchant_id,
             offer_id=args.offer_id,
@@ -349,10 +349,10 @@ def command_marginpilot_shadow_recommend(args: argparse.Namespace) -> None:
     )
 
 
-def command_marginpilot_experiment_preregister(args: argparse.Namespace) -> None:
+def command_counterpilot_experiment_preregister(args: argparse.Namespace) -> None:
     guardrails = json.loads(args.guardrails) if args.guardrails else {}
     _print_json(
-        marginpilot_experiment_preregister(
+        counterpilot_experiment_preregister(
             args.data_dir,
             experiment_id=args.experiment_id,
             experiment_type=args.experiment_type,
@@ -364,9 +364,9 @@ def command_marginpilot_experiment_preregister(args: argparse.Namespace) -> None
     )
 
 
-def command_marginpilot_experiment_assign(args: argparse.Namespace) -> None:
+def command_counterpilot_experiment_assign(args: argparse.Namespace) -> None:
     _print_json(
-        marginpilot_experiment_assign(
+        counterpilot_experiment_assign(
             args.data_dir,
             experiment_id=args.experiment_id,
             merchant_id=args.merchant_id,
@@ -376,11 +376,11 @@ def command_marginpilot_experiment_assign(args: argparse.Namespace) -> None:
     )
 
 
-def command_marginpilot_experiment_outcome(args: argparse.Namespace) -> None:
+def command_counterpilot_experiment_outcome(args: argparse.Namespace) -> None:
     outcomes = json.loads(args.outcomes)
     adherence = json.loads(args.adherence) if args.adherence else None
     _print_json(
-        marginpilot_experiment_record_outcome(
+        counterpilot_experiment_record_outcome(
             args.data_dir,
             assignment_id=args.assignment_id,
             outcomes=outcomes,
@@ -390,21 +390,21 @@ def command_marginpilot_experiment_outcome(args: argparse.Namespace) -> None:
     )
 
 
-def command_marginpilot_experiment_report(args: argparse.Namespace) -> None:
-    _print_json(marginpilot_experiment_report(args.data_dir, experiment_id=args.experiment_id))
+def command_counterpilot_experiment_report(args: argparse.Namespace) -> None:
+    _print_json(counterpilot_experiment_report(args.data_dir, experiment_id=args.experiment_id))
 
 
-def command_marginpilot_transaction_create(args: argparse.Namespace) -> None:
-    _print_json(marginpilot_transaction_create(data_dir=args.data_dir, input_path=args.input))
+def command_counterpilot_transaction_create(args: argparse.Namespace) -> None:
+    _print_json(counterpilot_transaction_create(data_dir=args.data_dir, input_path=args.input))
 
 
-def command_marginpilot_event_append(args: argparse.Namespace) -> None:
-    _print_json(marginpilot_event_append(data_dir=args.data_dir, input_path=args.input))
+def command_counterpilot_event_append(args: argparse.Namespace) -> None:
+    _print_json(counterpilot_event_append(data_dir=args.data_dir, input_path=args.input))
 
 
-def command_marginpilot_transaction_inspect(args: argparse.Namespace) -> None:
+def command_counterpilot_transaction_inspect(args: argparse.Namespace) -> None:
     _print_json(
-        marginpilot_transaction_inspect(
+        counterpilot_transaction_inspect(
             data_dir=args.data_dir,
             merchant_namespace=args.merchant_namespace,
             transaction_id=args.transaction_id,
@@ -412,9 +412,9 @@ def command_marginpilot_transaction_inspect(args: argparse.Namespace) -> None:
     )
 
 
-def command_marginpilot_consent_grant(args: argparse.Namespace) -> None:
+def command_counterpilot_consent_grant(args: argparse.Namespace) -> None:
     _print_json(
-        marginpilot_consent_grant(
+        counterpilot_consent_grant(
             data_dir=args.data_dir,
             merchant_id=args.merchant_id,
             store_id=args.store_id,
@@ -427,9 +427,9 @@ def command_marginpilot_consent_grant(args: argparse.Namespace) -> None:
     )
 
 
-def command_marginpilot_consent_revoke(args: argparse.Namespace) -> None:
+def command_counterpilot_consent_revoke(args: argparse.Namespace) -> None:
     _print_json(
-        marginpilot_consent_revoke(
+        counterpilot_consent_revoke(
             data_dir=args.data_dir,
             merchant_id=args.merchant_id,
             store_id=args.store_id,
@@ -439,9 +439,9 @@ def command_marginpilot_consent_revoke(args: argparse.Namespace) -> None:
     )
 
 
-def command_marginpilot_research_export(args: argparse.Namespace) -> None:
+def command_counterpilot_research_export(args: argparse.Namespace) -> None:
     _print_json(
-        marginpilot_research_export(
+        counterpilot_research_export(
             data_dir=args.data_dir,
             merchant_id=args.merchant_id,
             store_id=args.store_id,
@@ -451,8 +451,8 @@ def command_marginpilot_research_export(args: argparse.Namespace) -> None:
     )
 
 
-def command_marginpilot_run_local_fixture(args: argparse.Namespace) -> None:
-    _print_json(marginpilot_run_local_fixture(data_dir=args.data_dir))
+def command_counterpilot_run_local_fixture(args: argparse.Namespace) -> None:
+    _print_json(counterpilot_run_local_fixture(data_dir=args.data_dir))
 
 
 def command_offerlab_pilot_template(args: argparse.Namespace) -> None:
@@ -983,126 +983,186 @@ def build_parser() -> argparse.ArgumentParser:
     offer_recommend.add_argument("--config", help="Optional JSON economics config with fee, holding cost, and return risk")
     offer_recommend.set_defaults(func=command_offerlab_recommend)
 
-    margin_template = subparsers.add_parser("marginpilot-template", help="Write MarginPilot transaction-surface event templates")
-    margin_template.add_argument("--output-dir", default="campaigns/marginpilot/examples")
-    margin_template.set_defaults(func=command_marginpilot_template)
+    margin_template = subparsers.add_parser(
+        "counterpilot-template",
+        aliases=["marginpilot-template"],
+        help="Write Counterpilot transaction-surface event templates",
+    )
+    margin_template.add_argument("--output-dir", default="campaigns/counterpilot/examples")
+    margin_template.set_defaults(func=command_counterpilot_template)
 
-    margin_ingest = subparsers.add_parser("marginpilot-ingest", help="Ingest local MarginPilot offer, consent, decision, and outcome events")
+    margin_ingest = subparsers.add_parser(
+        "counterpilot-ingest",
+        aliases=["marginpilot-ingest"],
+        help="Ingest local Counterpilot offer, consent, decision, and outcome events",
+    )
     margin_ingest.add_argument("--input", required=True)
-    margin_ingest.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
-    margin_ingest.set_defaults(func=command_marginpilot_ingest)
+    margin_ingest.add_argument("--data-dir", default=str(COUNTERPILOT_DEFAULT_DATA_DIR))
+    margin_ingest.set_defaults(func=command_counterpilot_ingest)
 
-    margin_inbox = subparsers.add_parser("marginpilot-inbox", help="Show open MarginPilot offers with accounting-only action economics")
-    margin_inbox.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_inbox = subparsers.add_parser(
+        "counterpilot-inbox",
+        aliases=["marginpilot-inbox"],
+        help="Show open Counterpilot offers with accounting-only action economics",
+    )
+    margin_inbox.add_argument("--data-dir", default=str(COUNTERPILOT_DEFAULT_DATA_DIR))
     margin_inbox.add_argument("--merchant-id")
-    margin_inbox.set_defaults(func=command_marginpilot_inbox)
+    margin_inbox.set_defaults(func=command_counterpilot_inbox)
 
-    margin_audit = subparsers.add_parser("marginpilot-audit", help="Audit MarginPilot mature margin, consent, and readiness gates")
-    margin_audit.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_audit = subparsers.add_parser(
+        "counterpilot-audit",
+        aliases=["marginpilot-audit"],
+        help="Audit Counterpilot mature margin, consent, and readiness gates",
+    )
+    margin_audit.add_argument("--data-dir", default=str(COUNTERPILOT_DEFAULT_DATA_DIR))
     margin_audit.add_argument("--merchant-id")
-    margin_audit.set_defaults(func=command_marginpilot_audit)
+    margin_audit.set_defaults(func=command_counterpilot_audit)
 
-    margin_utility = subparsers.add_parser("marginpilot-utility-report", help="Summarize offer funnel, mature margin, refunds, concessions, and unpaid accepted offers")
-    margin_utility.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_utility = subparsers.add_parser(
+        "counterpilot-utility-report",
+        aliases=["marginpilot-utility-report"],
+        help="Summarize offer funnel, mature margin, refunds, concessions, and unpaid accepted offers",
+    )
+    margin_utility.add_argument("--data-dir", default=str(COUNTERPILOT_DEFAULT_DATA_DIR))
     margin_utility.add_argument("--merchant-id")
-    margin_utility.set_defaults(func=command_marginpilot_utility_report)
+    margin_utility.set_defaults(func=command_counterpilot_utility_report)
 
-    margin_rule = subparsers.add_parser("marginpilot-rule-sim", help="Replay a fixed merchant rule against historical contexts without causal claims")
-    margin_rule.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_rule = subparsers.add_parser(
+        "counterpilot-rule-sim",
+        aliases=["marginpilot-rule-sim"],
+        help="Replay a fixed merchant rule against historical contexts without causal claims",
+    )
+    margin_rule.add_argument("--data-dir", default=str(COUNTERPILOT_DEFAULT_DATA_DIR))
     margin_rule.add_argument("--merchant-id")
     margin_rule.add_argument("--rule", help="JSON rule body")
     margin_rule.add_argument("--rule-file", help="Path to JSON rule body")
-    margin_rule.set_defaults(func=command_marginpilot_rule_simulation)
+    margin_rule.set_defaults(func=command_counterpilot_rule_simulation)
 
-    margin_shadow = subparsers.add_parser("marginpilot-shadow-recommend", help="Record a transparent shadow recommendation for one open offer")
-    margin_shadow.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_shadow = subparsers.add_parser(
+        "counterpilot-shadow-recommend",
+        aliases=["marginpilot-shadow-recommend"],
+        help="Record a transparent shadow recommendation for one open offer",
+    )
+    margin_shadow.add_argument("--data-dir", default=str(COUNTERPILOT_DEFAULT_DATA_DIR))
     margin_shadow.add_argument("--merchant-id", required=True)
     margin_shadow.add_argument("--offer-id", required=True)
     margin_shadow.add_argument("--config", help="JSON shadow-policy config")
     margin_shadow.add_argument("--config-file", help="Path to JSON shadow-policy config")
     margin_shadow.add_argument("--generated-at")
     margin_shadow.add_argument("--no-append", action="store_true", help="Preview without appending the shadow recommendation event")
-    margin_shadow.set_defaults(func=command_marginpilot_shadow_recommend)
+    margin_shadow.set_defaults(func=command_counterpilot_shadow_recommend)
 
-    margin_exp = subparsers.add_parser("marginpilot-experiment", help="Preregister and analyze controlled MarginPilot experiments")
-    margin_exp_subparsers = margin_exp.add_subparsers(dest="marginpilot_experiment_command", required=True)
-    margin_exp_pre = margin_exp_subparsers.add_parser("preregister", help="Preregister a controlled MarginPilot experiment")
-    margin_exp_pre.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_exp = subparsers.add_parser(
+        "counterpilot-experiment",
+        aliases=["marginpilot-experiment"],
+        help="Preregister and analyze controlled Counterpilot experiments",
+    )
+    margin_exp_subparsers = margin_exp.add_subparsers(dest="counterpilot_experiment_command", required=True)
+    margin_exp_pre = margin_exp_subparsers.add_parser("preregister", help="Preregister a controlled Counterpilot experiment")
+    margin_exp_pre.add_argument("--data-dir", default=str(COUNTERPILOT_DEFAULT_DATA_DIR))
     margin_exp_pre.add_argument("--experiment-id", required=True)
     margin_exp_pre.add_argument("--experiment-type", choices=["shadow_recommendation_exposure", "offer_policy_comparison"], required=True)
     margin_exp_pre.add_argument("--merchant-id", required=True)
     margin_exp_pre.add_argument("--planned-units", type=_positive, required=True)
     margin_exp_pre.add_argument("--assignment-probability", type=float, default=0.5)
     margin_exp_pre.add_argument("--guardrails", help="JSON guardrails for policy experiments")
-    margin_exp_pre.set_defaults(func=command_marginpilot_experiment_preregister)
+    margin_exp_pre.set_defaults(func=command_counterpilot_experiment_preregister)
 
     margin_exp_assign = margin_exp_subparsers.add_parser("assign", help="Assign one eligible offer to a preregistered experiment arm")
-    margin_exp_assign.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_exp_assign.add_argument("--data-dir", default=str(COUNTERPILOT_DEFAULT_DATA_DIR))
     margin_exp_assign.add_argument("--experiment-id", required=True)
     margin_exp_assign.add_argument("--merchant-id", required=True)
     margin_exp_assign.add_argument("--offer-id", required=True)
     margin_exp_assign.add_argument("--assigned-at")
-    margin_exp_assign.set_defaults(func=command_marginpilot_experiment_assign)
+    margin_exp_assign.set_defaults(func=command_counterpilot_experiment_assign)
 
     margin_exp_outcome = margin_exp_subparsers.add_parser("outcome", help="Record a matured experiment outcome for one assignment")
-    margin_exp_outcome.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_exp_outcome.add_argument("--data-dir", default=str(COUNTERPILOT_DEFAULT_DATA_DIR))
     margin_exp_outcome.add_argument("--assignment-id", required=True)
     margin_exp_outcome.add_argument("--outcomes", required=True, help="JSON outcome object")
     margin_exp_outcome.add_argument("--adherence", help="Optional JSON adherence object")
     margin_exp_outcome.add_argument("--recorded-at")
-    margin_exp_outcome.set_defaults(func=command_marginpilot_experiment_outcome)
+    margin_exp_outcome.set_defaults(func=command_counterpilot_experiment_outcome)
 
-    margin_exp_report = margin_exp_subparsers.add_parser("report", help="Summarize a controlled MarginPilot experiment")
-    margin_exp_report.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_exp_report = margin_exp_subparsers.add_parser("report", help="Summarize a controlled Counterpilot experiment")
+    margin_exp_report.add_argument("--data-dir", default=str(COUNTERPILOT_DEFAULT_DATA_DIR))
     margin_exp_report.add_argument("--experiment-id", required=True)
-    margin_exp_report.set_defaults(func=command_marginpilot_experiment_report)
+    margin_exp_report.set_defaults(func=command_counterpilot_experiment_report)
 
-    margin_tx_create = subparsers.add_parser("marginpilot-transaction-create", help="Create a local MarginPilot transaction from an offer_submitted event")
-    margin_tx_create.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))
+    margin_tx_create = subparsers.add_parser(
+        "counterpilot-transaction-create",
+        aliases=["marginpilot-transaction-create"],
+        help="Create a local Counterpilot transaction from an offer_submitted event",
+    )
+    margin_tx_create.add_argument("--data-dir", default=str(COUNTERPILOT_CORE_DEFAULT_DATA_DIR))
     margin_tx_create.add_argument("--input", help="Optional transition event JSON; defaults to the local fixture offer")
-    margin_tx_create.set_defaults(func=command_marginpilot_transaction_create)
+    margin_tx_create.set_defaults(func=command_counterpilot_transaction_create)
 
-    margin_event_append = subparsers.add_parser("marginpilot-event-append", help="Append a MarginPilot transaction transition event")
-    margin_event_append.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))
+    margin_event_append = subparsers.add_parser(
+        "counterpilot-event-append",
+        aliases=["marginpilot-event-append"],
+        help="Append a Counterpilot transaction transition event",
+    )
+    margin_event_append.add_argument("--data-dir", default=str(COUNTERPILOT_CORE_DEFAULT_DATA_DIR))
     margin_event_append.add_argument("--input", required=True)
-    margin_event_append.set_defaults(func=command_marginpilot_event_append)
+    margin_event_append.set_defaults(func=command_counterpilot_event_append)
 
-    margin_tx_inspect = subparsers.add_parser("marginpilot-transaction-inspect", help="Inspect a deterministic MarginPilot transaction state")
-    margin_tx_inspect.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))
+    margin_tx_inspect = subparsers.add_parser(
+        "counterpilot-transaction-inspect",
+        aliases=["marginpilot-transaction-inspect"],
+        help="Inspect a deterministic Counterpilot transaction state",
+    )
+    margin_tx_inspect.add_argument("--data-dir", default=str(COUNTERPILOT_CORE_DEFAULT_DATA_DIR))
     margin_tx_inspect.add_argument("--merchant-namespace", required=True)
     margin_tx_inspect.add_argument("--transaction-id", required=True)
-    margin_tx_inspect.set_defaults(func=command_marginpilot_transaction_inspect)
+    margin_tx_inspect.set_defaults(func=command_counterpilot_transaction_inspect)
 
-    margin_consent_grant = subparsers.add_parser("marginpilot-consent-grant", help="Grant versioned purpose-specific MarginPilot ML consent")
-    margin_consent_grant.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))
+    margin_consent_grant = subparsers.add_parser(
+        "counterpilot-consent-grant",
+        aliases=["marginpilot-consent-grant"],
+        help="Grant versioned purpose-specific Counterpilot ML consent",
+    )
+    margin_consent_grant.add_argument("--data-dir", default=str(COUNTERPILOT_CORE_DEFAULT_DATA_DIR))
     margin_consent_grant.add_argument("--merchant-id", required=True)
     margin_consent_grant.add_argument("--store-id", required=True)
     margin_consent_grant.add_argument("--purpose", action="append", help="Allowed purpose; may be repeated")
-    margin_consent_grant.add_argument("--consent-version", default="marginpilot-ml-consent-v1")
+    margin_consent_grant.add_argument("--consent-version", default="counterpilot-ml-consent-v1")
     margin_consent_grant.add_argument("--policy-hash")
     margin_consent_grant.add_argument("--granted-at")
     margin_consent_grant.add_argument("--cross-merchant-training", action="store_true")
-    margin_consent_grant.set_defaults(func=command_marginpilot_consent_grant)
+    margin_consent_grant.set_defaults(func=command_counterpilot_consent_grant)
 
-    margin_consent_revoke = subparsers.add_parser("marginpilot-consent-revoke", help="Revoke one MarginPilot consent purpose")
-    margin_consent_revoke.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))
+    margin_consent_revoke = subparsers.add_parser(
+        "counterpilot-consent-revoke",
+        aliases=["marginpilot-consent-revoke"],
+        help="Revoke one Counterpilot consent purpose",
+    )
+    margin_consent_revoke.add_argument("--data-dir", default=str(COUNTERPILOT_CORE_DEFAULT_DATA_DIR))
     margin_consent_revoke.add_argument("--merchant-id", required=True)
     margin_consent_revoke.add_argument("--store-id", required=True)
     margin_consent_revoke.add_argument("--purpose", required=True)
     margin_consent_revoke.add_argument("--revoked-at")
-    margin_consent_revoke.set_defaults(func=command_marginpilot_consent_revoke)
+    margin_consent_revoke.set_defaults(func=command_counterpilot_consent_revoke)
 
-    margin_research_export = subparsers.add_parser("marginpilot-research-export", help="Export consent-gated MarginPilot research rows")
-    margin_research_export.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))
+    margin_research_export = subparsers.add_parser(
+        "counterpilot-research-export",
+        aliases=["marginpilot-research-export"],
+        help="Export consent-gated Counterpilot research rows",
+    )
+    margin_research_export.add_argument("--data-dir", default=str(COUNTERPILOT_CORE_DEFAULT_DATA_DIR))
     margin_research_export.add_argument("--merchant-id")
     margin_research_export.add_argument("--store-id")
     margin_research_export.add_argument("--purpose", default="merchant_specific_model_training")
     margin_research_export.add_argument("--as-of")
-    margin_research_export.set_defaults(func=command_marginpilot_research_export)
+    margin_research_export.set_defaults(func=command_counterpilot_research_export)
 
-    margin_fixture = subparsers.add_parser("marginpilot-run-local-fixture", help="Run the local MarginPilot commerce-loop fixture")
-    margin_fixture.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))
-    margin_fixture.set_defaults(func=command_marginpilot_run_local_fixture)
+    margin_fixture = subparsers.add_parser(
+        "counterpilot-run-local-fixture",
+        aliases=["marginpilot-run-local-fixture"],
+        help="Run the local Counterpilot commerce-loop fixture",
+    )
+    margin_fixture.add_argument("--data-dir", default=str(COUNTERPILOT_CORE_DEFAULT_DATA_DIR))
+    margin_fixture.set_defaults(func=command_counterpilot_run_local_fixture)
 
     offer_pilot = subparsers.add_parser("offerlab-pilot", help="Local-only seller pilot import and audit kit")
     offer_pilot_subparsers = offer_pilot.add_subparsers(dest="offerlab_pilot_command", required=True)

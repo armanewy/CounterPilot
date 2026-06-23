@@ -1,6 +1,6 @@
-# MarginPilot E2E Report
+# Counterpilot E2E Report
 
-- Transaction ID: `mp_txn_29edeaebbcb04a67`
+- Transaction ID: `cp_txn_29edeaebbcb04a67`
 - Mature state: `mature`
 - Duplicate order webhook idempotent: `True`
 - Mature contribution margin minor: `16166`
@@ -21,14 +21,14 @@
         "imported": false,
         "merchant_namespace": "merchant_demo_refurb:store_demo_shopify",
         "pending_event_ids": [],
-        "transaction_id": "mp_txn_29edeaebbcb04a67"
+        "transaction_id": "cp_txn_29edeaebbcb04a67"
       },
       "state": {
         "applied_event_ids": [
-          "mp_txn_29edeaebbcb04a67_offer_submitted",
-          "mp_txn_29edeaebbcb04a67_merchant_countered",
-          "mp_txn_29edeaebbcb04a67_buyer_accepted",
-          "mp_txn_29edeaebbcb04a67_checkout_created",
+          "cp_txn_29edeaebbcb04a67_offer_submitted",
+          "cp_txn_29edeaebbcb04a67_merchant_countered",
+          "cp_txn_29edeaebbcb04a67_buyer_accepted",
+          "cp_txn_29edeaebbcb04a67_checkout_created",
           "shopify_delivery_order_created"
         ],
         "available_actions": [
@@ -75,15 +75,15 @@
             "system_mode": "manual_only"
           }
         ],
-        "schema_version": "marginpilot.transaction_snapshot.v1",
-        "transaction_id": "mp_txn_29edeaebbcb04a67"
+        "schema_version": "counterpilot.transaction_snapshot.v1",
+        "transaction_id": "cp_txn_29edeaebbcb04a67"
       },
       "transition": "order_created"
     },
     "mature_state": "mature",
     "merchant_counter_state": "merchant_countered",
     "offer": [
-      "mp_txn_29edeaebbcb04a67_offer_submitted"
+      "cp_txn_29edeaebbcb04a67_offer_submitted"
     ],
     "order_created": {
       "delivery_id": "delivery_order_created",
@@ -94,14 +94,14 @@
         "imported": true,
         "merchant_namespace": "merchant_demo_refurb:store_demo_shopify",
         "pending_event_ids": [],
-        "transaction_id": "mp_txn_29edeaebbcb04a67"
+        "transaction_id": "cp_txn_29edeaebbcb04a67"
       },
       "state": {
         "applied_event_ids": [
-          "mp_txn_29edeaebbcb04a67_offer_submitted",
-          "mp_txn_29edeaebbcb04a67_merchant_countered",
-          "mp_txn_29edeaebbcb04a67_buyer_accepted",
-          "mp_txn_29edeaebbcb04a67_checkout_created",
+          "cp_txn_29edeaebbcb04a67_offer_submitted",
+          "cp_txn_29edeaebbcb04a67_merchant_countered",
+          "cp_txn_29edeaebbcb04a67_buyer_accepted",
+          "cp_txn_29edeaebbcb04a67_checkout_created",
           "shopify_delivery_order_created"
         ],
         "available_actions": [
@@ -148,8 +148,8 @@
             "system_mode": "manual_only"
           }
         ],
-        "schema_version": "marginpilot.transaction_snapshot.v1",
-        "transaction_id": "mp_txn_29edeaebbcb04a67"
+        "schema_version": "counterpilot.transaction_snapshot.v1",
+        "transaction_id": "cp_txn_29edeaebbcb04a67"
       },
       "transition": "order_created"
     },
@@ -164,14 +164,14 @@
         "pending_event_ids": [
           "shopify_delivery_return_close"
         ],
-        "transaction_id": "mp_txn_29edeaebbcb04a67"
+        "transaction_id": "cp_txn_29edeaebbcb04a67"
       },
       "state": {
         "applied_event_ids": [
-          "mp_txn_29edeaebbcb04a67_offer_submitted",
-          "mp_txn_29edeaebbcb04a67_merchant_countered",
-          "mp_txn_29edeaebbcb04a67_buyer_accepted",
-          "mp_txn_29edeaebbcb04a67_checkout_created",
+          "cp_txn_29edeaebbcb04a67_offer_submitted",
+          "cp_txn_29edeaebbcb04a67_merchant_countered",
+          "cp_txn_29edeaebbcb04a67_buyer_accepted",
+          "cp_txn_29edeaebbcb04a67_checkout_created",
           "shopify_delivery_order_created",
           "shopify_delivery_order_paid",
           "shopify_delivery_refund_partial"
@@ -219,9 +219,9 @@
               "merchant_namespace": "merchant_demo_refurb:store_demo_shopify",
               "occurred_at": "2026-06-22T10:19:00+00:00",
               "received_at": "2026-06-22T10:19:00+00:00",
-              "schema_version": "marginpilot.transaction_event.v1",
+              "schema_version": "counterpilot.transaction_event.v1",
               "source": "shopify_webhook",
-              "transaction_id": "mp_txn_29edeaebbcb04a67",
+              "transaction_id": "cp_txn_29edeaebbcb04a67",
               "transition_to": "return_closed"
             },
             "reason": "missing_predecessor",
@@ -241,8 +241,8 @@
             "system_mode": "manual_only"
           }
         ],
-        "schema_version": "marginpilot.transaction_snapshot.v1",
-        "transaction_id": "mp_txn_29edeaebbcb04a67"
+        "schema_version": "counterpilot.transaction_snapshot.v1",
+        "transaction_id": "cp_txn_29edeaebbcb04a67"
       },
       "transition": "return_closed"
     },
@@ -255,14 +255,14 @@
         "imported": true,
         "merchant_namespace": "merchant_demo_refurb:store_demo_shopify",
         "pending_event_ids": [],
-        "transaction_id": "mp_txn_29edeaebbcb04a67"
+        "transaction_id": "cp_txn_29edeaebbcb04a67"
       },
       "state": {
         "applied_event_ids": [
-          "mp_txn_29edeaebbcb04a67_offer_submitted",
-          "mp_txn_29edeaebbcb04a67_merchant_countered",
-          "mp_txn_29edeaebbcb04a67_buyer_accepted",
-          "mp_txn_29edeaebbcb04a67_checkout_created",
+          "cp_txn_29edeaebbcb04a67_offer_submitted",
+          "cp_txn_29edeaebbcb04a67_merchant_countered",
+          "cp_txn_29edeaebbcb04a67_buyer_accepted",
+          "cp_txn_29edeaebbcb04a67_checkout_created",
           "shopify_delivery_order_created",
           "shopify_delivery_order_paid"
         ],
@@ -310,8 +310,8 @@
             "system_mode": "manual_only"
           }
         ],
-        "schema_version": "marginpilot.transaction_snapshot.v1",
-        "transaction_id": "mp_txn_29edeaebbcb04a67"
+        "schema_version": "counterpilot.transaction_snapshot.v1",
+        "transaction_id": "cp_txn_29edeaebbcb04a67"
       },
       "transition": "paid"
     },
@@ -324,14 +324,14 @@
         "imported": true,
         "merchant_namespace": "merchant_demo_refurb:store_demo_shopify",
         "pending_event_ids": [],
-        "transaction_id": "mp_txn_29edeaebbcb04a67"
+        "transaction_id": "cp_txn_29edeaebbcb04a67"
       },
       "state": {
         "applied_event_ids": [
-          "mp_txn_29edeaebbcb04a67_offer_submitted",
-          "mp_txn_29edeaebbcb04a67_merchant_countered",
-          "mp_txn_29edeaebbcb04a67_buyer_accepted",
-          "mp_txn_29edeaebbcb04a67_checkout_created",
+          "cp_txn_29edeaebbcb04a67_offer_submitted",
+          "cp_txn_29edeaebbcb04a67_merchant_countered",
+          "cp_txn_29edeaebbcb04a67_buyer_accepted",
+          "cp_txn_29edeaebbcb04a67_checkout_created",
           "shopify_delivery_order_created",
           "shopify_delivery_order_paid",
           "shopify_delivery_refund_partial"
@@ -380,8 +380,8 @@
             "system_mode": "manual_only"
           }
         ],
-        "schema_version": "marginpilot.transaction_snapshot.v1",
-        "transaction_id": "mp_txn_29edeaebbcb04a67"
+        "schema_version": "counterpilot.transaction_snapshot.v1",
+        "transaction_id": "cp_txn_29edeaebbcb04a67"
       },
       "transition": "partially_refunded"
     },
@@ -394,14 +394,14 @@
         "imported": true,
         "merchant_namespace": "merchant_demo_refurb:store_demo_shopify",
         "pending_event_ids": [],
-        "transaction_id": "mp_txn_29edeaebbcb04a67"
+        "transaction_id": "cp_txn_29edeaebbcb04a67"
       },
       "state": {
         "applied_event_ids": [
-          "mp_txn_29edeaebbcb04a67_offer_submitted",
-          "mp_txn_29edeaebbcb04a67_merchant_countered",
-          "mp_txn_29edeaebbcb04a67_buyer_accepted",
-          "mp_txn_29edeaebbcb04a67_checkout_created",
+          "cp_txn_29edeaebbcb04a67_offer_submitted",
+          "cp_txn_29edeaebbcb04a67_merchant_countered",
+          "cp_txn_29edeaebbcb04a67_buyer_accepted",
+          "cp_txn_29edeaebbcb04a67_checkout_created",
           "shopify_delivery_order_created",
           "shopify_delivery_order_paid",
           "shopify_delivery_refund_partial",
@@ -452,8 +452,8 @@
             "system_mode": "manual_only"
           }
         ],
-        "schema_version": "marginpilot.transaction_snapshot.v1",
-        "transaction_id": "mp_txn_29edeaebbcb04a67"
+        "schema_version": "counterpilot.transaction_snapshot.v1",
+        "transaction_id": "cp_txn_29edeaebbcb04a67"
       },
       "transition": "return_opened"
     }
@@ -493,7 +493,7 @@
     "consent_lineage": [
       {
         "active": true,
-        "consent_policy_version": "marginpilot-ml-consent-v1",
+        "consent_policy_version": "counterpilot-ml-consent-v1",
         "granted_at": "2026-06-22T09:50:00+00:00",
         "granted_purposes": [
           "merchant_specific_model_training",
@@ -507,7 +507,7 @@
         ],
         "purpose": "merchant_specific_model_training",
         "record_hash": "d9ae344fc423e5c1629c0e998ae522d1e0457377804276fda9349e428226dcb4",
-        "record_id": "marginpilot_consent_b7cb9862192667f8d3472cfe",
+        "record_id": "counterpilot_consent_b7cb9862192667f8d3472cfe",
         "revoked_at": null,
         "store_id": "store_demo_shopify"
       }
@@ -524,7 +524,7 @@
           "store_id": "store_demo_shopify"
         }
       ],
-      "research_record_type": "marginpilot_research_event"
+      "research_record_type": "counterpilot_research_event"
     },
     "model_features": [
       {
@@ -566,14 +566,14 @@
           "return_window_matured": true,
           "returned": false
         },
-        "pseudonymous_buyer_id": "mp_buyer_43fd0b3e0dddc0f9a911165c17f06e61",
-        "pseudonymous_session_id": "mp_session_1f579838cdada1312fc88141c10e2350",
+        "pseudonymous_buyer_id": "cp_buyer_43fd0b3e0dddc0f9a911165c17f06e61",
+        "pseudonymous_session_id": "cp_session_1f579838cdada1312fc88141c10e2350",
         "store_id": "store_demo_shopify"
       }
     ],
-    "schema_version": "marginpilot_research_export.v1"
+    "schema_version": "counterpilot_research_export.v1"
   },
-  "schema_version": "marginpilot_shopify_e2e_report.v1",
+  "schema_version": "counterpilot_shopify_e2e_report.v1",
   "shopify_resource_linkage": {
     "checkout_link_available_to_delivery_flow": true,
     "checkout_link_reported_value": "operational_store_only",
@@ -582,28 +582,28 @@
   },
   "state_transition_log": [
     {
-      "event_id": "mp_txn_29edeaebbcb04a67_offer_submitted",
+      "event_id": "cp_txn_29edeaebbcb04a67_offer_submitted",
       "occurred_at": "2026-06-22T10:00:00+00:00",
       "received_at": "2026-06-22T10:00:00+00:00",
       "source": "shopify_theme_app_extension",
       "transition_to": "offer_submitted"
     },
     {
-      "event_id": "mp_txn_29edeaebbcb04a67_merchant_countered",
+      "event_id": "cp_txn_29edeaebbcb04a67_merchant_countered",
       "occurred_at": "2026-06-22T10:05:00+00:00",
       "received_at": "2026-06-22T10:05:00+00:00",
       "source": "embedded_admin",
       "transition_to": "merchant_countered"
     },
     {
-      "event_id": "mp_txn_29edeaebbcb04a67_buyer_accepted",
+      "event_id": "cp_txn_29edeaebbcb04a67_buyer_accepted",
       "occurred_at": "2026-06-22T10:10:00+00:00",
       "received_at": "2026-06-22T10:10:00+00:00",
       "source": "buyer_offer_surface",
       "transition_to": "buyer_accepted"
     },
     {
-      "event_id": "mp_txn_29edeaebbcb04a67_checkout_created",
+      "event_id": "cp_txn_29edeaebbcb04a67_checkout_created",
       "occurred_at": "2026-06-22T10:11:00+00:00",
       "received_at": "2026-06-22T10:11:00+00:00",
       "source": "shopify_admin_graphql",
@@ -645,17 +645,17 @@
       "transition_to": "return_closed"
     },
     {
-      "event_id": "mp_txn_29edeaebbcb04a67_mature",
+      "event_id": "cp_txn_29edeaebbcb04a67_mature",
       "occurred_at": "2026-07-22T10:20:00+00:00",
       "received_at": "2026-07-22T10:20:00+00:00",
-      "source": "marginpilot_return_window",
+      "source": "counterpilot_return_window",
       "transition_to": "mature"
     }
   ],
   "surface": {
     "merchant_id": "merchant_demo_refurb",
     "network_calls": 0,
-    "schema_version": "marginpilot.shopify_adapter.v1",
+    "schema_version": "counterpilot.shopify_adapter.v1",
     "store_id": "store_demo_shopify",
     "surface": "theme_app_extension_product_block",
     "visibility": {
@@ -663,6 +663,6 @@
       "product_gid_reference": "operational_store"
     }
   },
-  "transaction_id": "mp_txn_29edeaebbcb04a67"
+  "transaction_id": "cp_txn_29edeaebbcb04a67"
 }
 ```

@@ -53,7 +53,7 @@ class GraphQLShopifyProvider:
 
     def create_discounted_draft_order(self, payload: DraftOrderRequest) -> DraftOrderResult:
         query = """
-        mutation MarginPilotDraftOrderCreate($input: DraftOrderInput!) {
+        mutation CounterpilotDraftOrderCreate($input: DraftOrderInput!) {
           draftOrderCreate(input: $input) {
             draftOrder {
               id
@@ -107,7 +107,7 @@ def _draft_order_input(payload: DraftOrderRequest) -> dict[str, Any]:
                 "variantId": item["variant_gid"],
                 "quantity": int(item.get("quantity", 1)),
                 "appliedDiscount": {
-                    "description": "MarginPilot negotiated price",
+                    "description": "Counterpilot negotiated price",
                     "value": round(payload.discount_minor / 100, 2),
                     "valueType": "FIXED_AMOUNT",
                 },
@@ -115,8 +115,8 @@ def _draft_order_input(payload: DraftOrderRequest) -> dict[str, Any]:
         )
     body: dict[str, Any] = {
         "lineItems": line_items,
-        "note": f"MarginPilot transaction {payload.transaction_id}",
-        "tags": ["marginpilot", payload.transaction_id],
+        "note": f"Counterpilot transaction {payload.transaction_id}",
+        "tags": ["counterpilot", payload.transaction_id],
     }
     if payload.reserve_inventory:
         body["reserveInventoryUntil"] = None

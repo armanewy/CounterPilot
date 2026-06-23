@@ -12,13 +12,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
 
 import _bootstrap  # noqa: F401,E402
 
-from tools.marginpilot_e2e import run_development_store_e2e
+from tools.counterpilot_e2e import run_development_store_e2e
 
 
-class MarginPilotShopifyE2ETests(unittest.TestCase):
+class CounterpilotShopifyE2ETests(unittest.TestCase):
     def test_deterministic_shopify_commerce_loop_reaches_redacted_mature_margin(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            report_path = Path(tmp) / "MARGINPILOT_E2E_REPORT.md"
+            report_path = Path(tmp) / "COUNTERPILOT_E2E_REPORT.md"
             report = run_development_store_e2e(data_dir=Path(tmp) / "data", report_path=report_path)
 
             self.assertEqual(report["events"]["mature_state"], "mature")
@@ -54,13 +54,13 @@ class MarginPilotShopifyE2ETests(unittest.TestCase):
             self.assertEqual(len({event["event_id"] for event in report["state_transition_log"]}), len(report["state_transition_log"]))
 
             projection = report["research_projection"]
-            self.assertEqual(projection["schema_version"], "marginpilot_research_export.v1")
+            self.assertEqual(projection["schema_version"], "counterpilot_research_export.v1")
             self.assertEqual(len(projection["rows"]), 1)
             self.assertTrue(all(report["pii_redaction"].values()))
 
             rendered = json.dumps(report, sort_keys=True)
             self.assertNotIn("buyer@example.com", rendered)
-            self.assertNotIn("https://marginpilot-dev-store.myshopify.com", rendered)
+            self.assertNotIn("https://counterpilot-dev-store.myshopify.com", rendered)
             self.assertNotIn("gid://shopify", rendered)
             self.assertIn("operational_store", rendered)
             self.assertTrue(report_path.exists())

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from behavior_lab.marginpilot_storage.consent import (
+from behavior_lab.counterpilot_storage.consent import (
     CROSS_MERCHANT_TRAINING,
     MERCHANT_SPECIFIC_MODEL_TRAINING,
     MERCHANT_SPECIFIC_SHADOW_RECOMMENDATIONS,
@@ -10,9 +10,9 @@ from behavior_lab.marginpilot_storage.consent import (
     ConsentRecord,
     ConsentRequiredError,
 )
-from behavior_lab.marginpilot_storage.identifiers import EphemeralMappingLayer, PseudonymousIdentifier
-from behavior_lab.marginpilot_storage.pii import BoundaryViolation, PIIFinding, PIIScanError, PIIScanner, assert_no_pii
-from behavior_lab.marginpilot_storage.stores import (
+from behavior_lab.counterpilot_storage.identifiers import EphemeralMappingLayer, PseudonymousIdentifier
+from behavior_lab.counterpilot_storage.pii import BoundaryViolation, PIIFinding, PIIScanError, PIIScanner, assert_no_pii
+from behavior_lab.counterpilot_storage.stores import (
     EncryptedAtRestAdapter,
     InMemoryEncryptedAtRestAdapter,
     LocalFileEncryptedAtRestAdapter,

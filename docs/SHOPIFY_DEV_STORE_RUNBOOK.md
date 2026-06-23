@@ -1,6 +1,6 @@
 # Shopify Development Store Runbook
 
-This is the Wave 2 MarginPilot adapter path. It is a development-store
+This is the Wave 2 Counterpilot adapter path. It is a development-store
 integration, not a public Shopify app, billing flow, recommendation engine, or
 automated pricing system.
 
@@ -28,8 +28,8 @@ integrations/shopify/
   theme_extension/
     blocks/make_offer.liquid
     blocks/cart_offer.liquid
-    assets/marginpilot-offer.js
-    assets/marginpilot-offer.css
+    assets/counterpilot-offer.js
+    assets/counterpilot-offer.css
 ```
 
 ## Storefront Surface
@@ -39,7 +39,7 @@ by default cart-level offer block. The blocks collect only offer amount and
 product/cart context. They do not collect names, emails, addresses, phone
 numbers, buyer messages, or inferred identity.
 
-The JavaScript dispatches a local `marginpilot:offer-submitted` event. A real
+The JavaScript dispatches a local `counterpilot:offer-submitted` event. A real
 app server can translate that event into `ShopifyDevelopmentAdapter.submit_offer`
 after validating merchant configuration and rate limits.
 
@@ -53,7 +53,7 @@ The adapter provides the development-mode admin actions:
 - `merchant_counter`
 - `expire_offer`
 
-Each action writes through the existing MarginPilot state machine. Merchant
+Each action writes through the existing Counterpilot state machine. Merchant
 floor, cost basis, shipping discount, and fulfillment assumptions are explicit
 economic fields. Recommendations remain `manual_only`.
 
@@ -68,7 +68,7 @@ Raw Shopify resource IDs, access tokens, contact email, and invoice URLs belong
 in encrypted operational storage. Adapter responses and research exports use
 references such as `operational_store`, not raw Shopify IDs.
 
-Checkout creation is gated by the MarginPilot state machine. The adapter
+Checkout creation is gated by the Counterpilot state machine. The adapter
 requires merchant or buyer acceptance before it calls the Shopify provider. A
 duplicate checkout request returns the existing operational checkout reference
 and does not create a second draft order.
@@ -135,9 +135,9 @@ to enter research export.
 Run the deterministic no-credential proof:
 
 ```powershell
-python -m pytest tests\shopify\test_shopify_adapter.py tests\test_marginpilot_e2e.py -q
+python -m pytest tests\shopify\test_shopify_adapter.py tests\test_counterpilot_e2e.py -q
 ```
 
 The E2E writes a redacted report to
-`docs/runs/MARGINPILOT_E2E_REPORT.md`. It must show no model
+`docs/runs/COUNTERPILOT_E2E_REPORT.md`. It must show no model
 recommendations and no operational PII in the research projection.

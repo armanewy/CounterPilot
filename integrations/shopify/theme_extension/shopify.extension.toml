@@ -1,4 +1,4 @@
-name = "marginpilot-offer-surface"
+name = "counterpilot-offer-surface"
 type = "theme"
 
 [extension_points]

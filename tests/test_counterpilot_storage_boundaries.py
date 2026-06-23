@@ -8,7 +8,7 @@ import unittest
 
 import _bootstrap  # noqa: F401
 
-from behavior_lab.marginpilot_storage import (
+from behavior_lab.counterpilot_storage import (
     CROSS_MERCHANT_TRAINING,
     MERCHANT_SPECIFIC_MODEL_TRAINING,
     BoundaryViolation,
@@ -26,7 +26,7 @@ from behavior_lab.marginpilot_storage import (
     build_model_feature_matrix,
     production_artifact_manifest,
 )
-from behavior_lab.marginpilot_storage.stores import OPERATIONAL_COLLECTION
+from behavior_lab.counterpilot_storage.stores import OPERATIONAL_COLLECTION
 
 
 MERCHANT = "merchant_demo_refurb"
@@ -49,7 +49,7 @@ def _grant(
         ConsentRecord(
             merchant_id=merchant_id,
             store_id=store_id,
-            consent_policy_version="marginpilot-consent-v1",
+            consent_policy_version="counterpilot-consent-v1",
             policy_hash="policy_hash_v1",
             granted_purposes=purposes,
             prohibited_purposes=prohibited,
@@ -133,12 +133,12 @@ def _append_research_event(
     return event
 
 
-class MarginPilotStorageBoundaryTests(unittest.TestCase):
+class CounterpilotStorageBoundaryTests(unittest.TestCase):
     def test_operational_data_is_encrypted_and_research_survives_pii_deletion(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             consent = ConsentLedger(Path(tmp) / "consent.jsonl")
             _grant(consent)
-            adapter = InMemoryEncryptedAtRestAdapter(key=b"marginpilot-test-encryption-key")
+            adapter = InMemoryEncryptedAtRestAdapter(key=b"counterpilot-test-encryption-key")
             operational_store = OperationalTransactionStore(adapter)
             operational = _operational_record()
             storage_id = operational_store.put(operational)
@@ -148,7 +148,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
             self.assertNotIn(b"gid://shopify/Customer", ciphertext)
             self.assertNotIn(b"checkout.example.test", ciphertext)
 
-            mapping = EphemeralMappingLayer(secret=b"marginpilot-test-mapping-secret")
+            mapping = EphemeralMappingLayer(secret=b"counterpilot-test-mapping-secret")
             email_pseudonym = mapping.transform(
                 "buyer@example.com",
                 merchant_id=MERCHANT,
@@ -173,7 +173,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
                 as_of=TRAINING_AS_OF,
             )
             artifact = production_artifact_manifest(
-                artifact_id="marginpilot_model_artifact_001",
+                artifact_id="counterpilot_model_artifact_001",
                 model_id="shadow_margin_model",
                 dataset=dataset,
                 created_at=TRAINING_AS_OF,
@@ -210,7 +210,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
     def test_purpose_specific_consent_and_revocation_gate_training_without_rewriting_ledgers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             consent = ConsentLedger(Path(tmp) / "consent.jsonl")
-            mapping = EphemeralMappingLayer(secret=b"marginpilot-test-mapping-secret")
+            mapping = EphemeralMappingLayer(secret=b"counterpilot-test-mapping-secret")
             research = ResearchEventStore(Path(tmp) / "research.jsonl", consent_ledger=consent)
             operational = _operational_record()
             _append_research_event(research, consent, mapping, operational)
@@ -258,7 +258,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
                 ConsentRecord(
                     merchant_id=MERCHANT,
                     store_id=STORE,
-                    consent_policy_version="marginpilot-consent-v1",
+                    consent_policy_version="counterpilot-consent-v1",
                     policy_hash="policy_v1",
                     granted_purposes=(MERCHANT_SPECIFIC_MODEL_TRAINING,),
                     prohibited_purposes=(CROSS_MERCHANT_TRAINING,),
@@ -277,7 +277,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
                 ConsentRecord(
                     merchant_id=MERCHANT,
                     store_id=STORE,
-                    consent_policy_version="marginpilot-consent-v1",
+                    consent_policy_version="counterpilot-consent-v1",
                     policy_hash="backdated_policy",
                     granted_purposes=(MERCHANT_SPECIFIC_MODEL_TRAINING,),
                     prohibited_purposes=(CROSS_MERCHANT_TRAINING,),
@@ -289,7 +289,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
                 ConsentRecord(
                     merchant_id=MERCHANT,
                     store_id=STORE,
-                    consent_policy_version="marginpilot-consent-v2",
+                    consent_policy_version="counterpilot-consent-v2",
                     policy_hash="future_policy",
                     granted_purposes=(MERCHANT_SPECIFIC_MODEL_TRAINING,),
                     prohibited_purposes=(CROSS_MERCHANT_TRAINING,),
@@ -323,7 +323,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
                 ConsentRecord(
                     merchant_id=MERCHANT,
                     store_id=STORE,
-                    consent_policy_version="marginpilot-consent-v2",
+                    consent_policy_version="counterpilot-consent-v2",
                     policy_hash="future_policy",
                     granted_purposes=(MERCHANT_SPECIFIC_MODEL_TRAINING,),
                     prohibited_purposes=(CROSS_MERCHANT_TRAINING,),
@@ -335,7 +335,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
                 ConsentRecord(
                     merchant_id=MERCHANT,
                     store_id=STORE,
-                    consent_policy_version="marginpilot-consent-v1",
+                    consent_policy_version="counterpilot-consent-v1",
                     policy_hash="current_policy",
                     granted_purposes=(MERCHANT_SPECIFIC_MODEL_TRAINING,),
                     prohibited_purposes=(CROSS_MERCHANT_TRAINING,),
@@ -357,7 +357,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
                 ConsentRecord(
                     merchant_id=MERCHANT,
                     store_id=STORE,
-                    consent_policy_version="marginpilot-consent-v1",
+                    consent_policy_version="counterpilot-consent-v1",
                     policy_hash="same_time_policy",
                     granted_purposes=(MERCHANT_SPECIFIC_MODEL_TRAINING,),
                     prohibited_purposes=(),
@@ -376,7 +376,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
                 ConsentRecord(
                     merchant_id=MERCHANT,
                     store_id=STORE,
-                    consent_policy_version="marginpilot-consent-v1",
+                    consent_policy_version="counterpilot-consent-v1",
                     policy_hash="late_same_time_grant",
                     granted_purposes=(MERCHANT_SPECIFIC_MODEL_TRAINING,),
                     prohibited_purposes=(),
@@ -396,7 +396,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
     def test_cross_merchant_training_defaults_to_prohibited_until_explicit_cross_consent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             consent = ConsentLedger(Path(tmp) / "consent.jsonl")
-            mapping = EphemeralMappingLayer(secret=b"marginpilot-test-mapping-secret")
+            mapping = EphemeralMappingLayer(secret=b"counterpilot-test-mapping-secret")
             research = ResearchEventStore(Path(tmp) / "research.jsonl", consent_ledger=consent)
             merchants = [("merchant_a", "store_a", "order_a"), ("merchant_b", "store_b", "order_b")]
             for merchant_id, store_id, order_id in merchants:
@@ -459,7 +459,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             consent = ConsentLedger(Path(tmp) / "consent.jsonl")
             _grant(consent)
-            mapping = EphemeralMappingLayer(secret=b"marginpilot-test-mapping-secret")
+            mapping = EphemeralMappingLayer(secret=b"counterpilot-test-mapping-secret")
             operational = _operational_record()
             with self.assertRaises(ValueError):
                 ResearchEventRecord.from_operational(
@@ -510,7 +510,7 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
             )
             self.assertEqual(valid.outcomes["fulfillment_state"], "fulfilled")
 
-        adapter = InMemoryEncryptedAtRestAdapter(key=b"marginpilot-test-encryption-key")
+        adapter = InMemoryEncryptedAtRestAdapter(key=b"counterpilot-test-encryption-key")
         with self.assertRaises(PIIScanError) as raised:
             adapter.write("collection", "record", b"{}", metadata={"customer_email": "buyer@example.com"})
         self.assertNotIn("buyer@example.com", str(raised.exception))
@@ -519,11 +519,11 @@ class MarginPilotStorageBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             consent = ConsentLedger(Path(tmp) / "consent.jsonl")
             _grant(consent)
-            adapter = InMemoryEncryptedAtRestAdapter(key=b"marginpilot-test-encryption-key")
+            adapter = InMemoryEncryptedAtRestAdapter(key=b"counterpilot-test-encryption-key")
             operational_store = OperationalTransactionStore(adapter)
             operational = _operational_record()
             operational_store.put(operational)
-            mapping = EphemeralMappingLayer(secret=b"marginpilot-test-mapping-secret")
+            mapping = EphemeralMappingLayer(secret=b"counterpilot-test-mapping-secret")
             research = ResearchEventStore(Path(tmp) / "research.jsonl", consent_ledger=consent)
             _append_research_event(research, consent, mapping, operational)
 

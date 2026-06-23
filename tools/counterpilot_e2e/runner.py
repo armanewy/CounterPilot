@@ -7,7 +7,7 @@ from typing import Any
 from integrations.shopify import DeterministicFakeShopifyProvider, ShopifyDevelopmentAdapter, ShopifyOfferInput, sign_webhook
 
 
-SECRET = b"marginpilot-e2e-shopify-secret"
+SECRET = b"counterpilot-e2e-shopify-secret"
 
 
 def run_development_store_e2e(*, data_dir: str | Path, report_path: str | Path | None = None) -> dict[str, Any]:
@@ -17,7 +17,7 @@ def run_development_store_e2e(*, data_dir: str | Path, report_path: str | Path |
     offer = ShopifyOfferInput(
         merchant_id="merchant_demo_refurb",
         store_id="store_demo_shopify",
-        store_domain="marginpilot-dev-store.myshopify.com",
+        store_domain="counterpilot-dev-store.myshopify.com",
         product_gid="gid://shopify/Product/100",
         variant_gid="gid://shopify/ProductVariant/200",
         sku="refurb-pc-i7",
@@ -159,7 +159,7 @@ def run_development_store_e2e(*, data_dir: str | Path, report_path: str | Path |
         mature_margin_minor=16166,
     )
     report = {
-        "schema_version": "marginpilot_shopify_e2e_report.v1",
+        "schema_version": "counterpilot_shopify_e2e_report.v1",
         "surface": surface,
         "transaction_id": transaction_id,
         "merchant_inbox": {
@@ -219,7 +219,7 @@ def _send_webhook(adapter: ShopifyDevelopmentAdapter, *, topic: str, delivery_id
     raw = json.dumps(payload, sort_keys=True).encode("utf-8")
     headers = {
         "X-Shopify-Hmac-Sha256": sign_webhook(raw, SECRET),
-        "X-Shopify-Shop-Domain": "marginpilot-dev-store.myshopify.com",
+        "X-Shopify-Shop-Domain": "counterpilot-dev-store.myshopify.com",
         "X-Shopify-Webhook-Id": delivery_id,
         "X-Shopify-Topic": topic,
     }
@@ -239,7 +239,7 @@ def _transition_log(adapter: ShopifyDevelopmentAdapter, merchant_id: str, store_
     namespace = f"{merchant_id}:{store_id}"
     events = [
         event
-        for event in adapter.state.ledger.payloads("marginpilot_transaction_event")
+        for event in adapter.state.ledger.payloads("counterpilot_transaction_event")
         if event.get("merchant_namespace") == namespace and event.get("transaction_id") == transaction_id
     ]
     return [
@@ -278,7 +278,7 @@ def _write_report(report: dict[str, Any], report_path: str | Path) -> None:
         path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return
     lines = [
-        "# MarginPilot E2E Report",
+        "# Counterpilot E2E Report",
         "",
         f"- Transaction ID: `{report['transaction_id']}`",
         f"- Mature state: `{report['events']['mature_state']}`",

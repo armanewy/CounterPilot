@@ -9,7 +9,7 @@ import unittest
 
 import _bootstrap  # noqa: F401
 
-from behavior_lab.marginpilot_core import (
+from behavior_lab.counterpilot_core import (
     MERCHANT_SPECIFIC_MODEL_TRAINING,
     consent_grant,
     consent_revoke,
@@ -20,10 +20,10 @@ from behavior_lab.marginpilot_core import (
     transaction_create,
     transaction_inspect,
 )
-from behavior_lab.marginpilot_storage import ConsentRequiredError
+from behavior_lab.counterpilot_storage import ConsentRequiredError
 
 
-class MarginPilotTransactionCoreTests(unittest.TestCase):
+class CounterpilotTransactionCoreTests(unittest.TestCase):
     def test_local_fixture_completes_mature_commerce_loop_without_research_pii(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             result = run_local_commerce_fixture(data_dir=tmp)
@@ -106,7 +106,7 @@ class MarginPilotTransactionCoreTests(unittest.TestCase):
                     sys.executable,
                     "-m",
                     "behavior_lab",
-                    "marginpilot-run-local-fixture",
+                    "counterpilot-run-local-fixture",
                     "--data-dir",
                     str(Path(tmp) / "fixture"),
                 ],

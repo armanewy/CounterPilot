@@ -1,6 +1,6 @@
-# MarginPilot
+# Counterpilot
 
-MarginPilot is the commercial product boundary for OfferLab:
+Counterpilot is the commercial product boundary for OfferLab:
 
 ```text
 merchant-controlled offer or quote surface
@@ -14,25 +14,32 @@ The product optimizes mature contribution margin, not acceptance rate, GMV, or
 sale price alone. Behavior Discovery Lab remains the internal research engine;
 customers should not see model leaderboards, NBER artifacts, or lockboxes.
 
+## Rename Note
+
+Counterpilot was previously called MarginPilot internally during prototyping.
+The product-facing layer was renamed to avoid a name collision. The
+`marginpilot-*` CLI commands remain as deprecated aliases for one transition
+release; new docs and examples use `counterpilot-*`.
+
 ## Current Implementation
 
 This repository now implements the Month 1 transaction-surface foundation:
 
-- `marginpilot-template`
-- `marginpilot-ingest`
-- `marginpilot-inbox`
-- `marginpilot-audit`
-- `marginpilot-utility-report`
-- `marginpilot-rule-sim`
-- `marginpilot-shadow-recommend`
-- `marginpilot-experiment`
-- `marginpilot-transaction-create`
-- `marginpilot-event-append`
-- `marginpilot-transaction-inspect`
-- `marginpilot-consent-grant`
-- `marginpilot-consent-revoke`
-- `marginpilot-research-export`
-- `marginpilot-run-local-fixture`
+- `counterpilot-template`
+- `counterpilot-ingest`
+- `counterpilot-inbox`
+- `counterpilot-audit`
+- `counterpilot-utility-report`
+- `counterpilot-rule-sim`
+- `counterpilot-shadow-recommend`
+- `counterpilot-experiment`
+- `counterpilot-transaction-create`
+- `counterpilot-event-append`
+- `counterpilot-transaction-inspect`
+- `counterpilot-consent-grant`
+- `counterpilot-consent-revoke`
+- `counterpilot-research-export`
+- `counterpilot-run-local-fixture`
 
 The event ledger supports:
 
@@ -61,25 +68,25 @@ is stale, return maturity is incomplete, or customer-targeting features such as
 location proxies are present.
 
 Wave 5 adds controlled experiment records. The first supported design compares
-ordinary merchant response against showing a MarginPilot shadow recommendation,
+ordinary merchant response against showing a Counterpilot shadow recommendation,
 with merchant adoption as the primary outcome. The second compares a fixed
-merchant counter rule against a MarginPilot counter rule at the listing or
+merchant counter rule against a Counterpilot counter rule at the listing or
 negotiation-session level, with mature contribution margin per eligible
 negotiation as the primary outcome. Offer-policy experiments require guardrails
 for minimum net floor, maximum concession, persistent holdout, and no
 customer-level sensitive targeting.
 
 The transaction core records one negotiated commerce loop through the
-deterministic state machine documented in `docs/MARGINPILOT_STATE_MACHINE.md`.
+deterministic state machine documented in `docs/COUNTERPILOT_STATE_MACHINE.md`.
 Operational customer data lives behind the encrypted operational adapter
-documented in `docs/MARGINPILOT_DATA_BOUNDARIES.md`; research exports contain
+documented in `docs/COUNTERPILOT_DATA_BOUNDARIES.md`; research exports contain
 pseudonymous identifiers, economic fields, consent lineage, and dataset
 lineage, not names, emails, addresses, phone numbers, checkout URLs, or
 Shopify resource IDs.
 
 ## Data Rights
 
-MarginPilot requires explicit merchant consent before merchant-specific
+Counterpilot requires explicit merchant consent before merchant-specific
 learning is treated as authorized. Cross-merchant pooling is off by default.
 Customer names, emails, addresses, phone numbers, IP addresses, and raw buyer or
 customer identifiers are rejected from event payloads.
@@ -91,21 +98,21 @@ ready for a shadow optimizer.
 ## Commands
 
 ```powershell
-python -m behavior_lab marginpilot-template --output-dir C:\OfferLabData\marginpilot_templates
-python -m behavior_lab marginpilot-ingest --input C:\OfferLabData\marginpilot_templates\merchant_consent.json
-python -m behavior_lab marginpilot-ingest --input C:\OfferLabData\marginpilot_templates\offer_opened.json
-python -m behavior_lab marginpilot-inbox --merchant-id merchant_demo_refurb_tech
-python -m behavior_lab marginpilot-audit --merchant-id merchant_demo_refurb_tech
-python -m behavior_lab marginpilot-utility-report --merchant-id merchant_demo_refurb_tech
-python -m behavior_lab marginpilot-rule-sim --merchant-id merchant_demo_refurb_tech --rule '{"rule_type":"counter_percent_above_offer","counter_markup_pct":0.08}'
-python -m behavior_lab marginpilot-shadow-recommend --merchant-id merchant_demo_refurb_tech --offer-id offer_current_001 --config '{"minimum_comparable_mature_outcomes":5,"floor_buffer":10.0}'
-python -m behavior_lab marginpilot-experiment preregister --experiment-id exp_shadow_adoption_001 --experiment-type shadow_recommendation_exposure --merchant-id merchant_demo_refurb_tech --planned-units 30
-python -m behavior_lab marginpilot-experiment assign --experiment-id exp_shadow_adoption_001 --merchant-id merchant_demo_refurb_tech --offer-id offer_current_001
-python -m behavior_lab marginpilot-experiment outcome --assignment-id mp_exp_assign_EXAMPLE --outcomes '{"merchant_adopted_recommendation":true}'
-python -m behavior_lab marginpilot-experiment report --experiment-id exp_shadow_adoption_001
-python -m behavior_lab marginpilot-run-local-fixture --data-dir C:\OfferLabData\marginpilot_core
-python -m behavior_lab marginpilot-transaction-inspect --data-dir C:\OfferLabData\marginpilot_core --merchant-namespace merchant_demo_refurb:store_demo_shopify --transaction-id txn_marginpilot_loop_001
-python -m behavior_lab marginpilot-research-export --data-dir C:\OfferLabData\marginpilot_core --merchant-id merchant_demo_refurb --store-id store_demo_shopify
+python -m behavior_lab counterpilot-template --output-dir C:\OfferLabData\counterpilot_templates
+python -m behavior_lab counterpilot-ingest --input C:\OfferLabData\counterpilot_templates\merchant_consent.json
+python -m behavior_lab counterpilot-ingest --input C:\OfferLabData\counterpilot_templates\offer_opened.json
+python -m behavior_lab counterpilot-inbox --merchant-id merchant_demo_refurb_tech
+python -m behavior_lab counterpilot-audit --merchant-id merchant_demo_refurb_tech
+python -m behavior_lab counterpilot-utility-report --merchant-id merchant_demo_refurb_tech
+python -m behavior_lab counterpilot-rule-sim --merchant-id merchant_demo_refurb_tech --rule '{"rule_type":"counter_percent_above_offer","counter_markup_pct":0.08}'
+python -m behavior_lab counterpilot-shadow-recommend --merchant-id merchant_demo_refurb_tech --offer-id offer_current_001 --config '{"minimum_comparable_mature_outcomes":5,"floor_buffer":10.0}'
+python -m behavior_lab counterpilot-experiment preregister --experiment-id exp_shadow_adoption_001 --experiment-type shadow_recommendation_exposure --merchant-id merchant_demo_refurb_tech --planned-units 30
+python -m behavior_lab counterpilot-experiment assign --experiment-id exp_shadow_adoption_001 --merchant-id merchant_demo_refurb_tech --offer-id offer_current_001
+python -m behavior_lab counterpilot-experiment outcome --assignment-id cp_exp_assign_EXAMPLE --outcomes '{"merchant_adopted_recommendation":true}'
+python -m behavior_lab counterpilot-experiment report --experiment-id exp_shadow_adoption_001
+python -m behavior_lab counterpilot-run-local-fixture --data-dir C:\OfferLabData\counterpilot_core
+python -m behavior_lab counterpilot-transaction-inspect --data-dir C:\OfferLabData\counterpilot_core --merchant-namespace merchant_demo_refurb:store_demo_shopify --transaction-id txn_counterpilot_loop_001
+python -m behavior_lab counterpilot-research-export --data-dir C:\OfferLabData\counterpilot_core --merchant-id merchant_demo_refurb --store-id store_demo_shopify
 ```
 
 ## Gates

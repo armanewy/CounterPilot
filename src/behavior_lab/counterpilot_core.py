@@ -6,13 +6,13 @@ from pathlib import Path
 from typing import Any
 
 from behavior_lab.core import stable_hash, utc_now
-from behavior_lab.marginpilot import DEFAULT_DATA_DIR
-from behavior_lab.marginpilot_state import (
-    MARGINPILOT_STATE_SCHEMA_VERSION,
+from behavior_lab.counterpilot import DEFAULT_DATA_DIR
+from behavior_lab.counterpilot_state import (
+    COUNTERPILOT_STATE_SCHEMA_VERSION,
     TransactionStateMachine,
     money,
 )
-from behavior_lab.marginpilot_storage import (
+from behavior_lab.counterpilot_storage import (
     CROSS_MERCHANT_TRAINING,
     MERCHANT_SPECIFIC_MODEL_TRAINING,
     ConsentLedger,
@@ -28,7 +28,7 @@ from behavior_lab.marginpilot_storage import (
 
 
 DEFAULT_CORE_DATA_DIR = DEFAULT_DATA_DIR / "transaction_core"
-DEFAULT_CONSENT_VERSION = "marginpilot-ml-consent-v1"
+DEFAULT_CONSENT_VERSION = "counterpilot-ml-consent-v1"
 DEFAULT_PURPOSES = (
     "merchant_specific_shadow_recommendations",
     MERCHANT_SPECIFIC_MODEL_TRAINING,
@@ -88,7 +88,7 @@ def consent_grant(
         granted_purposes=granted_purposes,
         prohibited_purposes=prohibited,
         granted_at=granted_at or utc_now(),
-        provenance=provenance or {"source": "marginpilot_consent_grant"},
+        provenance=provenance or {"source": "counterpilot_consent_grant"},
     )
     appended = _consent_ledger(data_dir).append(record)
     return {"record_id": appended["record_id"], "record_hash": appended["record_hash"], "payload": appended["payload"]}
@@ -108,7 +108,7 @@ def consent_revoke(
         store_id=store_id,
         purpose=purpose,
         revoked_at=revoked_at or utc_now(),
-        provenance=provenance or {"source": "marginpilot_consent_revoke"},
+        provenance=provenance or {"source": "counterpilot_consent_revoke"},
     )
     return {"record_id": appended["record_id"], "record_hash": appended["record_hash"], "payload": appended["payload"]}
 
@@ -128,7 +128,7 @@ def research_export(
         as_of=as_of,
     )
     return {
-        "schema_version": "marginpilot_research_export.v1",
+        "schema_version": "counterpilot_research_export.v1",
         "purpose": dataset.purpose,
         "rows": list(dataset.rows),
         "dataset_lineage": dataset.dataset_lineage,
@@ -141,7 +141,7 @@ def run_local_commerce_fixture(*, data_dir: str | Path = DEFAULT_CORE_DATA_DIR) 
     data_root = Path(data_dir)
     merchant_id = "merchant_demo_refurb"
     store_id = "store_demo_shopify"
-    transaction_id = "txn_marginpilot_loop_001"
+    transaction_id = "txn_counterpilot_loop_001"
     merchant_namespace = f"{merchant_id}:{store_id}"
     machine = TransactionStateMachine(data_root)
 
@@ -172,7 +172,7 @@ def run_local_commerce_fixture(*, data_dir: str | Path = DEFAULT_CORE_DATA_DIR) 
             "phone": "555-123-4567",
             "shipping_address": "123 Main St",
         },
-        provenance={"source": "local_marginpilot_fixture"},
+        provenance={"source": "local_counterpilot_fixture"},
     )
     operational_storage_id = operational_store.put(operational)
 
@@ -181,7 +181,7 @@ def run_local_commerce_fixture(*, data_dir: str | Path = DEFAULT_CORE_DATA_DIR) 
         merchant_id=merchant_id,
         store_id=store_id,
         granted_at="2026-06-22T09:55:00+00:00",
-        provenance={"source": "local_marginpilot_fixture"},
+        provenance={"source": "local_counterpilot_fixture"},
     )
     research = _append_fixture_research_event(data_root, operational)
     export = research_export(
@@ -197,7 +197,7 @@ def run_local_commerce_fixture(*, data_dir: str | Path = DEFAULT_CORE_DATA_DIR) 
         store_id=store_id,
         purpose=MERCHANT_SPECIFIC_MODEL_TRAINING,
         revoked_at="2026-07-22T10:16:00+00:00",
-        provenance={"source": "local_marginpilot_fixture"},
+        provenance={"source": "local_counterpilot_fixture"},
     )
     revoked_blocks_new_training = False
     try:
@@ -211,7 +211,7 @@ def run_local_commerce_fixture(*, data_dir: str | Path = DEFAULT_CORE_DATA_DIR) 
     except Exception:
         revoked_blocks_new_training = True
     return {
-        "schema_version": "marginpilot_local_commerce_fixture.v1",
+        "schema_version": "counterpilot_local_commerce_fixture.v1",
         "transaction_snapshot": snapshot,
         "append_results": append_results,
         "duplicate_paid_result": duplicate_paid,
@@ -235,13 +235,13 @@ def run_local_commerce_fixture(*, data_dir: str | Path = DEFAULT_CORE_DATA_DIR) 
 
 
 def sample_offer_submitted_event() -> dict[str, Any]:
-    return local_commerce_fixture_events(merchant_namespace="merchant_demo_refurb:store_demo_shopify", transaction_id="txn_marginpilot_loop_001")[0]
+    return local_commerce_fixture_events(merchant_namespace="merchant_demo_refurb:store_demo_shopify", transaction_id="txn_counterpilot_loop_001")[0]
 
 
 def local_commerce_fixture_events(*, merchant_namespace: str, transaction_id: str) -> list[dict[str, Any]]:
     def event(transition_to: str, event_id: str, occurred_at: str, **extra: Any) -> dict[str, Any]:
         body = {
-            "schema_version": MARGINPILOT_STATE_SCHEMA_VERSION,
+            "schema_version": COUNTERPILOT_STATE_SCHEMA_VERSION,
             "event_id": event_id,
             "merchant_namespace": merchant_namespace,
             "transaction_id": transaction_id,
@@ -315,7 +315,7 @@ def _append_fixture_research_event(data_dir: str | Path, operational: Operationa
     event = ResearchEventRecord.from_operational(
         operational,
         mapping,
-        event_id="research_fixture_marginpilot_loop_001",
+        event_id="research_fixture_counterpilot_loop_001",
         occurred_at="2026-07-22T10:15:00+00:00",
         offer_context={
             "category": "refurbished technology",
@@ -336,7 +336,7 @@ def _append_fixture_research_event(data_dir: str | Path, operational: Operationa
         },
         consent_policy_version=evidence["consent_policy_version"],
         consent_policy_hash=evidence["policy_hash"],
-        provenance={"source": "local_marginpilot_fixture"},
+        provenance={"source": "local_counterpilot_fixture"},
     )
     record = _research_store(data_root).append(event)
     return {"record_id": record["record_id"], "record_hash": record["record_hash"], "payload": record["payload"]}
@@ -365,7 +365,7 @@ def _mapping_secret(data_dir: str | Path) -> bytes:
     path = Path(data_dir) / "mapping_local_secret.txt"
     if path.exists():
         return path.read_text(encoding="utf-8").strip().encode("utf-8")
-    secret = stable_hash({"purpose": "marginpilot local fixture mapping", "data_dir": str(Path(data_dir).resolve())})
+    secret = stable_hash({"purpose": "counterpilot local fixture mapping", "data_dir": str(Path(data_dir).resolve())})
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(secret + "\n", encoding="utf-8")
     return secret.encode("utf-8")

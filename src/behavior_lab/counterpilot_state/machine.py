@@ -11,8 +11,8 @@ from behavior_lab.core import parse_time, stable_hash, to_jsonable, utc_now
 from behavior_lab.ledger import ImmutableLedger
 
 
-MARGINPILOT_STATE_SCHEMA_VERSION = "marginpilot.transaction_event.v1"
-MARGINPILOT_STATE_RECORD_TYPE = "marginpilot_transaction_event"
+COUNTERPILOT_STATE_SCHEMA_VERSION = "counterpilot.transaction_event.v1"
+COUNTERPILOT_STATE_RECORD_TYPE = "counterpilot_transaction_event"
 
 STATES = {
     "offer_submitted",
@@ -103,7 +103,7 @@ PII_VALUE_PATTERNS = [
 ]
 
 
-class MarginPilotStateError(ValueError):
+class CounterpilotStateError(ValueError):
     pass
 
 
@@ -124,7 +124,7 @@ def money(amount_minor: int, currency: str = "USD") -> dict[str, Any]:
 class TransactionStateMachine:
     def __init__(self, data_dir: str | Path):
         self.data_dir = Path(data_dir)
-        self.ledger = ImmutableLedger(self.data_dir / "marginpilot_transactions.jsonl")
+        self.ledger = ImmutableLedger(self.data_dir / "counterpilot_transactions.jsonl")
 
     def append_event(self, event: dict[str, Any]) -> AppendResult:
         prepared = _normalize_event(dict(event))
@@ -139,20 +139,20 @@ class TransactionStateMachine:
                 (
                     record
                     for record in records
-                    if record.get("record_type") == MARGINPILOT_STATE_RECORD_TYPE
+                    if record.get("record_type") == COUNTERPILOT_STATE_RECORD_TYPE
                     and record.get("record_id") == record_id
                 ),
                 None,
             )
             if existing is not None:
                 if existing.get("payload") != prepared:
-                    raise MarginPilotStateError(f"idempotency key already used for a different event: {prepared['idempotency_key']}")
+                    raise CounterpilotStateError(f"idempotency key already used for a different event: {prepared['idempotency_key']}")
                 replayed = True
             else:
                 existing_events = [
                     record["payload"]
                     for record in records
-                    if record.get("record_type") == MARGINPILOT_STATE_RECORD_TYPE
+                    if record.get("record_type") == COUNTERPILOT_STATE_RECORD_TYPE
                     and record["payload"].get("merchant_namespace") == key[0]
                     and record["payload"].get("transaction_id") == key[1]
                 ]
@@ -161,10 +161,10 @@ class TransactionStateMachine:
                     if same_event[0] == prepared:
                         replayed = True
                     else:
-                        raise MarginPilotStateError(f"event_id already exists with different payload: {prepared['event_id']}")
+                        raise CounterpilotStateError(f"event_id already exists with different payload: {prepared['event_id']}")
                 else:
                     self._validate_new_event_against_history(prepared, existing_events)
-                    _append_prelocked(self.ledger, records, MARGINPILOT_STATE_RECORD_TYPE, prepared, record_id)
+                    _append_prelocked(self.ledger, records, COUNTERPILOT_STATE_RECORD_TYPE, prepared, record_id)
                     imported = True
         snapshot = self.inspect(prepared["merchant_namespace"], prepared["transaction_id"])
         return AppendResult(imported, replayed, key[1], key[0], snapshot["current_state"], snapshot["pending_event_ids"])
@@ -173,7 +173,7 @@ class TransactionStateMachine:
         events = self._events_for(merchant_namespace, transaction_id)
         replay = _replay(events)
         return {
-            "schema_version": "marginpilot.transaction_snapshot.v1",
+            "schema_version": "counterpilot.transaction_snapshot.v1",
             "merchant_namespace": merchant_namespace,
             "transaction_id": transaction_id,
             "current_state": replay["state"],
@@ -193,7 +193,7 @@ class TransactionStateMachine:
     def _events_for(self, merchant_namespace: str, transaction_id: str) -> list[dict[str, Any]]:
         return [
             event
-            for event in self.ledger.payloads(MARGINPILOT_STATE_RECORD_TYPE)
+            for event in self.ledger.payloads(COUNTERPILOT_STATE_RECORD_TYPE)
             if event.get("merchant_namespace") == merchant_namespace and event.get("transaction_id") == transaction_id
         ]
 
@@ -207,7 +207,7 @@ class TransactionStateMachine:
         if event["transition_to"] in WEBHOOK_STATES and event_pending and not event_errors:
             return
         details = event_errors or event_pending
-        raise MarginPilotStateError(f"invalid transition event {event_id}: {details}")
+        raise CounterpilotStateError(f"invalid transition event {event_id}: {details}")
 
 
 def _normalize_event(event: dict[str, Any]) -> dict[str, Any]:
@@ -224,11 +224,11 @@ def _normalize_event(event: dict[str, Any]) -> dict[str, Any]:
     ]
     missing = [field for field in required if not isinstance(event.get(field), str) or not event[field].strip()]
     if missing:
-        raise MarginPilotStateError(f"transition event missing required fields: {missing}")
-    if event["schema_version"] != MARGINPILOT_STATE_SCHEMA_VERSION:
-        raise MarginPilotStateError(f"schema_version must be {MARGINPILOT_STATE_SCHEMA_VERSION!r}")
+        raise CounterpilotStateError(f"transition event missing required fields: {missing}")
+    if event["schema_version"] != COUNTERPILOT_STATE_SCHEMA_VERSION:
+        raise CounterpilotStateError(f"schema_version must be {COUNTERPILOT_STATE_SCHEMA_VERSION!r}")
     if event["transition_to"] not in STATES:
-        raise MarginPilotStateError(f"unknown transition_to: {event['transition_to']!r}")
+        raise CounterpilotStateError(f"unknown transition_to: {event['transition_to']!r}")
     parse_time(event["occurred_at"])
     parse_time(event["received_at"])
     _reject_pii(event)
@@ -243,43 +243,43 @@ def _normalize_event(event: dict[str, Any]) -> dict[str, Any]:
 
 def _validate_action_fields(event: dict[str, Any]) -> None:
     if not isinstance(event.get("available_actions"), list) or not event["available_actions"]:
-        raise MarginPilotStateError("merchant/system actions require available_actions recorded before action")
+        raise CounterpilotStateError("merchant/system actions require available_actions recorded before action")
     if "recommendation" not in event or "merchant_decision" not in event or "executed_action" not in event:
-        raise MarginPilotStateError("actions must separate recommendation, merchant_decision, and executed_action")
+        raise CounterpilotStateError("actions must separate recommendation, merchant_decision, and executed_action")
     available = {str(action.get("action")) for action in event["available_actions"] if isinstance(action, dict)}
     executed = event.get("executed_action")
     if not isinstance(executed, dict) or str(executed.get("action")) not in available:
-        raise MarginPilotStateError("executed_action must be one of available_actions")
+        raise CounterpilotStateError("executed_action must be one of available_actions")
 
 
 def _validate_money_and_discounts(event: dict[str, Any]) -> None:
     currency = event.get("currency")
     if currency is not None and (not isinstance(currency, str) or len(currency) != 3):
-        raise MarginPilotStateError("currency must be a 3-letter ISO code")
+        raise CounterpilotStateError("currency must be a 3-letter ISO code")
     money_values = _money_values(event)
     currencies = {value["currency"] for value in money_values}
     if currency:
         currencies.add(currency)
     if len(currencies) > 1 and not _has_conversion(event, currencies):
-        raise MarginPilotStateError(f"mixed-currency arithmetic requires explicit conversion record: {sorted(currencies)}")
+        raise CounterpilotStateError(f"mixed-currency arithmetic requires explicit conversion record: {sorted(currencies)}")
     for item in event.get("line_items", []) or []:
         if not isinstance(item, dict) or int(item.get("quantity", 0)) <= 0:
-            raise MarginPilotStateError("line_items require positive quantity")
+            raise CounterpilotStateError("line_items require positive quantity")
     for discount in event.get("discounts", []) or []:
         if not isinstance(discount, dict) or discount.get("type") not in {"shipping", "item", "order"}:
-            raise MarginPilotStateError("discount type must be shipping, item, or order")
+            raise CounterpilotStateError("discount type must be shipping, item, or order")
         _require_money(discount.get("amount"), "discount.amount")
     shipping_discounts = [item for item in event.get("discounts", []) or [] if item.get("type") == "shipping"]
     if shipping_discounts:
         shipping_cost = _find_money(event, "shipping_cost")
         if shipping_cost is None or int(shipping_cost["amount_minor"]) <= 0:
-            raise MarginPilotStateError("shipping discounts require a positive shipping_cost; free shipping is still a merchant cost")
+            raise CounterpilotStateError("shipping discounts require a positive shipping_cost; free shipping is still a merchant cost")
 
 
 def _validate_mature_outcome(event: dict[str, Any]) -> None:
     outcome = event.get("mature_outcome")
     if not isinstance(outcome, dict):
-        raise MarginPilotStateError("mature transition requires mature_outcome")
+        raise CounterpilotStateError("mature transition requires mature_outcome")
     required = [
         "payment_resolution",
         "refund_return_maturity_date",
@@ -289,9 +289,9 @@ def _validate_mature_outcome(event: dict[str, Any]) -> None:
     ]
     missing = [field for field in required if field not in outcome]
     if missing:
-        raise MarginPilotStateError(f"mature_outcome missing fields: {missing}")
+        raise CounterpilotStateError(f"mature_outcome missing fields: {missing}")
     if outcome["payment_resolution"] not in {"paid", "cancelled", "refunded", "partially_refunded"}:
-        raise MarginPilotStateError("mature_outcome.payment_resolution is invalid")
+        raise CounterpilotStateError("mature_outcome.payment_resolution is invalid")
     parse_time(str(outcome["refund_return_maturity_date"]))
     for field in ["reconciled_fees", "reconciled_fulfillment_costs", "mature_contribution_margin"]:
         _require_money(outcome[field], f"mature_outcome.{field}")
@@ -373,7 +373,7 @@ def _transaction_key(event: dict[str, Any]) -> tuple[str, str]:
 
 
 def _record_id(event: dict[str, Any]) -> str:
-    return "marginpilot_state_" + stable_hash(
+    return "counterpilot_state_" + stable_hash(
         {
             "merchant_namespace": event["merchant_namespace"],
             "transaction_id": event["transaction_id"],
@@ -390,7 +390,7 @@ def _append_prelocked(
     record_id: str,
 ) -> None:
     if any(record.get("record_id") == record_id for record in records):
-        raise MarginPilotStateError(f"record_id already exists: {record_id}")
+        raise CounterpilotStateError(f"record_id already exists: {record_id}")
     previous = str(records[-1]["record_hash"]) if records else ledger.genesis_hash
     body = {
         "record_id": record_id,
@@ -421,13 +421,13 @@ def _money_values(value: Any) -> list[dict[str, Any]]:
 
 def _require_money(value: Any, field: str) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise MarginPilotStateError(f"{field} must be a money object")
+        raise CounterpilotStateError(f"{field} must be a money object")
     amount = value.get("amount_minor")
     currency = value.get("currency")
     if isinstance(amount, bool) or not isinstance(amount, int):
-        raise MarginPilotStateError(f"{field}.amount_minor must be an integer")
+        raise CounterpilotStateError(f"{field}.amount_minor must be an integer")
     if not isinstance(currency, str) or len(currency) != 3 or not currency.isalpha():
-        raise MarginPilotStateError(f"{field}.currency must be a 3-letter ISO code")
+        raise CounterpilotStateError(f"{field}.currency must be a 3-letter ISO code")
     return {"amount_minor": amount, "currency": currency.upper()}
 
 
@@ -474,13 +474,13 @@ def _reject_pii(value: Any, *, path: str = "") -> None:
             key_text = str(key)
             tokens = _tokens(key_text)
             if tokens & PII_KEY_TOKENS:
-                raise MarginPilotStateError(f"PII/free-form buyer field is not allowed: {path + key_text}")
+                raise CounterpilotStateError(f"PII/free-form buyer field is not allowed: {path + key_text}")
             _reject_pii(item, path=f"{path}{key_text}.")
     elif isinstance(value, list):
         for index, item in enumerate(value):
             _reject_pii(item, path=f"{path}{index}.")
     elif isinstance(value, str) and any(pattern.search(value) for pattern in PII_VALUE_PATTERNS):
-        raise MarginPilotStateError(f"PII value is not allowed at {path.rstrip('.')}")
+        raise CounterpilotStateError(f"PII value is not allowed at {path.rstrip('.')}")
 
 
 def _tokens(text: str) -> set[str]:
