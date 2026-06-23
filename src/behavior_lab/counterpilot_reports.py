@@ -63,6 +63,7 @@ def counterpilot_report_markdown(report: dict[str, Any]) -> str:
         f"- Transactions: `{report['transaction_count']}`",
         f"- Merchant namespace: `{report.get('merchant_namespace') or 'all'}`",
         f"- Mature-margin totals provisional: `{summary['totals_provisional']}`",
+        "- Not a recommendation model: `true`",
         "",
         "## Offer Funnel",
         "",
@@ -104,12 +105,51 @@ def counterpilot_report_markdown(report: dict[str, Any]) -> str:
             f"- Missing fees: `{leakage['missing_fees']}`",
             f"- Immature outcomes: `{leakage['immature_outcomes']}`",
             "",
+            "## Product And Inventory Breakdowns",
+            "",
+            "### Product/SKU",
+            "",
+        ]
+    )
+    lines.extend(_markdown_breakdown(report["breakdowns"]["by_product_sku"]))
+    lines.extend(
+        [
+            "",
+            "### Inventory Age",
+            "",
+        ]
+    )
+    lines.extend(_markdown_breakdown(report["breakdowns"]["by_inventory_age_bucket"]))
+    lines.extend(
+        [
+            "",
+            "### Offer-To-Asking Ratio",
+            "",
+        ]
+    )
+    lines.extend(_markdown_breakdown(report["breakdowns"]["by_offer_to_asking_ratio_bucket"]))
+    lines.extend(
+        [
+            "",
             "## Rule Simulator",
             "",
             report["rule_simulator"]["label"],
         ]
     )
     return "\n".join(lines) + "\n"
+
+
+def _markdown_breakdown(section: dict[str, dict[str, int]]) -> list[str]:
+    if not section:
+        return ["- none"]
+    lines = []
+    for bucket, values in section.items():
+        lines.append(
+            f"- {bucket}: `{values.get('transactions', 0)}` transactions, "
+            f"`{values.get('mature', 0)}` mature, "
+            f"`{values.get('complete_margin', 0)}` complete-margin minor units"
+        )
+    return lines
 
 
 def write_counterpilot_report(

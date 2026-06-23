@@ -141,3 +141,21 @@ python -m pytest tests\shopify\test_shopify_adapter.py tests\test_counterpilot_e
 The E2E writes a redacted report to
 `docs/runs/COUNTERPILOT_E2E_REPORT.md`. It must show no model
 recommendations and no operational PII in the research projection.
+
+## Live Dev-Store Gate
+
+The fake-provider E2E is not a live Shopify proof. Before Counterpilot is
+demoed as a commerce product, complete the checklist in
+`docs/runs/COUNTERPILOT_DEV_STORE_PROOF.md`.
+
+Run the non-mutating configuration check first:
+
+```powershell
+python -m behavior_lab counterpilot-devstore-check
+```
+
+When a real dev-store loop completes, save the redacted artifact at
+`reports/counterpilot_dev_store_proof.json`. It must contain hashed Shopify
+resource IDs, mature-margin components, report and research-export hashes, and
+a PII scan result. It must not contain access tokens, checkout URLs, customer
+contact details, or raw buyer messages.

@@ -30,6 +30,7 @@ This repository now implements the Month 1 transaction-surface foundation:
 - `counterpilot-inbox`
 - `counterpilot-audit`
 - `counterpilot-report`
+- `counterpilot-devstore-check`
 - `counterpilot-utility-report`
 - `counterpilot-rule-sim`
 - `counterpilot-shadow-recommend`
@@ -108,6 +109,7 @@ python -m behavior_lab counterpilot-ingest --input C:\OfferLabData\counterpilot_
 python -m behavior_lab counterpilot-inbox --merchant-id merchant_demo_refurb_tech
 python -m behavior_lab counterpilot-audit --merchant-id merchant_demo_refurb_tech
 python -m behavior_lab counterpilot-report --data-dir C:\OfferLabData\counterpilot_core --format markdown --output report.md
+python -m behavior_lab counterpilot-devstore-check
 python -m behavior_lab counterpilot-utility-report --merchant-id merchant_demo_refurb_tech
 python -m behavior_lab counterpilot-rule-sim --merchant-id merchant_demo_refurb_tech --rule '{"rule_type":"counter_percent_above_offer","counter_markup_pct":0.08}'
 python -m behavior_lab counterpilot-shadow-recommend --merchant-id merchant_demo_refurb_tech --offer-id offer_current_001 --config '{"minimum_comparable_mature_outcomes":5,"floor_buffer":10.0}'

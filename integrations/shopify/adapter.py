@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from behavior_lab.core import stable_hash
+from behavior_lab.core import parse_time, stable_hash
 from behavior_lab.ledger import DuplicateRecordError, ImmutableLedger
 from behavior_lab.counterpilot_core import consent_grant, research_export
 from behavior_lab.counterpilot_state import COUNTERPILOT_STATE_SCHEMA_VERSION, TransactionStateMachine, money
@@ -76,10 +76,12 @@ class ShopifyDevelopmentAdapter:
         data_dir: str | Path,
         provider: ShopifyProvider,
         webhook_secret: bytes | str,
+        webhook_max_age_seconds: int | None = None,
     ):
         self.data_dir = Path(data_dir)
         self.provider = provider
         self.webhook_secret = webhook_secret
+        self.webhook_max_age_seconds = webhook_max_age_seconds
         self.state = TransactionStateMachine(self.data_dir)
         self.operational = OperationalTransactionStore(LocalFileEncryptedAtRestAdapter(self.data_dir / "operational_encrypted"))
         self.consent = ConsentLedger(self.data_dir / "consent.jsonl")
@@ -372,6 +374,7 @@ class ShopifyDevelopmentAdapter:
     def ingest_webhook(self, *, raw_body: bytes, headers: Mapping[str, str], merchant_id: str, store_id: str, transaction_id: str) -> dict[str, Any]:
         delivery_id = verify_webhook_hmac(raw_body, headers, self.webhook_secret)
         payload = json.loads(raw_body.decode("utf-8"))
+        _validate_webhook_freshness(payload, self.webhook_max_age_seconds)
         topic = _header(headers, "X-Shopify-Topic") or str(payload.get("topic", ""))
         shop_domain = _require_shop_domain(headers)
         operational = self.operational.get(merchant_id=merchant_id, store_id=store_id, operational_transaction_id=transaction_id)
@@ -402,16 +405,25 @@ class ShopifyDevelopmentAdapter:
             source="shopify_webhook",
             idempotency_key=delivery_id,
             economics=_sanitize_webhook_economics(payload.get("economics", {})),
+            test_mode=bool(payload.get("test") is True or payload.get("test_mode") is True),
         )
         result = self.state.append_event(event)
         _update_operational_resource_ids(self.operational, operational, resource_ids)
-        return {"delivery_id": delivery_id, "delivery_replay": delivery_replay, "transition": transition, "result": result.__dict__, "state": self.state.inspect(namespace, transaction_id)}
+        return {
+            "delivery_id": delivery_id,
+            "delivery_replay": delivery_replay,
+            "transition": transition,
+            "production_evidence": not bool(payload.get("test") is True or payload.get("test_mode") is True),
+            "result": result.__dict__,
+            "state": self.state.inspect(namespace, transaction_id),
+        }
 
     def ingest_app_webhook(self, *, raw_body: bytes, headers: Mapping[str, str], merchant_id: str, store_id: str) -> dict[str, Any]:
         delivery_id = verify_webhook_hmac(raw_body, headers, self.webhook_secret)
         shop_domain = _require_shop_domain(headers)
         _validate_app_shop_domain(self.tokens, merchant_id=merchant_id, store_id=store_id, shop_domain=shop_domain)
         payload = json.loads(raw_body.decode("utf-8"))
+        _validate_webhook_freshness(payload, self.webhook_max_age_seconds)
         topic = (_header(headers, "X-Shopify-Topic") or str(payload.get("topic", ""))).lower().replace(".", "/")
         if topic == "app/uninstalled":
             revoked = self.tokens.revoke(
@@ -615,6 +627,22 @@ def _validate_app_shop_domain(tokens: ShopifyTokenStore, *, merchant_id: str, st
         raise ShopifyWebhookError("Shopify app webhook is not bound to an installed store token")
     if record.store_domain.strip().lower() != shop_domain:
         raise ShopifyWebhookError("Shopify app webhook shop domain does not match installed store token")
+
+
+def _validate_webhook_freshness(payload: dict[str, Any], max_age_seconds: int | None) -> None:
+    if max_age_seconds is None:
+        return
+    if max_age_seconds < 0:
+        raise ShopifyWebhookError("webhook_max_age_seconds may not be negative")
+    occurred_at = payload.get("occurred_at")
+    received_at = payload.get("received_at")
+    if not isinstance(occurred_at, str) or not isinstance(received_at, str):
+        raise ShopifyWebhookError("freshness validation requires occurred_at and received_at")
+    age = parse_time(received_at) - parse_time(occurred_at)
+    if age.total_seconds() < 0:
+        raise ShopifyWebhookError("Shopify webhook received_at precedes occurred_at")
+    if age.total_seconds() > max_age_seconds:
+        raise ShopifyWebhookError("Shopify webhook is stale")
 
 
 def _extract_resource_ids(payload: dict[str, Any]) -> dict[str, str]:

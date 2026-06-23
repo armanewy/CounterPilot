@@ -195,7 +195,10 @@ class CounterpilotReportTests(unittest.TestCase):
             self.assertIn("non-causal", report["rule_simulator"]["label"])
             self.assertEqual(report["rule_simulator"]["decision_counts"]["counter_at_amount"], 1)
             self.assertFalse(report["claims"]["causal_lift_claimed"])
-            self.assertIn("Counterpilot Merchant Report", counterpilot_report_markdown(report))
+            markdown = counterpilot_report_markdown(report)
+            self.assertIn("Counterpilot Merchant Report", markdown)
+            self.assertIn("Not a recommendation model", markdown)
+            self.assertIn("Product And Inventory Breakdowns", markdown)
 
 
 if __name__ == "__main__":

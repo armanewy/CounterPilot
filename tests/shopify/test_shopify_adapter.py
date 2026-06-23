@@ -279,6 +279,67 @@ class ShopifyAdapterTests(unittest.TestCase):
             self.assertTrue(second["result"]["idempotent_replay"])
             self.assertEqual(second["state"]["event_count"], 5)
 
+    def test_stale_webhook_timestamp_is_rejected_when_age_limit_is_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = DeterministicFakeShopifyProvider()
+            adapter = ShopifyDevelopmentAdapter(data_dir=tmp, provider=provider, webhook_secret=SECRET, webhook_max_age_seconds=60)
+            offer = _offer()
+            submitted = adapter.submit_offer(offer, occurred_at="2026-06-22T10:00:00+00:00")
+            transaction_id = submitted["transaction_id"]
+            adapter.merchant_counter(
+                merchant_id=offer.merchant_id,
+                store_id=offer.store_id,
+                transaction_id=transaction_id,
+                amount_minor=76000,
+                shipping_discount_minor=3400,
+                occurred_at="2026-06-22T10:05:00+00:00",
+            )
+            adapter.buyer_accept(merchant_id=offer.merchant_id, store_id=offer.store_id, transaction_id=transaction_id, occurred_at="2026-06-22T10:10:00+00:00")
+            adapter.create_checkout(offer=offer, transaction_id=transaction_id, counter_amount_minor=76000, occurred_at="2026-06-22T10:11:00+00:00")
+            raw, headers = _webhook(
+                "orders/create",
+                "delivery_stale_order",
+                {
+                    "occurred_at": "2026-06-22T10:12:00+00:00",
+                    "received_at": "2026-06-22T10:15:00+00:00",
+                    "resource_ids": _resource_ids(provider),
+                },
+            )
+            with self.assertRaises(ShopifyWebhookError):
+                adapter.ingest_webhook(raw_body=raw, headers=headers, merchant_id=offer.merchant_id, store_id=offer.store_id, transaction_id=transaction_id)
+
+    def test_test_mode_order_is_not_production_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = DeterministicFakeShopifyProvider()
+            adapter = ShopifyDevelopmentAdapter(data_dir=tmp, provider=provider, webhook_secret=SECRET)
+            offer = _offer()
+            submitted = adapter.submit_offer(offer, occurred_at="2026-06-22T10:00:00+00:00")
+            transaction_id = submitted["transaction_id"]
+            adapter.merchant_counter(
+                merchant_id=offer.merchant_id,
+                store_id=offer.store_id,
+                transaction_id=transaction_id,
+                amount_minor=76000,
+                shipping_discount_minor=3400,
+                occurred_at="2026-06-22T10:05:00+00:00",
+            )
+            adapter.buyer_accept(merchant_id=offer.merchant_id, store_id=offer.store_id, transaction_id=transaction_id, occurred_at="2026-06-22T10:10:00+00:00")
+            adapter.create_checkout(offer=offer, transaction_id=transaction_id, counter_amount_minor=76000, occurred_at="2026-06-22T10:11:00+00:00")
+            raw, headers = _webhook(
+                "orders/create",
+                "delivery_test_mode_order",
+                {
+                    "occurred_at": "2026-06-22T10:12:00+00:00",
+                    "received_at": "2026-06-22T10:12:01+00:00",
+                    "resource_ids": _resource_ids(provider),
+                    "test": True,
+                },
+            )
+            result = adapter.ingest_webhook(raw_body=raw, headers=headers, merchant_id=offer.merchant_id, store_id=offer.store_id, transaction_id=transaction_id)
+
+            self.assertFalse(result["production_evidence"])
+            self.assertFalse(result["state"]["errors"])
+
     def test_webhook_delivery_id_cannot_be_rebound_to_another_transaction(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             provider = DeterministicFakeShopifyProvider()

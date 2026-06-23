@@ -104,6 +104,11 @@ from behavior_lab.research_api import ResearchAPI
 from behavior_lab.runner import BatchConfig, SyntheticBatchRunner
 from behavior_lab.stress import LabStressTester
 from behavior_lab.worlds import make_world
+from integrations.shopify.devstore_check import (
+    DEFAULT_PROOF_ARTIFACT as COUNTERPILOT_DEVSTORE_PROOF_ARTIFACT,
+    counterpilot_devstore_check,
+    write_redacted_devstore_proof_artifact,
+)
 
 
 def _print_json(payload: Any) -> None:
@@ -337,6 +342,20 @@ def command_counterpilot_report(args: argparse.Namespace) -> None:
         Path(args.output).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     else:
         _print_json(report)
+
+
+def command_counterpilot_devstore_check(args: argparse.Namespace) -> None:
+    result = counterpilot_devstore_check(data_dir=args.data_dir, execute_test_flow=args.execute_test_flow)
+    if args.proof_input:
+        proof = json.loads(Path(args.proof_input).read_text(encoding="utf-8"))
+        result["proof_artifact"] = write_redacted_devstore_proof_artifact(
+            proof,
+            output_path=args.proof_output,
+        )
+    if args.output:
+        Path(args.output).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    else:
+        _print_json(result)
 
 
 def command_counterpilot_utility_report(args: argparse.Namespace) -> None:
@@ -1046,6 +1065,14 @@ def build_parser() -> argparse.ArgumentParser:
     margin_report.add_argument("--output")
     margin_report.add_argument("--rule", help="Optional JSON deterministic rule for non-causal retrospective simulation")
     margin_report.set_defaults(func=command_counterpilot_report)
+
+    margin_devstore = subparsers.add_parser("counterpilot-devstore-check", help="Verify live Shopify development-store Counterpilot configuration")
+    margin_devstore.add_argument("--data-dir", default=None)
+    margin_devstore.add_argument("--execute-test-flow", action="store_true", help="Permit a future live test flow; current checker still performs no mutations")
+    margin_devstore.add_argument("--output", help="Optional JSON check output path")
+    margin_devstore.add_argument("--proof-input", help="Optional completed proof JSON to redact into an artifact")
+    margin_devstore.add_argument("--proof-output", default=str(COUNTERPILOT_DEVSTORE_PROOF_ARTIFACT))
+    margin_devstore.set_defaults(func=command_counterpilot_devstore_check)
 
     margin_utility = subparsers.add_parser(
         "counterpilot-utility-report",
