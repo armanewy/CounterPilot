@@ -15,6 +15,9 @@ from behavior_lab.ledger import ImmutableLedger
 MARGINPILOT_PRODUCT_ID = "marginpilot_negotiated_commerce"
 MARGINPILOT_SCHEMA_VERSION = "marginpilot_event.v1"
 MARGINPILOT_RECORD_TYPE = "marginpilot_event"
+MARGINPILOT_EXPERIMENT_PREREG_RECORD_TYPE = "marginpilot_experiment_preregistration"
+MARGINPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE = "marginpilot_experiment_assignment"
+MARGINPILOT_EXPERIMENT_OUTCOME_RECORD_TYPE = "marginpilot_experiment_outcome"
 DEFAULT_DATA_DIR = Path(r"C:\OfferLabData\marginpilot")
 
 EVENT_TYPES = {"merchant_consent", "offer_opened", "shadow_recommendation", "merchant_decision", "outcome_matured"}
@@ -52,6 +55,7 @@ SHADOW_SENSITIVE_FEATURE_TOKENS = {
     "wealth",
     "zip",
 }
+EXPERIMENT_TYPES = {"shadow_recommendation_exposure", "offer_policy_comparison"}
 PII_KEYS = {
     "buyer_name",
     "customer_name",
@@ -591,6 +595,9 @@ def marginpilot_shadow_recommend(
     target = next((thread for thread in threads if thread["offer"]["offer_id"] == offer_id), None)
     if target is None:
         raise MarginPilotError(f"offer_id not found for shadow recommendation: {offer_id}")
+    holdouts = _shadow_holdout_assignments(ImmutableLedger(data_root / "ledger.jsonl"), merchant_id=merchant_id, offer_id=offer_id)
+    if any(assignment["assigned_arm"] == "control" for assignment in holdouts):
+        raise MarginPilotError("persistent holdout control assignment blocks shadow recommendation exposure")
     if target["decision"] is not None:
         if append:
             raise MarginPilotError("shadow recommendations must be generated before merchant decision")
@@ -612,6 +619,229 @@ def marginpilot_shadow_recommend(
         elif existing.get("payload") != with_event_hash(validate_marginpilot_event(event)):
             raise MarginPilotError(f"Existing shadow recommendation {record_id!r} differs from generated event")
     return recommendation
+
+
+def marginpilot_experiment_preregister(
+    data_dir: str | Path = DEFAULT_DATA_DIR,
+    *,
+    experiment_id: str,
+    experiment_type: str,
+    merchant_id: str,
+    planned_units: int,
+    assignment_probability: float = 0.5,
+    treatment_policy: str | None = None,
+    control_policy: str | None = None,
+    primary_outcome: str | None = None,
+    unit_of_randomization: str | None = None,
+    guardrails: dict[str, Any] | None = None,
+    stratification_fields: list[str] | None = None,
+) -> dict[str, Any]:
+    if experiment_type not in EXPERIMENT_TYPES:
+        raise MarginPilotError(f"unknown experiment_type: {experiment_type!r}")
+    if not isinstance(experiment_id, str) or not experiment_id.strip():
+        raise MarginPilotError("experiment_id is required")
+    if planned_units <= 0:
+        raise MarginPilotError("planned_units must be positive")
+    if not 0.0 < assignment_probability < 1.0:
+        raise MarginPilotError("assignment_probability must be strictly between 0 and 1")
+    treatment, control, outcome, unit = _experiment_defaults(experiment_type, treatment_policy, control_policy, primary_outcome, unit_of_randomization)
+    if treatment == control:
+        raise MarginPilotError("treatment and control policies must differ")
+    guardrail_body = _validate_experiment_guardrails(experiment_type, guardrails or {})
+    payload = {
+        "schema_version": "marginpilot_experiment_preregistration.v1",
+        "experiment_id": experiment_id,
+        "experiment_type": experiment_type,
+        "merchant_id": merchant_id,
+        "comparison": {"treatment": treatment, "control": control},
+        "primary_outcome": outcome,
+        "unit_of_randomization": unit,
+        "planned_units": int(planned_units),
+        "assignment_probability": float(assignment_probability),
+        "guardrails": guardrail_body,
+        "stratification_fields": stratification_fields or ["category", "asking_price_band", "inventory_age_bucket"],
+        "persistent_holdout": True,
+        "customer_level_sensitive_targeting": False,
+        "model_training": "not_run",
+        "automation_allowed": False,
+        "analysis_plan": "intention_to_treat_difference_in_means_with_block_descriptives",
+    }
+    payload["preregistration_hash"] = stable_hash(payload)
+    payload["created_at"] = utc_now()
+    record_id = f"marginpilot_experiment_prereg_{experiment_id}"
+    ledger = ImmutableLedger(Path(data_dir) / "ledger.jsonl")
+    existing = ledger.find_record(record_id, MARGINPILOT_EXPERIMENT_PREREG_RECORD_TYPE)
+    if existing is not None:
+        if existing["payload"].get("preregistration_hash") != payload["preregistration_hash"]:
+            raise MarginPilotError("experiment_id already preregistered with different payload")
+        return existing["payload"]
+    ledger.append(MARGINPILOT_EXPERIMENT_PREREG_RECORD_TYPE, payload, record_id=record_id, unique_record_id=True)
+    return payload
+
+
+def marginpilot_experiment_assign(
+    data_dir: str | Path = DEFAULT_DATA_DIR,
+    *,
+    experiment_id: str,
+    merchant_id: str,
+    offer_id: str,
+    assigned_at: str | None = None,
+) -> dict[str, Any]:
+    data_root = Path(data_dir)
+    ledger = ImmutableLedger(data_root / "ledger.jsonl")
+    prereg = _experiment_preregistration(ledger, experiment_id)
+    if prereg["merchant_id"] != merchant_id:
+        raise MarginPilotError("experiment merchant_id does not match assignment merchant_id")
+    events = _events(data_root, merchant_id=merchant_id)
+    threads = _offer_threads(events)
+    target = next((thread for thread in threads if thread["offer"]["offer_id"] == offer_id), None)
+    if target is None:
+        raise MarginPilotError(f"offer_id not found for experiment assignment: {offer_id}")
+    existing = _existing_experiment_assignment(ledger, experiment_id=experiment_id, merchant_id=merchant_id, offer_id=offer_id)
+    if existing is not None:
+        return existing
+    if _existing_shadow_recommendation(events, merchant_id=merchant_id, offer_id=offer_id) is not None:
+        raise MarginPilotError("experiment assignment must occur before shadow recommendation exposure")
+    if target["decision"] is not None:
+        raise MarginPilotError("experiment assignment must occur before merchant decision")
+    if target["outcome"] is not None:
+        raise MarginPilotError("experiment assignment must occur before outcome is recorded")
+    if _contains_shadow_sensitive_feature(target["offer"]["pre_decision_context"]):
+        raise MarginPilotError("experiment assignment refuses customer-level sensitive targeting features")
+    assignment_time = assigned_at or utc_now()
+    parse_time(assignment_time)
+    if parse_time(assignment_time) < parse_time(str(prereg["created_at"])):
+        raise MarginPilotError("assignment may not be backdated before preregistration")
+    if parse_time(assignment_time) < parse_time(str(target["offer"]["occurred_at"])):
+        raise MarginPilotError("assignment may not occur before offer opening")
+    assignments = [
+        record["payload"]
+        for record in ledger.scan(MARGINPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE)
+        if record["payload"].get("experiment_id") == experiment_id
+    ]
+    if len(assignments) >= int(prereg["planned_units"]):
+        raise MarginPilotError("experiment planned_units assignment limit reached")
+    assignment_index = len(assignments)
+    probability = float(prereg["assignment_probability"])
+    draw = int(stable_hash({"experiment_id": experiment_id, "offer_id": offer_id, "preregistration_hash": prereg["preregistration_hash"]})[:16], 16) / float(16**16)
+    assigned_arm = "treatment" if draw < probability else "control"
+    block = _experiment_block(target["offer"]["pre_decision_context"])
+    payload = {
+        "schema_version": "marginpilot_experiment_assignment.v1",
+        "assignment_id": "mp_exp_assign_" + stable_hash({"experiment_id": experiment_id, "offer_id": offer_id})[:24],
+        "experiment_id": experiment_id,
+        "merchant_id": merchant_id,
+        "offer_id": offer_id,
+        "assigned_at": assignment_time,
+        "assignment_index": assignment_index,
+        "assignment_probability": probability,
+        "assigned_arm": assigned_arm,
+        "assigned_policy": prereg["comparison"]["treatment"] if assigned_arm == "treatment" else prereg["comparison"]["control"],
+        "block": block,
+        "context_hash": event_hash(target["offer"]),
+        "persistent_holdout": True,
+        "automation_allowed": False,
+        "customer_level_sensitive_targeting": False,
+    }
+    parse_time(payload["assigned_at"])
+    ledger.append(
+        MARGINPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE,
+        payload,
+        record_id=payload["assignment_id"],
+        unique_record_id=True,
+    )
+    return payload
+
+
+def marginpilot_experiment_record_outcome(
+    data_dir: str | Path = DEFAULT_DATA_DIR,
+    *,
+    assignment_id: str,
+    outcomes: dict[str, Any],
+    recorded_at: str | None = None,
+    adherence: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    data_root = Path(data_dir)
+    ledger = ImmutableLedger(data_root / "ledger.jsonl")
+    assignment = _assignment_by_id(ledger, assignment_id)
+    prereg = _experiment_preregistration(ledger, assignment["experiment_id"])
+    if prereg["primary_outcome"] not in outcomes:
+        raise MarginPilotError(f"outcome missing primary outcome {prereg['primary_outcome']!r}")
+    existing = ledger.find_record(f"marginpilot_experiment_outcome_{assignment_id}", MARGINPILOT_EXPERIMENT_OUTCOME_RECORD_TYPE)
+    payload = {
+        "schema_version": "marginpilot_experiment_outcome.v1",
+        "assignment_id": assignment_id,
+        "experiment_id": assignment["experiment_id"],
+        "merchant_id": assignment["merchant_id"],
+        "offer_id": assignment["offer_id"],
+        "recorded_at": recorded_at or utc_now(),
+        "outcomes": dict(outcomes),
+        "adherence": adherence or {"policy_seen": True, "merchant_free_to_choose": True},
+        "primary_outcome": prereg["primary_outcome"],
+    }
+    parse_time(payload["recorded_at"])
+    if parse_time(payload["recorded_at"]) < parse_time(str(assignment["assigned_at"])):
+        raise MarginPilotError("experiment outcome may not be recorded before assignment")
+    _validate_experiment_outcome_value(payload["outcomes"][prereg["primary_outcome"]], prereg["primary_outcome"])
+    if existing is not None:
+        if existing["payload"] != payload:
+            raise MarginPilotError("experiment outcome already exists with a different payload")
+        return existing["payload"]
+    ledger.append(
+        MARGINPILOT_EXPERIMENT_OUTCOME_RECORD_TYPE,
+        payload,
+        record_id=f"marginpilot_experiment_outcome_{assignment_id}",
+        unique_record_id=True,
+    )
+    return payload
+
+
+def marginpilot_experiment_report(data_dir: str | Path = DEFAULT_DATA_DIR, *, experiment_id: str) -> dict[str, Any]:
+    ledger = ImmutableLedger(Path(data_dir) / "ledger.jsonl")
+    prereg = _experiment_preregistration(ledger, experiment_id)
+    assignments = [
+        record["payload"]
+        for record in ledger.scan(MARGINPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE)
+        if record["payload"].get("experiment_id") == experiment_id
+    ]
+    outcomes_by_assignment = {
+        record["payload"]["assignment_id"]: record["payload"]
+        for record in ledger.scan(MARGINPILOT_EXPERIMENT_OUTCOME_RECORD_TYPE)
+        if record["payload"].get("experiment_id") == experiment_id
+    }
+    rows = []
+    for assignment in assignments:
+        outcome = outcomes_by_assignment.get(assignment["assignment_id"])
+        value = outcome["outcomes"][prereg["primary_outcome"]] if outcome is not None else None
+        rows.append({"assignment": assignment, "outcome": outcome, "primary_value": value})
+    treatment_values = [float(row["primary_value"]) for row in rows if row["primary_value"] is not None and row["assignment"]["assigned_arm"] == "treatment"]
+    control_values = [float(row["primary_value"]) for row in rows if row["primary_value"] is not None and row["assignment"]["assigned_arm"] == "control"]
+    by_block: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        block = "|".join(f"{key}={value}" for key, value in sorted(row["assignment"]["block"].items()))
+        by_block.setdefault(block, {"treatment_n": 0, "control_n": 0, "observed_outcomes": 0})
+        by_block[block][f"{row['assignment']['assigned_arm']}_n"] += 1
+        if row["primary_value"] is not None:
+            by_block[block]["observed_outcomes"] += 1
+    return {
+        "schema_version": "marginpilot_experiment_report.v1",
+        "experiment_id": experiment_id,
+        "experiment_type": prereg["experiment_type"],
+        "primary_outcome": prereg["primary_outcome"],
+        "analysis_population": "available_mature_outcomes",
+        "missing_outcome_count": len(assignments) - len(outcomes_by_assignment),
+        "model_training": "not_run",
+        "automation_allowed": False,
+        "assignments": {"total": len(assignments), "treatment": sum(1 for item in assignments if item["assigned_arm"] == "treatment"), "control": sum(1 for item in assignments if item["assigned_arm"] == "control")},
+        "outcomes_recorded": len(outcomes_by_assignment),
+        "available_outcome_difference": {
+            "treatment_mean": _mean(treatment_values),
+            "control_mean": _mean(control_values),
+            "difference": None if not treatment_values or not control_values else round(_mean(treatment_values) - _mean(control_values), 4),
+        },
+        "by_block": by_block,
+        "interpretation": "Randomized assignment supports intention-to-treat analysis after all preregistered outcomes mature. Until then, this is an available-outcome monitoring report and does not automate seller actions.",
+    }
 
 
 def _events(data_dir: str | Path, *, merchant_id: str | None) -> list[dict[str, Any]]:
@@ -736,6 +966,109 @@ def _existing_shadow_recommendation(events: list[dict[str, Any]], *, merchant_id
     ]
     latest = _latest_event(matches)
     return latest if latest is not None else None
+
+
+def _experiment_defaults(
+    experiment_type: str,
+    treatment_policy: str | None,
+    control_policy: str | None,
+    primary_outcome: str | None,
+    unit_of_randomization: str | None,
+) -> tuple[str, str, str, str]:
+    if experiment_type == "shadow_recommendation_exposure":
+        return (
+            treatment_policy or "shadow_recommendation_shown",
+            control_policy or "merchant_ordinary_response",
+            primary_outcome or "merchant_adopted_recommendation",
+            unit_of_randomization or "eligible_negotiation_session",
+        )
+    return (
+        treatment_policy or "marginpilot_counter_rule",
+        control_policy or "fixed_merchant_counter_rule",
+        primary_outcome or "mature_contribution_margin_per_eligible_negotiation",
+        unit_of_randomization or "listing_or_negotiation_session",
+    )
+
+
+def _validate_experiment_guardrails(experiment_type: str, guardrails: dict[str, Any]) -> dict[str, Any]:
+    body = dict(guardrails)
+    if experiment_type == "offer_policy_comparison":
+        required = ["minimum_net_floor", "maximum_concession_rate"]
+        missing = [key for key in required if key not in body]
+        if missing:
+            raise MarginPilotError(f"offer_policy_comparison requires guardrails: {missing}")
+        if float(body["minimum_net_floor"]) < 0:
+            raise MarginPilotError("minimum_net_floor may not be negative")
+        if not 0.0 <= float(body["maximum_concession_rate"]) <= 1.0:
+            raise MarginPilotError("maximum_concession_rate must be in [0, 1]")
+    body.setdefault("persistent_holdout", True)
+    body.setdefault("no_customer_level_sensitive_targeting", True)
+    if body["persistent_holdout"] is not True:
+        raise MarginPilotError("experiments require persistent_holdout true")
+    if body["no_customer_level_sensitive_targeting"] is not True:
+        raise MarginPilotError("experiments require no customer-level sensitive targeting")
+    return body
+
+
+def _experiment_preregistration(ledger: ImmutableLedger, experiment_id: str) -> dict[str, Any]:
+    record = ledger.find_record(f"marginpilot_experiment_prereg_{experiment_id}", MARGINPILOT_EXPERIMENT_PREREG_RECORD_TYPE)
+    if record is None:
+        raise MarginPilotError(f"unknown MarginPilot experiment_id: {experiment_id}")
+    return record["payload"]
+
+
+def _existing_experiment_assignment(ledger: ImmutableLedger, *, experiment_id: str, merchant_id: str, offer_id: str) -> dict[str, Any] | None:
+    for record in ledger.scan(MARGINPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE):
+        payload = record["payload"]
+        if payload.get("experiment_id") == experiment_id and payload.get("merchant_id") == merchant_id and payload.get("offer_id") == offer_id:
+            return payload
+    return None
+
+
+def _shadow_holdout_assignments(ledger: ImmutableLedger, *, merchant_id: str, offer_id: str) -> list[dict[str, Any]]:
+    matches = []
+    for record in ledger.scan(MARGINPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE):
+        payload = record["payload"]
+        if payload.get("merchant_id") != merchant_id or payload.get("offer_id") != offer_id:
+            continue
+        try:
+            prereg = _experiment_preregistration(ledger, str(payload["experiment_id"]))
+        except MarginPilotError:
+            continue
+        if prereg.get("experiment_type") == "shadow_recommendation_exposure":
+            matches.append(payload)
+    return sorted(matches, key=lambda item: parse_time(str(item["assigned_at"])))
+
+
+def _assignment_by_id(ledger: ImmutableLedger, assignment_id: str) -> dict[str, Any]:
+    record = ledger.find_record(assignment_id, MARGINPILOT_EXPERIMENT_ASSIGNMENT_RECORD_TYPE)
+    if record is None:
+        raise MarginPilotError(f"unknown MarginPilot assignment_id: {assignment_id}")
+    return record["payload"]
+
+
+def _experiment_block(context: dict[str, Any]) -> dict[str, str]:
+    asking = float(context.get("asking_price") or 0.0)
+    if asking < 100:
+        price_band = "under_100"
+    elif asking < 500:
+        price_band = "100_499"
+    else:
+        price_band = "500_plus"
+    return {
+        "asking_price_band": price_band,
+        "category": str(context.get("category") or "unknown"),
+        "inventory_age_bucket": _age_bucket(context.get("inventory_age_days")),
+    }
+
+
+def _validate_experiment_outcome_value(value: Any, outcome_name: str) -> None:
+    if outcome_name == "merchant_adopted_recommendation":
+        if not isinstance(value, bool):
+            raise MarginPilotError("merchant_adopted_recommendation must be boolean")
+        return
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        raise MarginPilotError(f"{outcome_name} must be numeric")
 
 
 def _normalize_shadow_config(config: dict[str, Any]) -> dict[str, Any]:

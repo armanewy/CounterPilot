@@ -51,6 +51,10 @@ from behavior_lab.marginpilot import (
     DEFAULT_DATA_DIR as MARGINPILOT_DEFAULT_DATA_DIR,
     ingest_marginpilot_events,
     marginpilot_audit,
+    marginpilot_experiment_assign,
+    marginpilot_experiment_preregister,
+    marginpilot_experiment_record_outcome,
+    marginpilot_experiment_report,
     marginpilot_inbox,
     marginpilot_rule_simulation,
     marginpilot_shadow_recommend,
@@ -343,6 +347,51 @@ def command_marginpilot_shadow_recommend(args: argparse.Namespace) -> None:
             append=not args.no_append,
         )
     )
+
+
+def command_marginpilot_experiment_preregister(args: argparse.Namespace) -> None:
+    guardrails = json.loads(args.guardrails) if args.guardrails else {}
+    _print_json(
+        marginpilot_experiment_preregister(
+            args.data_dir,
+            experiment_id=args.experiment_id,
+            experiment_type=args.experiment_type,
+            merchant_id=args.merchant_id,
+            planned_units=args.planned_units,
+            assignment_probability=args.assignment_probability,
+            guardrails=guardrails,
+        )
+    )
+
+
+def command_marginpilot_experiment_assign(args: argparse.Namespace) -> None:
+    _print_json(
+        marginpilot_experiment_assign(
+            args.data_dir,
+            experiment_id=args.experiment_id,
+            merchant_id=args.merchant_id,
+            offer_id=args.offer_id,
+            assigned_at=args.assigned_at,
+        )
+    )
+
+
+def command_marginpilot_experiment_outcome(args: argparse.Namespace) -> None:
+    outcomes = json.loads(args.outcomes)
+    adherence = json.loads(args.adherence) if args.adherence else None
+    _print_json(
+        marginpilot_experiment_record_outcome(
+            args.data_dir,
+            assignment_id=args.assignment_id,
+            outcomes=outcomes,
+            recorded_at=args.recorded_at,
+            adherence=adherence,
+        )
+    )
+
+
+def command_marginpilot_experiment_report(args: argparse.Namespace) -> None:
+    _print_json(marginpilot_experiment_report(args.data_dir, experiment_id=args.experiment_id))
 
 
 def command_marginpilot_transaction_create(args: argparse.Namespace) -> None:
@@ -974,6 +1023,39 @@ def build_parser() -> argparse.ArgumentParser:
     margin_shadow.add_argument("--generated-at")
     margin_shadow.add_argument("--no-append", action="store_true", help="Preview without appending the shadow recommendation event")
     margin_shadow.set_defaults(func=command_marginpilot_shadow_recommend)
+
+    margin_exp = subparsers.add_parser("marginpilot-experiment", help="Preregister and analyze controlled MarginPilot experiments")
+    margin_exp_subparsers = margin_exp.add_subparsers(dest="marginpilot_experiment_command", required=True)
+    margin_exp_pre = margin_exp_subparsers.add_parser("preregister", help="Preregister a controlled MarginPilot experiment")
+    margin_exp_pre.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_exp_pre.add_argument("--experiment-id", required=True)
+    margin_exp_pre.add_argument("--experiment-type", choices=["shadow_recommendation_exposure", "offer_policy_comparison"], required=True)
+    margin_exp_pre.add_argument("--merchant-id", required=True)
+    margin_exp_pre.add_argument("--planned-units", type=_positive, required=True)
+    margin_exp_pre.add_argument("--assignment-probability", type=float, default=0.5)
+    margin_exp_pre.add_argument("--guardrails", help="JSON guardrails for policy experiments")
+    margin_exp_pre.set_defaults(func=command_marginpilot_experiment_preregister)
+
+    margin_exp_assign = margin_exp_subparsers.add_parser("assign", help="Assign one eligible offer to a preregistered experiment arm")
+    margin_exp_assign.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_exp_assign.add_argument("--experiment-id", required=True)
+    margin_exp_assign.add_argument("--merchant-id", required=True)
+    margin_exp_assign.add_argument("--offer-id", required=True)
+    margin_exp_assign.add_argument("--assigned-at")
+    margin_exp_assign.set_defaults(func=command_marginpilot_experiment_assign)
+
+    margin_exp_outcome = margin_exp_subparsers.add_parser("outcome", help="Record a matured experiment outcome for one assignment")
+    margin_exp_outcome.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_exp_outcome.add_argument("--assignment-id", required=True)
+    margin_exp_outcome.add_argument("--outcomes", required=True, help="JSON outcome object")
+    margin_exp_outcome.add_argument("--adherence", help="Optional JSON adherence object")
+    margin_exp_outcome.add_argument("--recorded-at")
+    margin_exp_outcome.set_defaults(func=command_marginpilot_experiment_outcome)
+
+    margin_exp_report = margin_exp_subparsers.add_parser("report", help="Summarize a controlled MarginPilot experiment")
+    margin_exp_report.add_argument("--data-dir", default=str(MARGINPILOT_DEFAULT_DATA_DIR))
+    margin_exp_report.add_argument("--experiment-id", required=True)
+    margin_exp_report.set_defaults(func=command_marginpilot_experiment_report)
 
     margin_tx_create = subparsers.add_parser("marginpilot-transaction-create", help="Create a local MarginPilot transaction from an offer_submitted event")
     margin_tx_create.add_argument("--data-dir", default=str(MARGINPILOT_CORE_DEFAULT_DATA_DIR))

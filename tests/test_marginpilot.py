@@ -13,6 +13,10 @@ from behavior_lab.marginpilot import (
     MarginPilotError,
     ingest_marginpilot_events,
     marginpilot_audit,
+    marginpilot_experiment_assign,
+    marginpilot_experiment_preregister,
+    marginpilot_experiment_record_outcome,
+    marginpilot_experiment_report,
     marginpilot_inbox,
     marginpilot_rule_simulation,
     marginpilot_shadow_recommend,
@@ -324,6 +328,243 @@ class MarginPilotTests(unittest.TestCase):
             )
             self.assertEqual(protected["recommendation"]["action"], "abstain")
             self.assertIn("sensitive_or_customer_targeting_feature_present", protected["abstention_reasons"])
+
+    def test_experiment_shadow_recommendation_exposure_preregisters_assigns_and_reports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            events = sample_marginpilot_events()
+            current_offer = json.loads(json.dumps(events["offer_opened"]))
+            current_offer["event_id"] = "offer_experiment_001"
+            current_offer["offer_id"] = "offer_experiment_001"
+            current_offer["occurred_at"] = "2026-07-23T10:00:00-04:00"
+            current_offer["observation_cutoff"] = "2026-07-23T10:00:00-04:00"
+            source = Path(tmp) / "events.jsonl"
+            _write_jsonl(source, [events["merchant_consent"], current_offer])
+            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+
+            prereg = marginpilot_experiment_preregister(
+                Path(tmp) / "data",
+                experiment_id="exp_shadow_adoption_001",
+                experiment_type="shadow_recommendation_exposure",
+                merchant_id="merchant_demo_refurb_tech",
+                planned_units=4,
+                assignment_probability=0.5,
+            )
+            duplicate_prereg = marginpilot_experiment_preregister(
+                Path(tmp) / "data",
+                experiment_id="exp_shadow_adoption_001",
+                experiment_type="shadow_recommendation_exposure",
+                merchant_id="merchant_demo_refurb_tech",
+                planned_units=4,
+                assignment_probability=0.5,
+            )
+            self.assertEqual(duplicate_prereg["preregistration_hash"], prereg["preregistration_hash"])
+            with self.assertRaises(MarginPilotError):
+                marginpilot_experiment_assign(
+                    Path(tmp) / "data",
+                    experiment_id=prereg["experiment_id"],
+                    merchant_id="merchant_demo_refurb_tech",
+                    offer_id="offer_experiment_001",
+                    assigned_at="2026-06-23T10:01:00-04:00",
+                )
+            assignment = marginpilot_experiment_assign(
+                Path(tmp) / "data",
+                experiment_id=prereg["experiment_id"],
+                merchant_id="merchant_demo_refurb_tech",
+                offer_id="offer_experiment_001",
+                assigned_at="2026-07-23T10:01:00-04:00",
+            )
+            duplicate = marginpilot_experiment_assign(
+                Path(tmp) / "data",
+                experiment_id=prereg["experiment_id"],
+                merchant_id="merchant_demo_refurb_tech",
+                offer_id="offer_experiment_001",
+                assigned_at="2026-07-23T10:02:00-04:00",
+            )
+            self.assertEqual(duplicate["assignment_id"], assignment["assignment_id"])
+            decision = json.loads(json.dumps(events["merchant_decision"]))
+            decision["event_id"] = "decision_experiment_001"
+            decision["offer_id"] = "offer_experiment_001"
+            decision["occurred_at"] = "2026-07-23T10:05:00-04:00"
+            decision_path = Path(tmp) / "decision.jsonl"
+            _write_jsonl(decision_path, [decision])
+            ingest_marginpilot_events(decision_path, data_dir=Path(tmp) / "data")
+            replay_after_decision = marginpilot_experiment_assign(
+                Path(tmp) / "data",
+                experiment_id=prereg["experiment_id"],
+                merchant_id="merchant_demo_refurb_tech",
+                offer_id="offer_experiment_001",
+                assigned_at="2026-07-23T10:06:00-04:00",
+            )
+            self.assertEqual(replay_after_decision["assignment_id"], assignment["assignment_id"])
+            outcome = marginpilot_experiment_record_outcome(
+                Path(tmp) / "data",
+                assignment_id=assignment["assignment_id"],
+                outcomes={"merchant_adopted_recommendation": True},
+                recorded_at="2026-07-23T10:20:00-04:00",
+            )
+            self.assertEqual(outcome["primary_outcome"], "merchant_adopted_recommendation")
+            report = marginpilot_experiment_report(Path(tmp) / "data", experiment_id=prereg["experiment_id"])
+            self.assertEqual(report["assignments"]["total"], 1)
+            self.assertEqual(report["outcomes_recorded"], 1)
+            self.assertEqual(report["analysis_population"], "available_mature_outcomes")
+            self.assertEqual(report["missing_outcome_count"], 0)
+            self.assertFalse(report["automation_allowed"])
+            self.assertEqual(report["model_training"], "not_run")
+
+    def test_offer_policy_experiment_requires_guardrails_and_blocks_sensitive_targeting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            events = sample_marginpilot_events()
+            current_offer = json.loads(json.dumps(events["offer_opened"]))
+            current_offer["event_id"] = "offer_policy_001"
+            current_offer["offer_id"] = "offer_policy_001"
+            current_offer["occurred_at"] = "2026-07-23T10:00:00-04:00"
+            current_offer["observation_cutoff"] = "2026-07-23T10:00:00-04:00"
+            source = Path(tmp) / "events.jsonl"
+            _write_jsonl(source, [events["merchant_consent"], current_offer])
+            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+
+            with self.assertRaises(MarginPilotError):
+                marginpilot_experiment_preregister(
+                    Path(tmp) / "data",
+                    experiment_id="exp_policy_missing_guardrails",
+                    experiment_type="offer_policy_comparison",
+                    merchant_id="merchant_demo_refurb_tech",
+                    planned_units=10,
+                )
+            prereg = marginpilot_experiment_preregister(
+                Path(tmp) / "data",
+                experiment_id="exp_policy_margin_001",
+                experiment_type="offer_policy_comparison",
+                merchant_id="merchant_demo_refurb_tech",
+                planned_units=10,
+                guardrails={"minimum_net_floor": 75.0, "maximum_concession_rate": 0.25},
+            )
+            assignment = marginpilot_experiment_assign(
+                Path(tmp) / "data",
+                experiment_id=prereg["experiment_id"],
+                merchant_id="merchant_demo_refurb_tech",
+                offer_id="offer_policy_001",
+                assigned_at="2026-07-23T10:01:00-04:00",
+            )
+            outcome = marginpilot_experiment_record_outcome(
+                Path(tmp) / "data",
+                assignment_id=assignment["assignment_id"],
+                outcomes={"mature_contribution_margin_per_eligible_negotiation": 171.66},
+                recorded_at="2026-08-23T10:01:00-04:00",
+            )
+            self.assertEqual(outcome["primary_outcome"], "mature_contribution_margin_per_eligible_negotiation")
+
+            sensitive_offer = json.loads(json.dumps(events["offer_opened"]))
+            sensitive_offer["event_id"] = "offer_policy_sensitive"
+            sensitive_offer["offer_id"] = "offer_policy_sensitive"
+            sensitive_offer["occurred_at"] = "2026-07-23T10:02:00-04:00"
+            sensitive_offer["observation_cutoff"] = "2026-07-23T10:02:00-04:00"
+            sensitive_offer["pre_decision_context"]["buyer_gender"] = "unknown"
+            sensitive_path = Path(tmp) / "sensitive_policy.jsonl"
+            _write_jsonl(sensitive_path, [sensitive_offer])
+            ingest_marginpilot_events(sensitive_path, data_dir=Path(tmp) / "data")
+            with self.assertRaises(MarginPilotError):
+                marginpilot_experiment_assign(
+                    Path(tmp) / "data",
+                    experiment_id=prereg["experiment_id"],
+                    merchant_id="merchant_demo_refurb_tech",
+                    offer_id="offer_policy_sensitive",
+                )
+
+    def test_shadow_experiment_control_holdout_blocks_shadow_recommendation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            events = sample_marginpilot_events()
+            current_offer = json.loads(json.dumps(events["offer_opened"]))
+            current_offer["event_id"] = "offer_holdout_001"
+            current_offer["offer_id"] = "offer_holdout_001"
+            current_offer["occurred_at"] = "2026-07-23T10:00:00-04:00"
+            current_offer["observation_cutoff"] = "2026-07-23T10:00:00-04:00"
+            source = Path(tmp) / "events.jsonl"
+            _write_jsonl(source, [events["merchant_consent"], events["offer_opened"], events["merchant_decision"], events["outcome_matured"], current_offer])
+            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            prereg = marginpilot_experiment_preregister(
+                Path(tmp) / "data",
+                experiment_id="exp_shadow_holdout_001",
+                experiment_type="shadow_recommendation_exposure",
+                merchant_id="merchant_demo_refurb_tech",
+                planned_units=5,
+                assignment_probability=0.0 + 1e-9,
+            )
+            assignment = marginpilot_experiment_assign(
+                Path(tmp) / "data",
+                experiment_id=prereg["experiment_id"],
+                merchant_id="merchant_demo_refurb_tech",
+                offer_id="offer_holdout_001",
+                assigned_at="2026-07-23T10:01:00-04:00",
+            )
+            self.assertEqual(assignment["assigned_arm"], "control")
+            with self.assertRaises(MarginPilotError):
+                marginpilot_shadow_recommend(
+                    Path(tmp) / "data",
+                    merchant_id="merchant_demo_refurb_tech",
+                    offer_id="offer_holdout_001",
+                    config={"minimum_comparable_mature_outcomes": 1, "floor_buffer": 60.0},
+                    generated_at="2026-07-23T10:02:00-04:00",
+                )
+
+            second = marginpilot_experiment_preregister(
+                Path(tmp) / "data",
+                experiment_id="exp_shadow_overlap_001",
+                experiment_type="shadow_recommendation_exposure",
+                merchant_id="merchant_demo_refurb_tech",
+                planned_units=5,
+                assignment_probability=0.999999999,
+            )
+            second_assignment = marginpilot_experiment_assign(
+                Path(tmp) / "data",
+                experiment_id=second["experiment_id"],
+                merchant_id="merchant_demo_refurb_tech",
+                offer_id="offer_holdout_001",
+                assigned_at="2026-07-23T10:03:00-04:00",
+            )
+            self.assertEqual(second_assignment["assigned_arm"], "treatment")
+            with self.assertRaises(MarginPilotError):
+                marginpilot_shadow_recommend(
+                    Path(tmp) / "data",
+                    merchant_id="merchant_demo_refurb_tech",
+                    offer_id="offer_holdout_001",
+                    config={"minimum_comparable_mature_outcomes": 1, "floor_buffer": 60.0},
+                    generated_at="2026-07-23T10:04:00-04:00",
+                )
+
+    def test_experiment_assignment_must_precede_shadow_recommendation_exposure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            events = sample_marginpilot_events()
+            current_offer = json.loads(json.dumps(events["offer_opened"]))
+            current_offer["event_id"] = "offer_exposure_first"
+            current_offer["offer_id"] = "offer_exposure_first"
+            current_offer["occurred_at"] = "2026-07-23T10:00:00-04:00"
+            current_offer["observation_cutoff"] = "2026-07-23T10:00:00-04:00"
+            source = Path(tmp) / "events.jsonl"
+            _write_jsonl(source, [events["merchant_consent"], events["offer_opened"], events["merchant_decision"], events["outcome_matured"], current_offer])
+            ingest_marginpilot_events(source, data_dir=Path(tmp) / "data")
+            marginpilot_shadow_recommend(
+                Path(tmp) / "data",
+                merchant_id="merchant_demo_refurb_tech",
+                offer_id="offer_exposure_first",
+                config={"minimum_comparable_mature_outcomes": 1, "floor_buffer": 60.0},
+                generated_at="2026-07-23T10:01:00-04:00",
+            )
+            prereg = marginpilot_experiment_preregister(
+                Path(tmp) / "data",
+                experiment_id="exp_shadow_after_exposure",
+                experiment_type="shadow_recommendation_exposure",
+                merchant_id="merchant_demo_refurb_tech",
+                planned_units=5,
+            )
+            with self.assertRaises(MarginPilotError):
+                marginpilot_experiment_assign(
+                    Path(tmp) / "data",
+                    experiment_id=prereg["experiment_id"],
+                    merchant_id="merchant_demo_refurb_tech",
+                    offer_id="offer_exposure_first",
+                    assigned_at="2026-07-23T10:02:00-04:00",
+                )
 
     def test_inbox_scopes_consent_and_decisions_by_merchant(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
