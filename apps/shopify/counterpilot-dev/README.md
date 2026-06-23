@@ -19,7 +19,8 @@ This app shell currently contains the product-page theme app extension and a
 minimal local offer intake server used in the development-store proof. It is
 not the complete production app server yet. It now includes local maturity and
 merchant report generation. The next milestone is demo-package creation, not
-more backend expansion.
+more backend expansion. After the demo package, the next business step is three
+private-pilot merchant conversations.
 
 ## Current Extension
 
@@ -254,4 +255,5 @@ working:
 - Cross-merchant analytics.
 
 The immediate product job is the demo package: screen recording, sample report,
-one-page positioning, and pricing hypothesis.
+one-page positioning, and pricing hypothesis. Once that package is ready, do
+three private-pilot merchant conversations before adding new backend scope.

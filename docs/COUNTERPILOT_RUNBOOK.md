@@ -124,6 +124,7 @@ The remaining product milestone is not another backend route. It is:
 - Sample generated merchant report.
 - One-page positioning.
 - Pricing hypothesis.
+- Three private-pilot merchant conversations after the package is ready.
 
 Use Shopify-native rails where possible:
 
@@ -207,6 +208,32 @@ Before showing the product to another person:
 13. Maturity is recorded with `npm run counterpilot:mature`.
 14. Merchant report is generated with `npm run counterpilot:report`.
 15. Report/proof/export pass PII scans.
+16. Demo package docs have passed the committed privacy scan.
+
+## Private Beta Package
+
+The committed package for merchant conversations is:
+
+```text
+docs/COUNTERPILOT_PRIVATE_BETA_DEMO_PACKAGE.md
+docs/COUNTERPILOT_DEMO_SCRIPT.md
+docs/COUNTERPILOT_ONE_PAGER.md
+docs/COUNTERPILOT_PRICING_HYPOTHESIS.md
+docs/COUNTERPILOT_RECORDING_CHECKLIST.md
+docs/COUNTERPILOT_PRIVATE_BETA_OUTREACH.md
+reports/counterpilot_private_beta_sample_report.md
+```
+
+Run the package privacy scan with:
+
+```powershell
+python -m pytest tests/test_counterpilot_demo_package_privacy.py -q
+```
+
+After this package is recorded or reviewed, the next step is three
+private-pilot merchant conversations. Do not add billing, automation,
+recommendations, dashboards, or App Store work before those conversations
+unless a demo blocker is discovered.
 
 ## Troubleshooting
 

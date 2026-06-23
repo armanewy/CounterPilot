@@ -84,6 +84,16 @@ It writes the merchant-facing report from latest sanitized maturity state. The
 next product milestone after this acceptance test is a demo package, not more
 backend expansion.
 
+The private-beta demo package is now the merchant-conversation artifact:
+
+```text
+docs/COUNTERPILOT_PRIVATE_BETA_DEMO_PACKAGE.md
+reports/counterpilot_private_beta_sample_report.md
+```
+
+After the package is complete, the next business step is three private-pilot
+merchant conversations, not another backend feature wave.
+
 ## Blocking Failures
 
 Treat any of these as blockers:
@@ -95,4 +105,5 @@ Treat any of these as blockers:
 - report hides refunds or free-shipping costs
 - dev/test evidence is treated as production evidence
 - report/export/proof contains operational identifiers or PII
+- demo package contains operational identifiers or PII
 - app requires automated negotiation to be useful

@@ -29,6 +29,7 @@ The repository contains a completed Shopify development-store proof:
 - Proof artifact: [`reports/counterpilot_dev_store_proof.json`](reports/counterpilot_dev_store_proof.json)
 - Merchant report: [`reports/counterpilot_dev_store_report.md`](reports/counterpilot_dev_store_report.md)
 - PII-clean research export: [`reports/counterpilot_dev_store_research_export.json`](reports/counterpilot_dev_store_research_export.json)
+- Private-beta sample report: [`reports/counterpilot_private_beta_sample_report.md`](reports/counterpilot_private_beta_sample_report.md)
 
 The proven dev-store lifecycle was:
 
@@ -104,6 +105,7 @@ docs/
 
 Start with:
 
+- [`docs/COUNTERPILOT_PRIVATE_BETA_DEMO_PACKAGE.md`](docs/COUNTERPILOT_PRIVATE_BETA_DEMO_PACKAGE.md)
 - [`docs/COUNTERPILOT_PRODUCT.md`](docs/COUNTERPILOT_PRODUCT.md)
 - [`docs/COUNTERPILOT_RUNBOOK.md`](docs/COUNTERPILOT_RUNBOOK.md)
 - [`docs/COUNTERPILOT_ACCEPTANCE_TEST.md`](docs/COUNTERPILOT_ACCEPTANCE_TEST.md)
@@ -152,7 +154,8 @@ actions, buyer acceptance, Shopify draft-order checkout creation, paid order and
 refund webhook ingestion, return exposure tracking, paid-order maturity, and
 merchant report generation. The next product milestone is the demo package:
 a short screen recording, sample generated report, one-page positioning, and a
-pricing hypothesis.
+pricing hypothesis. After that, the next business step is three private-pilot
+merchant conversations, not more backend expansion.
 
 ## Golden Acceptance Test
 
@@ -191,3 +194,18 @@ Useful internal docs:
 - [`docs/WAVE_AUDIT_PROTOCOL.md`](docs/WAVE_AUDIT_PROTOCOL.md)
 
 Keep the product boring, narrow, and obviously money-linked.
+
+## Private Beta Demo Package
+
+The private-beta conversation bundle is now committed:
+
+- [`docs/COUNTERPILOT_PRIVATE_BETA_DEMO_PACKAGE.md`](docs/COUNTERPILOT_PRIVATE_BETA_DEMO_PACKAGE.md)
+- [`docs/COUNTERPILOT_DEMO_SCRIPT.md`](docs/COUNTERPILOT_DEMO_SCRIPT.md)
+- [`docs/COUNTERPILOT_ONE_PAGER.md`](docs/COUNTERPILOT_ONE_PAGER.md)
+- [`docs/COUNTERPILOT_PRICING_HYPOTHESIS.md`](docs/COUNTERPILOT_PRICING_HYPOTHESIS.md)
+- [`docs/COUNTERPILOT_RECORDING_CHECKLIST.md`](docs/COUNTERPILOT_RECORDING_CHECKLIST.md)
+- [`docs/COUNTERPILOT_PRIVATE_BETA_OUTREACH.md`](docs/COUNTERPILOT_PRIVATE_BETA_OUTREACH.md)
+- [`reports/counterpilot_private_beta_sample_report.md`](reports/counterpilot_private_beta_sample_report.md)
+
+Use this package to start three private-pilot conversations before adding new
+backend scope.
