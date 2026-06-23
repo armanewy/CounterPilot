@@ -8,10 +8,12 @@
   "scripts": {
     "shopify": "shopify",
     "build": "shopify app build",
+    "counterpilot:server": "node server/counterpilot-server.mjs",
     "dev": "shopify app dev",
     "info": "shopify app info",
     "generate": "shopify app generate",
-    "deploy": "shopify app deploy"
+    "deploy": "shopify app deploy",
+    "test:counterpilot-server": "node --test server/*.test.mjs"
   },
   "dependencies": {
     "@shopify/cli": "4.3.0"

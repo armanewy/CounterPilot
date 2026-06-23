@@ -14,6 +14,7 @@ lerna-debug.log*
 # Ignore shopify files created during app dev
 .shopify/*
 .shopify.lock
+.counterpilot-data/
 
 # Environment variables
 .env

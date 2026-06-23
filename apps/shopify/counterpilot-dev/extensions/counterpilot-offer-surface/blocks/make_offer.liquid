@@ -1,5 +1,6 @@
 <div
   class="counterpilot-offer"
+  data-counterpilot-offer-endpoint="{{ block.settings.offer_endpoint | escape }}"
   data-counterpilot-product-gid="gid://shopify/Product/{{ product.id }}"
   data-counterpilot-visible="{{ block.settings.enabled }}"
 >
@@ -8,12 +9,25 @@
       {{ block.settings.button_label }}
     </button>
     <form class="counterpilot-offer__form" data-counterpilot-form hidden>
+      <input type="hidden" name="shop" value="{{ shop.permanent_domain | escape }}">
       <input type="hidden" name="product_gid" value="gid://shopify/Product/{{ product.id }}">
+      <input type="hidden" name="variant_gid" value="gid://shopify/ProductVariant/{{ product.selected_or_first_available_variant.id }}">
+      <input type="hidden" name="product_title" value="{{ product.title | escape }}">
+      <input type="hidden" name="currency" value="{{ localization.country.currency.iso_code | default: shop.currency | escape }}">
       <label class="counterpilot-offer__label">
         Offer amount
-        <input class="counterpilot-offer__input" name="offer_amount" inputmode="decimal" autocomplete="off">
+        <input class="counterpilot-offer__input" name="offer_amount" type="number" min="0.01" step="0.01" inputmode="decimal" autocomplete="off" required>
+      </label>
+      <label class="counterpilot-offer__label">
+        Quantity
+        <input class="counterpilot-offer__input" name="quantity" type="number" min="1" step="1" value="1" inputmode="numeric" required>
+      </label>
+      <label class="counterpilot-offer__label">
+        Email
+        <input class="counterpilot-offer__input" name="buyer_email" type="email" autocomplete="email" required>
       </label>
       <button type="submit" class="counterpilot-offer__submit">Submit offer</button>
+      <p class="counterpilot-offer__status" data-counterpilot-status role="status" aria-live="polite" hidden></p>
     </form>
   {% endif %}
 </div>
@@ -39,6 +53,12 @@
       "id": "button_label",
       "label": "Button label",
       "default": "Make an offer"
+    },
+    {
+      "type": "text",
+      "id": "offer_endpoint",
+      "label": "Offer endpoint",
+      "default": "/counterpilot/offers"
     }
   ]
 }

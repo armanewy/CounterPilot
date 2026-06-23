@@ -15,11 +15,11 @@ shopper submits product-page offer
 -> merchant sees true mature margin
 ```
 
-This app shell currently contains the product-page theme app extension used in
-the development-store proof. It is not the complete production app server yet.
-The next implementation step is a backend for offer submission, merchant
-actions, buyer accept pages, draft order creation, webhook ingest, maturity
-jobs, and report generation.
+This app shell currently contains the product-page theme app extension and a
+minimal local offer intake server used in the development-store proof. It is
+not the complete production app server yet. The next implementation step is
+merchant actions, buyer accept pages, draft order creation, webhook ingest,
+maturity jobs, and report generation.
 
 ## Current Extension
 
@@ -47,6 +47,24 @@ Build the Shopify app:
 ```shell
 npm run build
 ```
+
+Run the local Counterpilot offer intake server:
+
+```shell
+npm run counterpilot:server
+```
+
+The local server exposes:
+
+```text
+POST /counterpilot/offers
+GET /counterpilot/merchant/offers
+```
+
+Submitted offers are stored in `.counterpilot-data/offers.jsonl`, which is
+operational storage and is intentionally ignored by Git. The merchant inbox
+route returns pending offers without raw buyer email, raw Shopify GIDs, checkout
+URLs, addresses, phone numbers, or buyer messages.
 
 Run against a development store:
 

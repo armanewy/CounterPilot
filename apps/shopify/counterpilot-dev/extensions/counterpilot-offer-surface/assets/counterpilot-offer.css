@@ -27,3 +27,11 @@
   border: 1px solid currentColor;
   padding: 0.6rem 0.7rem;
 }
+
+.counterpilot-offer__status {
+  margin: 0;
+}
+
+.counterpilot-offer__status[data-counterpilot-error="true"] {
+  color: #b42318;
+}
