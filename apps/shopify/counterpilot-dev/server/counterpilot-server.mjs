@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const DEFAULT_MAX_BODY_BYTES = 16 * 1024;
 const DEFAULT_DATA_DIR = path.join(process.cwd(), ".counterpilot-data");
+const DEFAULT_BUYER_RESPONSE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const OFFER_POST_PATHS = new Set([
   "/counterpilot/offers",
@@ -40,6 +41,11 @@ const MERCHANT_ACTION_EVENTS = {
   counter: "merchant_countered",
   decline: "merchant_declined",
 };
+
+const BUYER_RESPONSE_STATES = new Set([
+  "merchant_accepted",
+  "merchant_countered",
+]);
 
 const FORBIDDEN_FIELDS = new Set([
   "address",
@@ -123,6 +129,27 @@ function hashValue(value) {
     .createHash("sha256")
     .update(String(value), "utf8")
     .digest("hex");
+}
+
+function createOpaqueToken() {
+  return crypto.randomBytes(32).toString("base64url");
+}
+
+function hashToken(token) {
+  return `sha256:${hashValue(token)}`;
+}
+
+function buyerResponseTtlMs(options) {
+  if (options.buyerResponseTtlMs !== undefined) {
+    return options.buyerResponseTtlMs;
+  }
+  if (process.env.COUNTERPILOT_BUYER_RESPONSE_TTL_MS !== undefined) {
+    const configured = Number(process.env.COUNTERPILOT_BUYER_RESPONSE_TTL_MS);
+    return Number.isFinite(configured)
+      ? configured
+      : DEFAULT_BUYER_RESPONSE_TTL_MS;
+  }
+  return DEFAULT_BUYER_RESPONSE_TTL_MS;
 }
 
 function safeCompareHex(actual, expected) {
@@ -328,7 +355,7 @@ function normalizeBuyerContact(payload) {
   };
 }
 
-function resolveAppProxyStoreId(requestUrl, payload, options) {
+function resolveAppProxyStoreId(requestUrl, payload = {}, options = {}) {
   if (!requestUrl.pathname.startsWith("/apps/")) {
     return null;
   }
@@ -467,6 +494,25 @@ export function buildOfferSnapshots(events) {
       snapshot.counter_amount_minor = event.counter_amount_minor;
       snapshot.counter_currency = event.currency;
     }
+    if (BUYER_RESPONSE_STATES.has(event.event_type)) {
+      snapshot.buyer_response_token_hash = event.buyer_response_token_hash;
+      snapshot.buyer_response_expires_at = event.buyer_response_expires_at;
+      snapshot.acceptable_amount_minor =
+        event.event_type === "merchant_countered"
+          ? event.counter_amount_minor
+          : snapshot.offer_amount_minor;
+      snapshot.acceptable_currency =
+        event.event_type === "merchant_countered"
+          ? event.currency
+          : snapshot.currency;
+      snapshot.accepted_from_event_type = event.event_type;
+    }
+    if (event.event_type === "buyer_accepted") {
+      snapshot.accepted_amount_minor = event.accepted_amount_minor;
+      snapshot.accepted_currency = event.currency;
+      snapshot.accepted_from_event_type = event.accepted_from_event_type;
+      snapshot.buyer_accepted_at = event.occurred_at;
+    }
   }
   return snapshots;
 }
@@ -486,6 +532,9 @@ export function sanitizeOfferForInbox(record) {
     offer_amount_minor: record.offer_amount_minor,
     counter_amount_minor: record.counter_amount_minor,
     counter_currency: record.counter_currency,
+    accepted_amount_minor: record.accepted_amount_minor,
+    accepted_currency: record.accepted_currency,
+    buyer_accepted_at: record.buyer_accepted_at,
     currency: record.currency,
     quantity: record.quantity,
     buyer_contact_reference: record.buyer_contact_reference,
@@ -511,6 +560,7 @@ function createMerchantActionEvent(
   snapshot,
   action,
   payload,
+  options,
   now = new Date(),
 ) {
   if (snapshot.lifecycle_state !== "offer_submitted") {
@@ -541,7 +591,73 @@ function createMerchantActionEvent(
     event.counter_amount_minor = payload.counter_amount_minor;
     event.currency = payload.currency;
   }
-  return event;
+  let buyerResponsePath = null;
+  if (action === "accept" || action === "counter") {
+    const buyerResponseToken = createOpaqueToken();
+    event.buyer_response_token_hash = hashToken(buyerResponseToken);
+    event.buyer_response_expires_at = new Date(
+      now.getTime() + buyerResponseTtlMs(options),
+    ).toISOString();
+    buyerResponsePath = `/apps/counterpilot/offers/${encodeURIComponent(
+      snapshot.transaction_id,
+    )}/respond?token=${encodeURIComponent(buyerResponseToken)}`;
+  }
+  return { event, buyerResponsePath };
+}
+
+function sanitizeBuyerResponseView(snapshot) {
+  return {
+    transaction_id: snapshot.transaction_id,
+    status: snapshot.lifecycle_state,
+    product_title: snapshot.product_title,
+    original_offer_amount_minor: snapshot.offer_amount_minor,
+    accepted_amount_minor: snapshot.acceptable_amount_minor,
+    currency: snapshot.acceptable_currency,
+    quantity: snapshot.quantity,
+    expires_at: snapshot.buyer_response_expires_at,
+  };
+}
+
+function validateBuyerResponseSnapshot(snapshot, token, now = new Date()) {
+  if (!BUYER_RESPONSE_STATES.has(snapshot.lifecycle_state)) {
+    throw validationError(
+      `cannot accept an offer in ${snapshot.lifecycle_state} state`,
+      409,
+    );
+  }
+  if (!snapshot.buyer_response_token_hash) {
+    throw validationError("buyer response token is not available", 401);
+  }
+  if (typeof token !== "string" || token.trim() === "") {
+    throw validationError("buyer response token is required", 401);
+  }
+  const tokenHash = hashToken(normalizeString(token, "token", 512));
+  if (!safeCompareText(tokenHash, snapshot.buyer_response_token_hash)) {
+    throw validationError("buyer response token is invalid", 401);
+  }
+  if (
+    snapshot.buyer_response_expires_at &&
+    new Date(snapshot.buyer_response_expires_at).getTime() <= now.getTime()
+  ) {
+    throw validationError("buyer response token has expired", 410);
+  }
+}
+
+function createBuyerAcceptedEvent(snapshot, now = new Date()) {
+  return {
+    schema_version: "counterpilot.offer_event.v1",
+    transaction_id: snapshot.transaction_id,
+    lifecycle_state: "buyer_accepted",
+    event_type: "buyer_accepted",
+    actor_type: "buyer",
+    occurred_at: now.toISOString(),
+    store_id: snapshot.store_id,
+    store_reference_hash: `sha256:${hashValue(snapshot.store_id)}`,
+    source: "counterpilot_buyer_response",
+    accepted_amount_minor: snapshot.acceptable_amount_minor,
+    currency: snapshot.acceptable_currency,
+    accepted_from_event_type: snapshot.accepted_from_event_type,
+  };
 }
 
 async function readJsonRequest(request, maxBodyBytes) {
@@ -633,16 +749,28 @@ async function handleMerchantActionPost(
     await readJsonRequest(request, maxBodyBytes),
     action,
   );
+  let buyerResponsePath = null;
   const { events } = await store.appendWithEvents((existingEvents) => {
     const snapshot = getSnapshotOrThrow(
       existingEvents,
       transactionId,
       payload.store_id,
     );
-    return createMerchantActionEvent(snapshot, action, payload);
+    const result = createMerchantActionEvent(
+      snapshot,
+      action,
+      payload,
+      options,
+    );
+    buyerResponsePath = result.buyerResponsePath;
+    return result.event;
   });
   const snapshot = getSnapshotOrThrow(events, transactionId, payload.store_id);
-  jsonResponse(response, 200, { offer: sanitizeOfferForInbox(snapshot) });
+  const body = { offer: sanitizeOfferForInbox(snapshot) };
+  if (buyerResponsePath) {
+    body.buyer_response_path = buyerResponsePath;
+  }
+  jsonResponse(response, 200, body);
 }
 
 function matchMerchantActionPath(pathname) {
@@ -661,6 +789,53 @@ function matchMerchantActionPath(pathname) {
 function matchMerchantDetailPath(pathname) {
   const match = pathname.match(/^\/counterpilot\/merchant\/offers\/([^/]+)$/);
   return match ? decodeURIComponent(match[1]) : null;
+}
+
+function matchBuyerRespondPath(pathname) {
+  const match = pathname.match(
+    /^\/apps\/counterpilot\/offers\/([^/]+)\/respond$/,
+  );
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function matchBuyerAcceptPath(pathname) {
+  const match = pathname.match(
+    /^\/apps\/counterpilot\/offers\/([^/]+)\/accept$/,
+  );
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function handleBuyerResponseGet(
+  transactionId,
+  requestUrl,
+  response,
+  store,
+  options,
+) {
+  const storeId = resolveAppProxyStoreId(requestUrl, {}, options);
+  const token = requestUrl.searchParams.get("token");
+  const events = await store.list();
+  const snapshot = getSnapshotOrThrow(events, transactionId, storeId);
+  validateBuyerResponseSnapshot(snapshot, token);
+  jsonResponse(response, 200, sanitizeBuyerResponseView(snapshot));
+}
+
+async function handleBuyerAcceptPost(
+  transactionId,
+  requestUrl,
+  response,
+  store,
+  options,
+) {
+  const storeId = resolveAppProxyStoreId(requestUrl, {}, options);
+  const token = requestUrl.searchParams.get("token");
+  const { record, events } = await store.appendWithEvents((existingEvents) => {
+    const snapshot = getSnapshotOrThrow(existingEvents, transactionId, storeId);
+    validateBuyerResponseSnapshot(snapshot, token);
+    return createBuyerAcceptedEvent(snapshot);
+  });
+  const snapshot = getSnapshotOrThrow(events, record.transaction_id, storeId);
+  jsonResponse(response, 200, { offer: sanitizeOfferForInbox(snapshot) });
 }
 
 export function createCounterpilotServer(options = {}) {
@@ -692,6 +867,32 @@ export function createCounterpilotServer(options = {}) {
           response,
           store,
           maxBodyBytes,
+          options,
+        );
+        return;
+      }
+      const buyerResponseTransactionId = matchBuyerRespondPath(
+        requestUrl.pathname,
+      );
+      if (request.method === "GET" && buyerResponseTransactionId) {
+        await handleBuyerResponseGet(
+          buyerResponseTransactionId,
+          requestUrl,
+          response,
+          store,
+          options,
+        );
+        return;
+      }
+      const buyerAcceptTransactionId = matchBuyerAcceptPath(
+        requestUrl.pathname,
+      );
+      if (request.method === "POST" && buyerAcceptTransactionId) {
+        await handleBuyerAcceptPost(
+          buyerAcceptTransactionId,
+          requestUrl,
+          response,
+          store,
           options,
         );
         return;

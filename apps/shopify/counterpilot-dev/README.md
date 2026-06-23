@@ -64,6 +64,8 @@ GET /counterpilot/merchant/offers/:transaction_id
 POST /counterpilot/merchant/offers/:transaction_id/accept
 POST /counterpilot/merchant/offers/:transaction_id/counter
 POST /counterpilot/merchant/offers/:transaction_id/decline
+GET /apps/counterpilot/offers/:transaction_id/respond
+POST /apps/counterpilot/offers/:transaction_id/accept
 ```
 
 Submitted offers are stored in `.counterpilot-data/offers.jsonl`, which is
@@ -86,6 +88,12 @@ merchant inbox and action requests.
 When an app-proxy secret is configured with `COUNTERPILOT_SHOPIFY_API_SECRET`
 or `SHOPIFY_API_SECRET`, the local server verifies Shopify app-proxy
 `signature` query parameters before accepting storefront offers.
+
+Merchant accept/counter actions return a one-time buyer response path for local
+demo use. The raw token in that path is operational-only and is not persisted;
+the append-only event log stores only `buyer_response_token_hash` plus
+`buyer_response_expires_at`. Buyer acceptance appends `buyer_accepted`. Draft
+orders and checkout links are intentionally not created yet.
 
 Run against a development store:
 

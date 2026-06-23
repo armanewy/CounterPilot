@@ -81,6 +81,35 @@ async function merchantAction(
   return { response, body };
 }
 
+function buyerUrl(
+  baseUrl,
+  buyerResponsePath,
+  shop = "counterpilot-dev.myshopify.com",
+) {
+  const url = new URL(buyerResponsePath, baseUrl);
+  url.searchParams.set("shop", shop);
+  return url.toString();
+}
+
+function buyerAcceptUrl(
+  baseUrl,
+  buyerResponsePath,
+  shop = "counterpilot-dev.myshopify.com",
+) {
+  return buyerUrl(
+    baseUrl,
+    buyerResponsePath.replace("/respond?", "/accept?"),
+    shop,
+  );
+}
+
+function tokenFromBuyerResponsePath(buyerResponsePath) {
+  return new URL(
+    buyerResponsePath,
+    "http://counterpilot.local",
+  ).searchParams.get("token");
+}
+
 async function readOfferEvents(dataDir) {
   const persisted = await fs.readFile(
     path.join(dataDir, "offers.jsonl"),
@@ -97,6 +126,7 @@ function assertSafeArtifact(value) {
   assert.doesNotMatch(text, /buyer@example\.com/);
   assert.doesNotMatch(text, /gid:\/\/shopify\/Product/);
   assert.doesNotMatch(text, /checkout/i);
+  assert.doesNotMatch(text, /draft_order/i);
   assert.doesNotMatch(text, /phone/i);
   assert.doesNotMatch(text, /shipping-address/i);
   assert.doesNotMatch(text, /secret-token/i);
@@ -232,6 +262,10 @@ test("submitted offers can be accepted manually", async () => {
     );
     assert.equal(response.status, 200);
     assert.equal(body.offer.lifecycle_state, "merchant_accepted");
+    assert.match(
+      body.buyer_response_path,
+      /^\/apps\/counterpilot\/offers\/cp_offer_.*\/respond\?token=/,
+    );
     assertSafeArtifact(body);
 
     const events = await readOfferEvents(dataDir);
@@ -240,6 +274,12 @@ test("submitted offers can be accepted manually", async () => {
       "offer_submitted,merchant_accepted",
     );
     assert.equal(events[1].actor_type, "merchant");
+    assert.ok(events[1].buyer_response_token_hash.startsWith("sha256:"));
+    assert.ok(events[1].buyer_response_expires_at);
+    assert.doesNotMatch(
+      JSON.stringify(events),
+      new RegExp(tokenFromBuyerResponsePath(body.buyer_response_path)),
+    );
   });
 });
 
@@ -260,12 +300,22 @@ test("submitted offers can be countered manually", async () => {
     assert.equal(body.offer.lifecycle_state, "merchant_countered");
     assert.equal(body.offer.counter_amount_minor, 65025);
     assert.equal(body.offer.counter_currency, "USD");
+    assert.match(
+      body.buyer_response_path,
+      /^\/apps\/counterpilot\/offers\/cp_offer_.*\/respond\?token=/,
+    );
     assertSafeArtifact(body);
 
     const events = await readOfferEvents(dataDir);
     assert.equal(events[1].event_type, "merchant_countered");
     assert.equal(events[1].counter_amount_minor, 65025);
     assert.equal(events[1].currency, "USD");
+    assert.ok(events[1].buyer_response_token_hash.startsWith("sha256:"));
+    assert.ok(events[1].buyer_response_expires_at);
+    assert.doesNotMatch(
+      JSON.stringify(events),
+      new RegExp(tokenFromBuyerResponsePath(body.buyer_response_path)),
+    );
   });
 });
 
@@ -282,11 +332,215 @@ test("submitted offers can be declined manually", async () => {
     );
     assert.equal(response.status, 200);
     assert.equal(body.offer.lifecycle_state, "merchant_declined");
+    assert.equal(body.buyer_response_path, undefined);
     assertSafeArtifact(body);
 
     const events = await readOfferEvents(dataDir);
     assert.equal(events[1].event_type, "merchant_declined");
   });
+});
+
+test("buyer can fetch a safe response view for a countered offer", async () => {
+  await withServer(async ({ baseUrl }) => {
+    const transactionId = await submitOffer(
+      baseUrl,
+      validOffer({ offer_amount: "580.00" }),
+    );
+    const counter = await merchantAction(baseUrl, transactionId, "counter", {
+      store_id: "counterpilot-dev.myshopify.com",
+      counter_amount: "610.00",
+      currency: "USD",
+    });
+    assert.equal(counter.response.status, 200);
+
+    const response = await fetch(
+      buyerUrl(baseUrl, counter.body.buyer_response_path),
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body, {
+      transaction_id: transactionId,
+      status: "merchant_countered",
+      product_title: "The Complete Snowboard",
+      original_offer_amount_minor: 58000,
+      accepted_amount_minor: 61000,
+      currency: "USD",
+      quantity: 1,
+      expires_at: body.expires_at,
+    });
+    assert.ok(body.expires_at);
+    assertSafeArtifact(body);
+  });
+});
+
+test("buyer can accept a merchant counter", async () => {
+  await withServer(async ({ baseUrl, dataDir }) => {
+    const transactionId = await submitOffer(
+      baseUrl,
+      validOffer({ offer_amount: "580.00" }),
+    );
+    const counter = await merchantAction(baseUrl, transactionId, "counter", {
+      store_id: "counterpilot-dev.myshopify.com",
+      counter_amount: "610.00",
+      currency: "USD",
+    });
+    assert.equal(counter.response.status, 200);
+
+    const response = await fetch(
+      buyerAcceptUrl(baseUrl, counter.body.buyer_response_path),
+      { method: "POST" },
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.offer.lifecycle_state, "buyer_accepted");
+    assert.equal(body.offer.accepted_amount_minor, 61000);
+    assert.equal(body.offer.accepted_currency, "USD");
+    assertSafeArtifact(body);
+
+    const events = await readOfferEvents(dataDir);
+    assert.equal(
+      events.map((event) => event.event_type).join(","),
+      "offer_submitted,merchant_countered,buyer_accepted",
+    );
+    assert.equal(events[2].accepted_amount_minor, 61000);
+    assert.equal(events[2].currency, "USD");
+    assert.equal(events[2].accepted_from_event_type, "merchant_countered");
+    assert.doesNotMatch(JSON.stringify(events), /checkout/i);
+    assert.doesNotMatch(JSON.stringify(events), /draft_order/i);
+
+    const inboxResponse = await fetch(
+      `${baseUrl}/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`,
+    );
+    assert.equal(inboxResponse.status, 200);
+    const inbox = await inboxResponse.json();
+    assert.equal(inbox.offers[0].lifecycle_state, "buyer_accepted");
+    assert.equal(inbox.offers[0].accepted_amount_minor, 61000);
+    assertSafeArtifact(inbox);
+  });
+});
+
+test("buyer can accept a merchant acceptance of the original offer", async () => {
+  await withServer(async ({ baseUrl, dataDir }) => {
+    const transactionId = await submitOffer(
+      baseUrl,
+      validOffer({ offer_amount: "590.00" }),
+    );
+    const accepted = await merchantAction(baseUrl, transactionId, "accept", {
+      store_id: "counterpilot-dev.myshopify.com",
+    });
+    assert.equal(accepted.response.status, 200);
+
+    const response = await fetch(
+      buyerAcceptUrl(baseUrl, accepted.body.buyer_response_path),
+      { method: "POST" },
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.offer.lifecycle_state, "buyer_accepted");
+    assert.equal(body.offer.accepted_amount_minor, 59000);
+    assertSafeArtifact(body);
+
+    const events = await readOfferEvents(dataDir);
+    assert.equal(events[2].event_type, "buyer_accepted");
+    assert.equal(events[2].accepted_amount_minor, 59000);
+    assert.equal(events[2].accepted_from_event_type, "merchant_accepted");
+  });
+});
+
+test("buyer acceptance rejects declined, pre-action, repeated, and unknown transactions", async () => {
+  await withServer(async ({ baseUrl }) => {
+    const submittedId = await submitOffer(baseUrl);
+    const submittedResponse = await fetch(
+      `${baseUrl}/apps/counterpilot/offers/${submittedId}/accept?shop=counterpilot-dev.myshopify.com&token=anything`,
+      { method: "POST" },
+    );
+    assert.equal(submittedResponse.status, 409);
+
+    const declinedId = await submitOffer(baseUrl);
+    const declined = await merchantAction(baseUrl, declinedId, "decline", {
+      store_id: "counterpilot-dev.myshopify.com",
+    });
+    assert.equal(declined.response.status, 200);
+    const declinedResponse = await fetch(
+      `${baseUrl}/apps/counterpilot/offers/${declinedId}/accept?shop=counterpilot-dev.myshopify.com&token=anything`,
+      { method: "POST" },
+    );
+    assert.equal(declinedResponse.status, 409);
+
+    const acceptedId = await submitOffer(baseUrl);
+    const merchantAccepted = await merchantAction(
+      baseUrl,
+      acceptedId,
+      "accept",
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+      },
+    );
+    const firstAccept = await fetch(
+      buyerAcceptUrl(baseUrl, merchantAccepted.body.buyer_response_path),
+      { method: "POST" },
+    );
+    assert.equal(firstAccept.status, 200);
+    const secondAccept = await fetch(
+      buyerAcceptUrl(baseUrl, merchantAccepted.body.buyer_response_path),
+      { method: "POST" },
+    );
+    assert.equal(secondAccept.status, 409);
+
+    const unknownResponse = await fetch(
+      `${baseUrl}/apps/counterpilot/offers/cp_offer_missing/accept?shop=counterpilot-dev.myshopify.com&token=anything`,
+      { method: "POST" },
+    );
+    assert.equal(unknownResponse.status, 404);
+  });
+});
+
+test("buyer acceptance rejects wrong store, wrong token, and expired token", async () => {
+  await withServer(async ({ baseUrl }) => {
+    const transactionId = await submitOffer(baseUrl);
+    const counter = await merchantAction(baseUrl, transactionId, "counter", {
+      store_id: "counterpilot-dev.myshopify.com",
+      counter_amount: "625.00",
+      currency: "USD",
+    });
+    assert.equal(counter.response.status, 200);
+
+    const wrongStore = await fetch(
+      buyerAcceptUrl(
+        baseUrl,
+        counter.body.buyer_response_path,
+        "wrong.myshopify.com",
+      ),
+      { method: "POST" },
+    );
+    assert.equal(wrongStore.status, 403);
+
+    const wrongTokenUrl = new URL(
+      buyerAcceptUrl(baseUrl, counter.body.buyer_response_path),
+    );
+    wrongTokenUrl.searchParams.set("token", "wrong-token");
+    const wrongToken = await fetch(wrongTokenUrl, { method: "POST" });
+    assert.equal(wrongToken.status, 401);
+  });
+
+  await withServer(
+    async ({ baseUrl }) => {
+      const transactionId = await submitOffer(baseUrl);
+      const counter = await merchantAction(baseUrl, transactionId, "counter", {
+        store_id: "counterpilot-dev.myshopify.com",
+        counter_amount: "625.00",
+        currency: "USD",
+      });
+      assert.equal(counter.response.status, 200);
+
+      const expired = await fetch(
+        buyerAcceptUrl(baseUrl, counter.body.buyer_response_path),
+        { method: "POST" },
+      );
+      assert.equal(expired.status, 410);
+    },
+    { buyerResponseTtlMs: -1 },
+  );
 });
 
 test("merchant actions reject invalid transitions and unknown transactions", async () => {
