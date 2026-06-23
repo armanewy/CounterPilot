@@ -9,7 +9,7 @@ const DEFAULT_DATA_DIR = path.join(process.cwd(), ".counterpilot-data");
 
 const OFFER_POST_PATHS = new Set([
   "/counterpilot/offers",
-  "/apps/counterpilot/offers"
+  "/apps/counterpilot/offers",
 ]);
 
 const MERCHANT_INBOX_PATH = "/counterpilot/merchant/offers";
@@ -26,19 +26,19 @@ const ALLOWED_OFFER_FIELDS = new Set([
   "currency",
   "quantity",
   "buyer_email",
-  "buyer_contact_token"
+  "buyer_contact_token",
 ]);
 
 const MERCHANT_ACTION_FIELDS = {
   accept: new Set(["store_id"]),
   counter: new Set(["store_id", "counter_amount", "currency"]),
-  decline: new Set(["store_id"])
+  decline: new Set(["store_id"]),
 };
 
 const MERCHANT_ACTION_EVENTS = {
   accept: "merchant_accepted",
   counter: "merchant_countered",
-  decline: "merchant_declined"
+  decline: "merchant_declined",
 };
 
 const FORBIDDEN_FIELDS = new Set([
@@ -56,7 +56,7 @@ const FORBIDDEN_FIELDS = new Set([
   "refresh_token",
   "shipping_address",
   "token",
-  "access_token"
+  "access_token",
 ]);
 
 class OfferStore {
@@ -71,7 +71,10 @@ class OfferStore {
       await this.#appendDirect(record);
       return record;
     });
-    this.writeQueue = operation.then(() => undefined, () => undefined);
+    this.writeQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
     return operation;
   }
 
@@ -82,7 +85,10 @@ class OfferStore {
       await this.#appendDirect(record);
       return { record, events: [...events, record] };
     });
-    this.writeQueue = operation.then(() => undefined, () => undefined);
+    this.writeQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
     return operation;
   }
 
@@ -113,7 +119,10 @@ class OfferStore {
 }
 
 function hashValue(value) {
-  return crypto.createHash("sha256").update(String(value), "utf8").digest("hex");
+  return crypto
+    .createHash("sha256")
+    .update(String(value), "utf8")
+    .digest("hex");
 }
 
 function safeCompareHex(actual, expected) {
@@ -151,7 +160,10 @@ export function calculateAppProxySignature(searchParams, secret) {
     .map(([key, values]) => `${key}=${values.join(",")}`)
     .sort()
     .join("");
-  return crypto.createHmac("sha256", secret).update(message, "utf8").digest("hex");
+  return crypto
+    .createHmac("sha256", secret)
+    .update(message, "utf8")
+    .digest("hex");
 }
 
 function verifyAppProxySignature(requestUrl, secret) {
@@ -159,7 +171,10 @@ function verifyAppProxySignature(requestUrl, secret) {
   if (!signature) {
     throw validationError("app proxy signature is required", 401);
   }
-  const calculated = calculateAppProxySignature(requestUrl.searchParams, secret);
+  const calculated = calculateAppProxySignature(
+    requestUrl.searchParams,
+    secret,
+  );
   if (!safeCompareHex(signature, calculated)) {
     throw validationError("app proxy signature is invalid", 401);
   }
@@ -172,7 +187,7 @@ function jsonResponse(response, statusCode, body) {
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Origin": "*",
     "Content-Length": Buffer.byteLength(text),
-    "Content-Type": "application/json; charset=utf-8"
+    "Content-Type": "application/json; charset=utf-8",
   });
   response.end(text);
 }
@@ -192,7 +207,10 @@ function normalizeString(value, fieldName, maxLength = 255) {
 }
 
 function parsePositiveInteger(value, fieldName) {
-  const normalized = typeof value === "number" ? String(value) : normalizeString(value, fieldName, 32);
+  const normalized =
+    typeof value === "number"
+      ? String(value)
+      : normalizeString(value, fieldName, 32);
   if (!/^[1-9]\d*$/.test(normalized)) {
     throw validationError(`${fieldName} must be a positive integer`);
   }
@@ -204,9 +222,14 @@ function parsePositiveInteger(value, fieldName) {
 }
 
 function parseMoneyMinor(value, fieldName) {
-  const normalized = typeof value === "number" ? String(value) : normalizeString(value, fieldName, 32);
+  const normalized =
+    typeof value === "number"
+      ? String(value)
+      : normalizeString(value, fieldName, 32);
   if (!/^(0|[1-9]\d*)(\.\d{1,2})?$/.test(normalized)) {
-    throw validationError(`${fieldName} must be a positive decimal with at most two cents digits`);
+    throw validationError(
+      `${fieldName} must be a positive decimal with at most two cents digits`,
+    );
   }
   const [units, cents = ""] = normalized.split(".");
   const amountMinor = Number(units) * 100 + Number(cents.padEnd(2, "0"));
@@ -217,9 +240,14 @@ function parseMoneyMinor(value, fieldName) {
 }
 
 function parseCurrency(value, fieldName = "currency") {
-  const currency = value === undefined ? "USD" : normalizeString(value, fieldName, 3).toUpperCase();
+  const currency =
+    value === undefined
+      ? "USD"
+      : normalizeString(value, fieldName, 3).toUpperCase();
   if (!/^[A-Z]{3}$/.test(currency)) {
-    throw validationError(`${fieldName} must be a three-letter ISO currency code`);
+    throw validationError(
+      `${fieldName} must be a three-letter ISO currency code`,
+    );
   }
   return currency;
 }
@@ -232,7 +260,8 @@ function validationError(message, statusCode = 400) {
 }
 
 function verifyMerchantAuth(request, options) {
-  const merchantAuthToken = options.merchantAuthToken ?? process.env.COUNTERPILOT_MERCHANT_AUTH_TOKEN;
+  const merchantAuthToken =
+    options.merchantAuthToken ?? process.env.COUNTERPILOT_MERCHANT_AUTH_TOKEN;
   if (!merchantAuthToken) {
     return;
   }
@@ -247,7 +276,9 @@ function validateAllowedFields(payload, allowedFields, surfaceName) {
   for (const key of Object.keys(payload)) {
     const lowerKey = key.toLowerCase();
     if (FORBIDDEN_FIELDS.has(lowerKey)) {
-      throw validationError(`${key} is not accepted by the ${surfaceName} route`);
+      throw validationError(
+        `${key} is not accepted by the ${surfaceName} route`,
+      );
     }
     if (!allowedFields.has(key)) {
       throw validationError(`${key} is not a supported ${surfaceName} field`);
@@ -256,30 +287,44 @@ function validateAllowedFields(payload, allowedFields, surfaceName) {
 }
 
 function normalizeBuyerContact(payload) {
-  const hasEmail = typeof payload.buyer_email === "string" && payload.buyer_email.trim() !== "";
-  const hasToken = typeof payload.buyer_contact_token === "string" && payload.buyer_contact_token.trim() !== "";
+  const hasEmail =
+    typeof payload.buyer_email === "string" &&
+    payload.buyer_email.trim() !== "";
+  const hasToken =
+    typeof payload.buyer_contact_token === "string" &&
+    payload.buyer_contact_token.trim() !== "";
   if (hasEmail && hasToken) {
-    throw validationError("provide buyer_email or buyer_contact_token, not both");
+    throw validationError(
+      "provide buyer_email or buyer_contact_token, not both",
+    );
   }
   if (!hasEmail && !hasToken) {
     throw validationError("buyer_email or buyer_contact_token is required");
   }
   if (hasEmail) {
-    const email = normalizeString(payload.buyer_email, "buyer_email", 320).toLowerCase();
+    const email = normalizeString(
+      payload.buyer_email,
+      "buyer_email",
+      320,
+    ).toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       throw validationError("buyer_email must be a valid email address");
     }
     return {
       buyer_contact_hash: `sha256:${hashValue(email)}`,
       buyer_contact_reference: `email_hash:${hashValue(email).slice(0, 16)}`,
-      buyer_contact_type: "email"
+      buyer_contact_type: "email",
     };
   }
-  const token = normalizeString(payload.buyer_contact_token, "buyer_contact_token", 512);
+  const token = normalizeString(
+    payload.buyer_contact_token,
+    "buyer_contact_token",
+    512,
+  );
   return {
     buyer_contact_hash: `sha256:${hashValue(token)}`,
     buyer_contact_reference: `token_hash:${hashValue(token).slice(0, 16)}`,
-    buyer_contact_type: "token"
+    buyer_contact_type: "token",
   };
 }
 
@@ -288,21 +333,32 @@ function resolveAppProxyStoreId(requestUrl, payload, options) {
     return null;
   }
 
-  const appProxySecret = options.appProxySecret
-    ?? process.env.COUNTERPILOT_SHOPIFY_API_SECRET
-    ?? process.env.SHOPIFY_API_SECRET;
-  const requireAppProxySignature = options.requireAppProxySignature
-    ?? process.env.COUNTERPILOT_REQUIRE_APP_PROXY_SIGNATURE === "1";
+  const appProxySecret =
+    options.appProxySecret ??
+    process.env.COUNTERPILOT_SHOPIFY_API_SECRET ??
+    process.env.SHOPIFY_API_SECRET;
+  const requireAppProxySignature =
+    options.requireAppProxySignature ??
+    process.env.COUNTERPILOT_REQUIRE_APP_PROXY_SIGNATURE === "1";
   if (appProxySecret) {
     verifyAppProxySignature(requestUrl, appProxySecret);
   } else if (requireAppProxySignature) {
-    throw validationError("app proxy signature verification is not configured", 401);
+    throw validationError(
+      "app proxy signature verification is not configured",
+      401,
+    );
   }
 
   const shop = normalizeString(requestUrl.searchParams.get("shop"), "shop");
   const bodyStoreId = payload.store_id ?? payload.shop;
-  if (bodyStoreId !== undefined && normalizeString(bodyStoreId, "store_id") !== shop) {
-    throw validationError("request shop does not match the signed app proxy shop", 403);
+  if (
+    bodyStoreId !== undefined &&
+    normalizeString(bodyStoreId, "store_id") !== shop
+  ) {
+    throw validationError(
+      "request shop does not match the signed app proxy shop",
+      403,
+    );
   }
   return shop;
 }
@@ -313,12 +369,19 @@ export function normalizeOfferPayload(payload, now = new Date(), options = {}) {
   }
   validateAllowedFields(payload, ALLOWED_OFFER_FIELDS, "offer intake");
 
-  const storeId = options.trustedStoreId ?? normalizeString(payload.store_id ?? payload.shop, "store_id");
-  const productRef = normalizeString(payload.product_ref ?? payload.product_gid, "product_ref", 512);
+  const storeId =
+    options.trustedStoreId ??
+    normalizeString(payload.store_id ?? payload.shop, "store_id");
+  const productRef = normalizeString(
+    payload.product_ref ?? payload.product_gid,
+    "product_ref",
+    512,
+  );
   const variantRef = payload.variant_ref ?? payload.variant_gid;
-  const productTitle = payload.product_title === undefined
-    ? null
-    : normalizeString(payload.product_title, "product_title", 255);
+  const productTitle =
+    payload.product_title === undefined
+      ? null
+      : normalizeString(payload.product_title, "product_title", 255);
   const currency = parseCurrency(payload.currency);
   const buyerContact = normalizeBuyerContact(payload);
   const occurredAt = now.toISOString();
@@ -347,8 +410,10 @@ export function normalizeOfferPayload(payload, now = new Date(), options = {}) {
     buyer_contact_type: buyerContact.buyer_contact_type,
     operational_refs: {
       product_ref: productRef,
-      variant_ref: variantRef ? normalizeString(variantRef, "variant_ref", 512) : null
-    }
+      variant_ref: variantRef
+        ? normalizeString(variantRef, "variant_ref", 512)
+        : null,
+    },
   };
 }
 
@@ -360,8 +425,11 @@ function normalizeMerchantPayload(payload, action) {
   validateAllowedFields(payload, allowedFields, "merchant action");
   return {
     store_id: normalizeString(payload.store_id, "store_id"),
-    counter_amount_minor: action === "counter" ? parseMoneyMinor(payload.counter_amount, "counter_amount") : null,
-    currency: action === "counter" ? parseCurrency(payload.currency) : null
+    counter_amount_minor:
+      action === "counter"
+        ? parseMoneyMinor(payload.counter_amount, "counter_amount")
+        : null,
+    currency: action === "counter" ? parseCurrency(payload.currency) : null,
   };
 }
 
@@ -382,7 +450,7 @@ export function buildOfferSnapshots(events) {
         offer_amount_minor: event.offer_amount_minor,
         currency: event.currency,
         quantity: event.quantity,
-        buyer_contact_reference: event.buyer_contact_reference
+        buyer_contact_reference: event.buyer_contact_reference,
       });
       continue;
     }
@@ -420,7 +488,7 @@ export function sanitizeOfferForInbox(record) {
     counter_currency: record.counter_currency,
     currency: record.currency,
     quantity: record.quantity,
-    buyer_contact_reference: record.buyer_contact_reference
+    buyer_contact_reference: record.buyer_contact_reference,
   };
 }
 
@@ -431,17 +499,30 @@ function getSnapshotOrThrow(events, transactionId, storeId) {
     throw validationError("offer transaction was not found", 404);
   }
   if (snapshot.store_id !== storeId) {
-    throw validationError("offer transaction does not belong to this store", 403);
+    throw validationError(
+      "offer transaction does not belong to this store",
+      403,
+    );
   }
   return snapshot;
 }
 
-function createMerchantActionEvent(snapshot, action, payload, now = new Date()) {
+function createMerchantActionEvent(
+  snapshot,
+  action,
+  payload,
+  now = new Date(),
+) {
   if (snapshot.lifecycle_state !== "offer_submitted") {
-    throw validationError(`cannot ${action} an offer in ${snapshot.lifecycle_state} state`, 409);
+    throw validationError(
+      `cannot ${action} an offer in ${snapshot.lifecycle_state} state`,
+      409,
+    );
   }
   if (action === "counter" && payload.currency !== snapshot.currency) {
-    throw validationError("counter currency must match the original offer currency");
+    throw validationError(
+      "counter currency must match the original offer currency",
+    );
   }
 
   const eventType = MERCHANT_ACTION_EVENTS[action];
@@ -454,7 +535,7 @@ function createMerchantActionEvent(snapshot, action, payload, now = new Date()) 
     occurred_at: now.toISOString(),
     store_id: snapshot.store_id,
     store_reference_hash: `sha256:${hashValue(snapshot.store_id)}`,
-    source: "counterpilot_merchant_surface"
+    source: "counterpilot_merchant_surface",
   };
   if (action === "counter") {
     event.counter_amount_minor = payload.counter_amount_minor;
@@ -484,7 +565,14 @@ async function readJsonRequest(request, maxBodyBytes) {
   }
 }
 
-async function handleOfferPost(request, requestUrl, response, store, maxBodyBytes, options) {
+async function handleOfferPost(
+  request,
+  requestUrl,
+  response,
+  store,
+  maxBodyBytes,
+  options,
+) {
   const payload = await readJsonRequest(request, maxBodyBytes);
   const trustedStoreId = resolveAppProxyStoreId(requestUrl, payload, options);
   const record = normalizeOfferPayload(payload, new Date(), { trustedStoreId });
@@ -496,13 +584,15 @@ async function handleOfferPost(request, requestUrl, response, store, maxBodyByte
     offer_amount_minor: record.offer_amount_minor,
     currency: record.currency,
     quantity: record.quantity,
-    product_title: record.product_title
+    product_title: record.product_title,
   });
 }
 
 async function handleInboxGet(request, requestUrl, response, store, options) {
   verifyMerchantAuth(request, options);
-  const storeFilter = requestUrl.searchParams.get("store_id") ?? requestUrl.searchParams.get("shop");
+  const storeFilter =
+    requestUrl.searchParams.get("store_id") ??
+    requestUrl.searchParams.get("shop");
   const events = await store.list();
   const snapshots = [...buildOfferSnapshots(events).values()]
     .filter((record) => !storeFilter || record.store_id === storeFilter)
@@ -510,19 +600,45 @@ async function handleInboxGet(request, requestUrl, response, store, options) {
   jsonResponse(response, 200, { count: snapshots.length, offers: snapshots });
 }
 
-async function handleOfferDetailGet(transactionId, request, requestUrl, response, store, options) {
+async function handleOfferDetailGet(
+  transactionId,
+  request,
+  requestUrl,
+  response,
+  store,
+  options,
+) {
   verifyMerchantAuth(request, options);
-  const storeId = normalizeString(requestUrl.searchParams.get("store_id") ?? requestUrl.searchParams.get("shop"), "store_id");
+  const storeId = normalizeString(
+    requestUrl.searchParams.get("store_id") ??
+      requestUrl.searchParams.get("shop"),
+    "store_id",
+  );
   const events = await store.list();
   const snapshot = getSnapshotOrThrow(events, transactionId, storeId);
   jsonResponse(response, 200, { offer: sanitizeOfferForInbox(snapshot) });
 }
 
-async function handleMerchantActionPost(transactionId, action, request, response, store, maxBodyBytes, options) {
+async function handleMerchantActionPost(
+  transactionId,
+  action,
+  request,
+  response,
+  store,
+  maxBodyBytes,
+  options,
+) {
   verifyMerchantAuth(request, options);
-  const payload = normalizeMerchantPayload(await readJsonRequest(request, maxBodyBytes), action);
+  const payload = normalizeMerchantPayload(
+    await readJsonRequest(request, maxBodyBytes),
+    action,
+  );
   const { events } = await store.appendWithEvents((existingEvents) => {
-    const snapshot = getSnapshotOrThrow(existingEvents, transactionId, payload.store_id);
+    const snapshot = getSnapshotOrThrow(
+      existingEvents,
+      transactionId,
+      payload.store_id,
+    );
     return createMerchantActionEvent(snapshot, action, payload);
   });
   const snapshot = getSnapshotOrThrow(events, transactionId, payload.store_id);
@@ -530,13 +646,15 @@ async function handleMerchantActionPost(transactionId, action, request, response
 }
 
 function matchMerchantActionPath(pathname) {
-  const match = pathname.match(/^\/counterpilot\/merchant\/offers\/([^/]+)\/(accept|counter|decline)$/);
+  const match = pathname.match(
+    /^\/counterpilot\/merchant\/offers\/([^/]+)\/(accept|counter|decline)$/,
+  );
   if (!match) {
     return null;
   }
   return {
     transactionId: decodeURIComponent(match[1]),
-    action: match[2]
+    action: match[2],
   };
 }
 
@@ -546,7 +664,10 @@ function matchMerchantDetailPath(pathname) {
 }
 
 export function createCounterpilotServer(options = {}) {
-  const dataDir = options.dataDir ?? process.env.COUNTERPILOT_SERVER_DATA_DIR ?? DEFAULT_DATA_DIR;
+  const dataDir =
+    options.dataDir ??
+    process.env.COUNTERPILOT_SERVER_DATA_DIR ??
+    DEFAULT_DATA_DIR;
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   const store = options.store ?? new OfferStore(dataDir);
 
@@ -561,11 +682,24 @@ export function createCounterpilotServer(options = {}) {
         jsonResponse(response, 200, { ok: true });
         return;
       }
-      if (request.method === "POST" && OFFER_POST_PATHS.has(requestUrl.pathname)) {
-        await handleOfferPost(request, requestUrl, response, store, maxBodyBytes, options);
+      if (
+        request.method === "POST" &&
+        OFFER_POST_PATHS.has(requestUrl.pathname)
+      ) {
+        await handleOfferPost(
+          request,
+          requestUrl,
+          response,
+          store,
+          maxBodyBytes,
+          options,
+        );
         return;
       }
-      if (request.method === "GET" && requestUrl.pathname === MERCHANT_INBOX_PATH) {
+      if (
+        request.method === "GET" &&
+        requestUrl.pathname === MERCHANT_INBOX_PATH
+      ) {
         await handleInboxGet(request, requestUrl, response, store, options);
         return;
       }
@@ -578,20 +712,27 @@ export function createCounterpilotServer(options = {}) {
           response,
           store,
           maxBodyBytes,
-          options
+          options,
         );
         return;
       }
       const detailTransactionId = matchMerchantDetailPath(requestUrl.pathname);
       if (request.method === "GET" && detailTransactionId) {
-        await handleOfferDetailGet(detailTransactionId, request, requestUrl, response, store, options);
+        await handleOfferDetailGet(
+          detailTransactionId,
+          request,
+          requestUrl,
+          response,
+          store,
+          options,
+        );
         return;
       }
       jsonResponse(response, 404, { error: "not_found" });
     } catch (error) {
       const statusCode = error.statusCode ?? 500;
       jsonResponse(response, statusCode, {
-        error: error.expose ? error.message : "internal_server_error"
+        error: error.expose ? error.message : "internal_server_error",
       });
     }
   });
@@ -602,6 +743,8 @@ if (fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const host = process.env.HOST ?? "127.0.0.1";
   const server = createCounterpilotServer();
   server.listen(port, host, () => {
-    console.log(`Counterpilot offer server listening on http://${host}:${port}`);
+    console.log(
+      `Counterpilot offer server listening on http://${host}:${port}`,
+    );
   });
 }

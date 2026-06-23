@@ -5,10 +5,15 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { calculateAppProxySignature, createCounterpilotServer } from "./counterpilot-server.mjs";
+import {
+  calculateAppProxySignature,
+  createCounterpilotServer,
+} from "./counterpilot-server.mjs";
 
 async function withServer(fn, options = {}) {
-  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "counterpilot-server-"));
+  const dataDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "counterpilot-server-"),
+  );
   const server = createCounterpilotServer({ dataDir, ...options });
   await new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -18,7 +23,7 @@ async function withServer(fn, options = {}) {
   try {
     await fn({
       baseUrl: `http://127.0.0.1:${port}`,
-      dataDir
+      dataDir,
     });
   } finally {
     await new Promise((resolve) => server.close(resolve));
@@ -36,7 +41,7 @@ function validOffer(overrides = {}) {
     currency: "USD",
     quantity: 1,
     buyer_email: "buyer@example.com",
-    ...overrides
+    ...overrides,
   };
 }
 
@@ -44,7 +49,7 @@ async function postJson(url, payload, headers = {}) {
   return fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
 }
 
@@ -60,18 +65,27 @@ async function submitOffer(baseUrl, payload = validOffer()) {
   return body.transaction_id;
 }
 
-async function merchantAction(baseUrl, transactionId, action, payload, headers = {}) {
+async function merchantAction(
+  baseUrl,
+  transactionId,
+  action,
+  payload,
+  headers = {},
+) {
   const response = await postJson(
     `${baseUrl}/counterpilot/merchant/offers/${encodeURIComponent(transactionId)}/${action}`,
     payload,
-    headers
+    headers,
   );
   const body = await response.json();
   return { response, body };
 }
 
 async function readOfferEvents(dataDir) {
-  const persisted = await fs.readFile(path.join(dataDir, "offers.jsonl"), "utf8");
+  const persisted = await fs.readFile(
+    path.join(dataDir, "offers.jsonl"),
+    "utf8",
+  );
   return persisted
     .split(/\r?\n/)
     .filter(Boolean)
@@ -105,7 +119,10 @@ test("POST /counterpilot/offers persists an offer_submitted event and returns on
     assert.equal(events[0].lifecycle_state, "offer_submitted");
     assert.equal(events[0].event_type, "offer_submitted");
     assert.equal(events[0].actor_type, "buyer");
-    assert.equal(events[0].operational_refs.product_ref, "gid://shopify/Product/123");
+    assert.equal(
+      events[0].operational_refs.product_ref,
+      "gid://shopify/Product/123",
+    );
     assert.doesNotMatch(JSON.stringify(events), /buyer@example\.com/);
     assert.doesNotMatch(JSON.stringify(events), /checkout/i);
   });
@@ -115,13 +132,13 @@ test("POST /apps/counterpilot/offers derives the store from app-proxy query para
   await withServer(async ({ baseUrl }) => {
     const response = await postJson(
       `${baseUrl}/apps/counterpilot/offers?shop=counterpilot-dev.myshopify.com&timestamp=1`,
-      validOffer({ shop: "attacker.myshopify.com" })
+      validOffer({ shop: "attacker.myshopify.com" }),
     );
     assert.equal(response.status, 403);
 
     const accepted = await postJson(
       `${baseUrl}/apps/counterpilot/offers?shop=counterpilot-dev.myshopify.com&timestamp=1`,
-      validOffer({ shop: "counterpilot-dev.myshopify.com" })
+      validOffer({ shop: "counterpilot-dev.myshopify.com" }),
     );
     assert.equal(accepted.status, 201);
   });
@@ -129,35 +146,51 @@ test("POST /apps/counterpilot/offers derives the store from app-proxy query para
 
 test("POST /apps/counterpilot/offers verifies app-proxy signatures when a secret is configured", async () => {
   const appProxySecret = "test-secret";
-  await withServer(async ({ baseUrl }) => {
-    const unsigned = await postJson(
-      `${baseUrl}/apps/counterpilot/offers?shop=counterpilot-dev.myshopify.com&timestamp=1`,
-      validOffer()
-    );
-    assert.equal(unsigned.status, 401);
+  await withServer(
+    async ({ baseUrl }) => {
+      const unsigned = await postJson(
+        `${baseUrl}/apps/counterpilot/offers?shop=counterpilot-dev.myshopify.com&timestamp=1`,
+        validOffer(),
+      );
+      assert.equal(unsigned.status, 401);
 
-    const params = new URLSearchParams({
-      path_prefix: "/apps/counterpilot",
-      shop: "counterpilot-dev.myshopify.com",
-      timestamp: "1"
-    });
-    params.set("signature", calculateAppProxySignature(params, appProxySecret));
-    const signed = await postJson(`${baseUrl}/apps/counterpilot/offers?${params}`, validOffer());
-    assert.equal(signed.status, 201);
-  }, { appProxySecret });
+      const params = new URLSearchParams({
+        path_prefix: "/apps/counterpilot",
+        shop: "counterpilot-dev.myshopify.com",
+        timestamp: "1",
+      });
+      params.set(
+        "signature",
+        calculateAppProxySignature(params, appProxySecret),
+      );
+      const signed = await postJson(
+        `${baseUrl}/apps/counterpilot/offers?${params}`,
+        validOffer(),
+      );
+      assert.equal(signed.status, 201);
+    },
+    { appProxySecret },
+  );
 });
 
 test("GET /counterpilot/merchant/offers lists current offer states without raw buyer or Shopify references", async () => {
   await withServer(async ({ baseUrl }) => {
     const transactionId = await submitOffer(baseUrl);
-    const { response } = await merchantAction(baseUrl, transactionId, "counter", {
-      store_id: "counterpilot-dev.myshopify.com",
-      counter_amount: "625.00",
-      currency: "USD"
-    });
+    const { response } = await merchantAction(
+      baseUrl,
+      transactionId,
+      "counter",
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+        counter_amount: "625.00",
+        currency: "USD",
+      },
+    );
     assert.equal(response.status, 200);
 
-    const inboxResponse = await fetch(`${baseUrl}/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`);
+    const inboxResponse = await fetch(
+      `${baseUrl}/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`,
+    );
     assert.equal(inboxResponse.status, 200);
     const body = await inboxResponse.json();
     assert.equal(body.count, 1);
@@ -176,7 +209,7 @@ test("GET /counterpilot/merchant/offers/:transaction_id returns a sanitized curr
   await withServer(async ({ baseUrl }) => {
     const transactionId = await submitOffer(baseUrl);
     const detailResponse = await fetch(
-      `${baseUrl}/counterpilot/merchant/offers/${transactionId}?store_id=counterpilot-dev.myshopify.com`
+      `${baseUrl}/counterpilot/merchant/offers/${transactionId}?store_id=counterpilot-dev.myshopify.com`,
     );
     assert.equal(detailResponse.status, 200);
     const detail = await detailResponse.json();
@@ -189,15 +222,23 @@ test("GET /counterpilot/merchant/offers/:transaction_id returns a sanitized curr
 test("submitted offers can be accepted manually", async () => {
   await withServer(async ({ baseUrl, dataDir }) => {
     const transactionId = await submitOffer(baseUrl);
-    const { response, body } = await merchantAction(baseUrl, transactionId, "accept", {
-      store_id: "counterpilot-dev.myshopify.com"
-    });
+    const { response, body } = await merchantAction(
+      baseUrl,
+      transactionId,
+      "accept",
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+      },
+    );
     assert.equal(response.status, 200);
     assert.equal(body.offer.lifecycle_state, "merchant_accepted");
     assertSafeArtifact(body);
 
     const events = await readOfferEvents(dataDir);
-    assert.equal(events.map((event) => event.event_type).join(","), "offer_submitted,merchant_accepted");
+    assert.equal(
+      events.map((event) => event.event_type).join(","),
+      "offer_submitted,merchant_accepted",
+    );
     assert.equal(events[1].actor_type, "merchant");
   });
 });
@@ -205,11 +246,16 @@ test("submitted offers can be accepted manually", async () => {
 test("submitted offers can be countered manually", async () => {
   await withServer(async ({ baseUrl, dataDir }) => {
     const transactionId = await submitOffer(baseUrl);
-    const { response, body } = await merchantAction(baseUrl, transactionId, "counter", {
-      store_id: "counterpilot-dev.myshopify.com",
-      counter_amount: "650.25",
-      currency: "USD"
-    });
+    const { response, body } = await merchantAction(
+      baseUrl,
+      transactionId,
+      "counter",
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+        counter_amount: "650.25",
+        currency: "USD",
+      },
+    );
     assert.equal(response.status, 200);
     assert.equal(body.offer.lifecycle_state, "merchant_countered");
     assert.equal(body.offer.counter_amount_minor, 65025);
@@ -226,9 +272,14 @@ test("submitted offers can be countered manually", async () => {
 test("submitted offers can be declined manually", async () => {
   await withServer(async ({ baseUrl, dataDir }) => {
     const transactionId = await submitOffer(baseUrl);
-    const { response, body } = await merchantAction(baseUrl, transactionId, "decline", {
-      store_id: "counterpilot-dev.myshopify.com"
-    });
+    const { response, body } = await merchantAction(
+      baseUrl,
+      transactionId,
+      "decline",
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+      },
+    );
     assert.equal(response.status, 200);
     assert.equal(body.offer.lifecycle_state, "merchant_declined");
     assertSafeArtifact(body);
@@ -241,32 +292,57 @@ test("submitted offers can be declined manually", async () => {
 test("merchant actions reject invalid transitions and unknown transactions", async () => {
   await withServer(async ({ baseUrl }) => {
     const declinedTransactionId = await submitOffer(baseUrl);
-    const declined = await merchantAction(baseUrl, declinedTransactionId, "decline", {
-      store_id: "counterpilot-dev.myshopify.com"
-    });
+    const declined = await merchantAction(
+      baseUrl,
+      declinedTransactionId,
+      "decline",
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+      },
+    );
     assert.equal(declined.response.status, 200);
-    const declinedCounter = await merchantAction(baseUrl, declinedTransactionId, "counter", {
-      store_id: "counterpilot-dev.myshopify.com",
-      counter_amount: "625.00",
-      currency: "USD"
-    });
+    const declinedCounter = await merchantAction(
+      baseUrl,
+      declinedTransactionId,
+      "counter",
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+        counter_amount: "625.00",
+        currency: "USD",
+      },
+    );
     assert.equal(declinedCounter.response.status, 409);
 
     const acceptedTransactionId = await submitOffer(baseUrl);
-    const accepted = await merchantAction(baseUrl, acceptedTransactionId, "accept", {
-      store_id: "counterpilot-dev.myshopify.com"
-    });
+    const accepted = await merchantAction(
+      baseUrl,
+      acceptedTransactionId,
+      "accept",
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+      },
+    );
     assert.equal(accepted.response.status, 200);
-    const acceptedCounter = await merchantAction(baseUrl, acceptedTransactionId, "counter", {
-      store_id: "counterpilot-dev.myshopify.com",
-      counter_amount: "625.00",
-      currency: "USD"
-    });
+    const acceptedCounter = await merchantAction(
+      baseUrl,
+      acceptedTransactionId,
+      "counter",
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+        counter_amount: "625.00",
+        currency: "USD",
+      },
+    );
     assert.equal(acceptedCounter.response.status, 409);
 
-    const unknown = await merchantAction(baseUrl, "cp_offer_missing", "decline", {
-      store_id: "counterpilot-dev.myshopify.com"
-    });
+    const unknown = await merchantAction(
+      baseUrl,
+      "cp_offer_missing",
+      "decline",
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+      },
+    );
     assert.equal(unknown.response.status, 404);
   });
 });
@@ -274,12 +350,29 @@ test("merchant actions reject invalid transitions and unknown transactions", asy
 test("counter actions require positive same-currency counter amounts", async () => {
   await withServer(async ({ baseUrl }) => {
     for (const payload of [
-      { store_id: "counterpilot-dev.myshopify.com", counter_amount: "0", currency: "USD" },
-      { store_id: "counterpilot-dev.myshopify.com", counter_amount: "10.999", currency: "USD" },
-      { store_id: "counterpilot-dev.myshopify.com", counter_amount: "625.00", currency: "EUR" }
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+        counter_amount: "0",
+        currency: "USD",
+      },
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+        counter_amount: "10.999",
+        currency: "USD",
+      },
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+        counter_amount: "625.00",
+        currency: "EUR",
+      },
     ]) {
       const transactionId = await submitOffer(baseUrl);
-      const result = await merchantAction(baseUrl, transactionId, "counter", payload);
+      const result = await merchantAction(
+        baseUrl,
+        transactionId,
+        "counter",
+        payload,
+      );
       assert.equal(result.response.status, 400);
     }
   });
@@ -289,13 +382,27 @@ test("merchant actions reject notes, checkout URLs, phone numbers, and unexpecte
   await withServer(async ({ baseUrl }) => {
     for (const payload of [
       { store_id: "counterpilot-dev.myshopify.com", merchant_note: "Call me" },
-      { store_id: "counterpilot-dev.myshopify.com", checkout_url: "https://example.com/checkout" },
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+        checkout_url: "https://example.com/checkout",
+      },
       { store_id: "counterpilot-dev.myshopify.com", phone: "555-0100" },
-      { store_id: "counterpilot-dev.myshopify.com", access_token: "secret-token" },
-      { store_id: "counterpilot-dev.myshopify.com", unsupported_field: "not accepted" }
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+        access_token: "secret-token",
+      },
+      {
+        store_id: "counterpilot-dev.myshopify.com",
+        unsupported_field: "not accepted",
+      },
     ]) {
       const transactionId = await submitOffer(baseUrl);
-      const result = await merchantAction(baseUrl, transactionId, "accept", payload);
+      const result = await merchantAction(
+        baseUrl,
+        transactionId,
+        "accept",
+        payload,
+      );
       assert.equal(result.response.status, 400);
     }
   });
@@ -305,51 +412,56 @@ test("public app-proxy paths do not expose merchant inbox or actions", async () 
   await withServer(async ({ baseUrl }) => {
     const transactionId = await submitOffer(baseUrl);
 
-    const inbox = await fetch(`${baseUrl}/apps/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`);
+    const inbox = await fetch(
+      `${baseUrl}/apps/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`,
+    );
     assert.equal(inbox.status, 404);
 
     const detail = await fetch(
-      `${baseUrl}/apps/counterpilot/merchant/offers/${transactionId}?shop=counterpilot-dev.myshopify.com`
+      `${baseUrl}/apps/counterpilot/merchant/offers/${transactionId}?shop=counterpilot-dev.myshopify.com`,
     );
     assert.equal(detail.status, 404);
 
     const action = await postJson(
       `${baseUrl}/apps/counterpilot/merchant/offers/${transactionId}/accept`,
-      { store_id: "counterpilot-dev.myshopify.com" }
+      { store_id: "counterpilot-dev.myshopify.com" },
     );
     assert.equal(action.status, 404);
   });
 });
 
 test("merchant routes require bearer authentication when a merchant auth token is configured", async () => {
-  await withServer(async ({ baseUrl }) => {
-    const transactionId = await submitOffer(baseUrl);
+  await withServer(
+    async ({ baseUrl }) => {
+      const transactionId = await submitOffer(baseUrl);
 
-    const unauthenticatedInbox = await fetch(
-      `${baseUrl}/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`
-    );
-    assert.equal(unauthenticatedInbox.status, 401);
+      const unauthenticatedInbox = await fetch(
+        `${baseUrl}/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`,
+      );
+      assert.equal(unauthenticatedInbox.status, 401);
 
-    const badAction = await merchantAction(baseUrl, transactionId, "accept", {
-      store_id: "counterpilot-dev.myshopify.com"
-    });
-    assert.equal(badAction.response.status, 401);
+      const badAction = await merchantAction(baseUrl, transactionId, "accept", {
+        store_id: "counterpilot-dev.myshopify.com",
+      });
+      assert.equal(badAction.response.status, 401);
 
-    const goodAction = await merchantAction(
-      baseUrl,
-      transactionId,
-      "accept",
-      { store_id: "counterpilot-dev.myshopify.com" },
-      { authorization: "Bearer merchant-secret" }
-    );
-    assert.equal(goodAction.response.status, 200);
+      const goodAction = await merchantAction(
+        baseUrl,
+        transactionId,
+        "accept",
+        { store_id: "counterpilot-dev.myshopify.com" },
+        { authorization: "Bearer merchant-secret" },
+      );
+      assert.equal(goodAction.response.status, 200);
 
-    const authenticatedInbox = await fetch(
-      `${baseUrl}/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`,
-      { headers: { authorization: "Bearer merchant-secret" } }
-    );
-    assert.equal(authenticatedInbox.status, 200);
-  }, { merchantAuthToken: "merchant-secret" });
+      const authenticatedInbox = await fetch(
+        `${baseUrl}/counterpilot/merchant/offers?shop=counterpilot-dev.myshopify.com`,
+        { headers: { authorization: "Bearer merchant-secret" } },
+      );
+      assert.equal(authenticatedInbox.status, 200);
+    },
+    { merchantAuthToken: "merchant-secret" },
+  );
 });
 
 test("offer intake rejects buyer messages, checkout URLs, phone numbers, and unknown fields", async () => {
@@ -358,15 +470,18 @@ test("offer intake rejects buyer messages, checkout URLs, phone numbers, and unk
       validOffer({ buyer_message: "Please ship quickly" }),
       validOffer({ checkout_url: "https://example.com/checkout" }),
       validOffer({ phone: "555-0100" }),
-      validOffer({ unsupported_field: "not accepted" })
+      validOffer({ unsupported_field: "not accepted" }),
     ]) {
-      const response = await postJson(`${baseUrl}/counterpilot/offers`, payload);
+      const response = await postJson(
+        `${baseUrl}/counterpilot/offers`,
+        payload,
+      );
       assert.equal(response.status, 400);
     }
 
     await assert.rejects(
       fs.readFile(path.join(dataDir, "offers.jsonl"), "utf8"),
-      { code: "ENOENT" }
+      { code: "ENOENT" },
     );
   });
 });
@@ -381,9 +496,15 @@ test("offer intake validates amount, quantity, currency, product, store, and buy
       validOffer({ shop: " " }),
       validOffer({ product_gid: "" }),
       validOffer({ buyer_email: "" }),
-      validOffer({ buyer_email: "buyer@example.com", buyer_contact_token: "secret-token" })
+      validOffer({
+        buyer_email: "buyer@example.com",
+        buyer_contact_token: "secret-token",
+      }),
     ]) {
-      const response = await postJson(`${baseUrl}/counterpilot/offers`, payload);
+      const response = await postJson(
+        `${baseUrl}/counterpilot/offers`,
+        payload,
+      );
       assert.equal(response.status, 400);
     }
   });
@@ -398,7 +519,11 @@ test("app-proxy signature helper follows Shopify's sorted query-string signing s
   params.append("timestamp", "1");
   params.append("signature", "ignored");
 
-  const expectedMessage = "extra=1,2path_prefix=/apps/counterpilotshop=counterpilot-dev.myshopify.comtimestamp=1";
-  const expected = crypto.createHmac("sha256", "secret").update(expectedMessage, "utf8").digest("hex");
+  const expectedMessage =
+    "extra=1,2path_prefix=/apps/counterpilotshop=counterpilot-dev.myshopify.comtimestamp=1";
+  const expected = crypto
+    .createHmac("sha256", "secret")
+    .update(expectedMessage, "utf8")
+    .digest("hex");
   assert.equal(calculateAppProxySignature(params, "secret"), expected);
 });

@@ -52,7 +52,7 @@ Counterpilot Private Beta v0 has four merchant-facing surfaces:
 1. Setup: enable the product-page offer block, enter margin assumptions, and
    send a test offer.
 2. Offer inbox: view `Product | Asking price | Buyer offer | Estimated margin |
-   Status | Action`.
+Status | Action`.
 3. Buyer accept page: show the counter amount and create checkout only after
    buyer acceptance.
 4. Mature-margin report: show negotiated revenue after cost basis, shipping,

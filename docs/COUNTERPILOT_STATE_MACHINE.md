@@ -59,7 +59,7 @@ predecessor appears. Prior events are never overwritten.
 Money is represented as integer minor units plus an ISO currency code:
 
 ```json
-{"amount_minor": 76000, "currency": "USD"}
+{ "amount_minor": 76000, "currency": "USD" }
 ```
 
 Mixed-currency arithmetic is rejected unless the event carries an explicit

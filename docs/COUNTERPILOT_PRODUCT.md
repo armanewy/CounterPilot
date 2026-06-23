@@ -145,7 +145,7 @@ Private pilot pricing should be simple:
 - Flat pilot fee: `$99-$299/month`.
 - Or a small percentage of Counterpilot-mediated paid negotiated orders.
 - Or a later hybrid: `$49/month + 1% of Counterpilot-mediated paid negotiated
-  orders`.
+orders`.
 
 Do not charge on claimed profit lift yet. The reports are intentionally
 non-causal, so pricing should attach to clearly mediated transactions or a flat
