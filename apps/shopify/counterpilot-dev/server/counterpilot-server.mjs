@@ -12,10 +12,7 @@ const OFFER_POST_PATHS = new Set([
   "/apps/counterpilot/offers"
 ]);
 
-const INBOX_PATHS = new Set([
-  "/counterpilot/merchant/offers",
-  "/apps/counterpilot/merchant/offers"
-]);
+const MERCHANT_INBOX_PATH = "/counterpilot/merchant/offers";
 
 const ALLOWED_OFFER_FIELDS = new Set([
   "shop",
@@ -32,12 +29,25 @@ const ALLOWED_OFFER_FIELDS = new Set([
   "buyer_contact_token"
 ]);
 
-const FORBIDDEN_OFFER_FIELDS = new Set([
+const MERCHANT_ACTION_FIELDS = {
+  accept: new Set(["store_id"]),
+  counter: new Set(["store_id", "counter_amount", "currency"]),
+  decline: new Set(["store_id"])
+};
+
+const MERCHANT_ACTION_EVENTS = {
+  accept: "merchant_accepted",
+  counter: "merchant_countered",
+  decline: "merchant_declined"
+};
+
+const FORBIDDEN_FIELDS = new Set([
   "address",
   "buyer_message",
   "checkout_url",
   "customer_email",
   "customer_name",
+  "merchant_note",
   "message",
   "note",
   "notes",
@@ -57,14 +67,36 @@ class OfferStore {
   }
 
   async append(record) {
-    this.writeQueue = this.writeQueue.then(async () => {
-      await fs.mkdir(this.dataDir, { recursive: true });
-      await fs.appendFile(this.filePath, `${JSON.stringify(record)}\n`, "utf8");
+    const operation = this.writeQueue.then(async () => {
+      await this.#appendDirect(record);
+      return record;
     });
-    return this.writeQueue;
+    this.writeQueue = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
+  async appendWithEvents(factory) {
+    const operation = this.writeQueue.then(async () => {
+      const events = await this.#readDirect();
+      const record = factory(events);
+      await this.#appendDirect(record);
+      return { record, events: [...events, record] };
+    });
+    this.writeQueue = operation.then(() => undefined, () => undefined);
+    return operation;
   }
 
   async list() {
+    await this.writeQueue;
+    return this.#readDirect();
+  }
+
+  async #appendDirect(record) {
+    await fs.mkdir(this.dataDir, { recursive: true });
+    await fs.appendFile(this.filePath, `${JSON.stringify(record)}\n`, "utf8");
+  }
+
+  async #readDirect() {
     try {
       const text = await fs.readFile(this.filePath, "utf8");
       return text
@@ -82,6 +114,55 @@ class OfferStore {
 
 function hashValue(value) {
   return crypto.createHash("sha256").update(String(value), "utf8").digest("hex");
+}
+
+function safeCompareHex(actual, expected) {
+  if (!/^[a-f0-9]+$/i.test(actual) || !/^[a-f0-9]+$/i.test(expected)) {
+    return false;
+  }
+  const actualBuffer = Buffer.from(actual, "hex");
+  const expectedBuffer = Buffer.from(expected, "hex");
+  if (actualBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+function safeCompareText(actual, expected) {
+  const actualBuffer = Buffer.from(String(actual), "utf8");
+  const expectedBuffer = Buffer.from(String(expected), "utf8");
+  if (actualBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+export function calculateAppProxySignature(searchParams, secret) {
+  const grouped = new Map();
+  for (const [key, value] of searchParams) {
+    if (key === "signature") {
+      continue;
+    }
+    const values = grouped.get(key) ?? [];
+    values.push(value);
+    grouped.set(key, values);
+  }
+  const message = [...grouped.entries()]
+    .map(([key, values]) => `${key}=${values.join(",")}`)
+    .sort()
+    .join("");
+  return crypto.createHmac("sha256", secret).update(message, "utf8").digest("hex");
+}
+
+function verifyAppProxySignature(requestUrl, secret) {
+  const signature = requestUrl.searchParams.get("signature");
+  if (!signature) {
+    throw validationError("app proxy signature is required", 401);
+  }
+  const calculated = calculateAppProxySignature(requestUrl.searchParams, secret);
+  if (!safeCompareHex(signature, calculated)) {
+    throw validationError("app proxy signature is invalid", 401);
+  }
 }
 
 function jsonResponse(response, statusCode, body) {
@@ -122,17 +203,25 @@ function parsePositiveInteger(value, fieldName) {
   return parsed;
 }
 
-function parseOfferAmountMinor(value) {
-  const normalized = typeof value === "number" ? String(value) : normalizeString(value, "offer_amount", 32);
+function parseMoneyMinor(value, fieldName) {
+  const normalized = typeof value === "number" ? String(value) : normalizeString(value, fieldName, 32);
   if (!/^(0|[1-9]\d*)(\.\d{1,2})?$/.test(normalized)) {
-    throw validationError("offer_amount must be a positive decimal with at most two cents digits");
+    throw validationError(`${fieldName} must be a positive decimal with at most two cents digits`);
   }
   const [units, cents = ""] = normalized.split(".");
   const amountMinor = Number(units) * 100 + Number(cents.padEnd(2, "0"));
   if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
-    throw validationError("offer_amount must be greater than zero");
+    throw validationError(`${fieldName} must be greater than zero`);
   }
   return amountMinor;
+}
+
+function parseCurrency(value, fieldName = "currency") {
+  const currency = value === undefined ? "USD" : normalizeString(value, fieldName, 3).toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) {
+    throw validationError(`${fieldName} must be a three-letter ISO currency code`);
+  }
+  return currency;
 }
 
 function validationError(message, statusCode = 400) {
@@ -142,14 +231,26 @@ function validationError(message, statusCode = 400) {
   return error;
 }
 
-function validateAllowedFields(payload) {
+function verifyMerchantAuth(request, options) {
+  const merchantAuthToken = options.merchantAuthToken ?? process.env.COUNTERPILOT_MERCHANT_AUTH_TOKEN;
+  if (!merchantAuthToken) {
+    return;
+  }
+  const authorization = request.headers.authorization ?? "";
+  const match = authorization.match(/^Bearer\s+(.+)$/);
+  if (!match || !safeCompareText(match[1], merchantAuthToken)) {
+    throw validationError("merchant authentication is required", 401);
+  }
+}
+
+function validateAllowedFields(payload, allowedFields, surfaceName) {
   for (const key of Object.keys(payload)) {
     const lowerKey = key.toLowerCase();
-    if (FORBIDDEN_OFFER_FIELDS.has(lowerKey)) {
-      throw validationError(`${key} is not accepted by the offer intake route`);
+    if (FORBIDDEN_FIELDS.has(lowerKey)) {
+      throw validationError(`${key} is not accepted by the ${surfaceName} route`);
     }
-    if (!ALLOWED_OFFER_FIELDS.has(key)) {
-      throw validationError(`${key} is not a supported offer field`);
+    if (!allowedFields.has(key)) {
+      throw validationError(`${key} is not a supported ${surfaceName} field`);
     }
   }
 }
@@ -182,32 +283,52 @@ function normalizeBuyerContact(payload) {
   };
 }
 
-export function normalizeOfferPayload(payload, now = new Date()) {
+function resolveAppProxyStoreId(requestUrl, payload, options) {
+  if (!requestUrl.pathname.startsWith("/apps/")) {
+    return null;
+  }
+
+  const appProxySecret = options.appProxySecret
+    ?? process.env.COUNTERPILOT_SHOPIFY_API_SECRET
+    ?? process.env.SHOPIFY_API_SECRET;
+  const requireAppProxySignature = options.requireAppProxySignature
+    ?? process.env.COUNTERPILOT_REQUIRE_APP_PROXY_SIGNATURE === "1";
+  if (appProxySecret) {
+    verifyAppProxySignature(requestUrl, appProxySecret);
+  } else if (requireAppProxySignature) {
+    throw validationError("app proxy signature verification is not configured", 401);
+  }
+
+  const shop = normalizeString(requestUrl.searchParams.get("shop"), "shop");
+  const bodyStoreId = payload.store_id ?? payload.shop;
+  if (bodyStoreId !== undefined && normalizeString(bodyStoreId, "store_id") !== shop) {
+    throw validationError("request shop does not match the signed app proxy shop", 403);
+  }
+  return shop;
+}
+
+export function normalizeOfferPayload(payload, now = new Date(), options = {}) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw validationError("request body must be a JSON object");
   }
-  validateAllowedFields(payload);
+  validateAllowedFields(payload, ALLOWED_OFFER_FIELDS, "offer intake");
 
-  const storeId = normalizeString(payload.store_id ?? payload.shop, "store_id");
+  const storeId = options.trustedStoreId ?? normalizeString(payload.store_id ?? payload.shop, "store_id");
   const productRef = normalizeString(payload.product_ref ?? payload.product_gid, "product_ref", 512);
   const variantRef = payload.variant_ref ?? payload.variant_gid;
   const productTitle = payload.product_title === undefined
     ? null
     : normalizeString(payload.product_title, "product_title", 255);
-  const currency = payload.currency === undefined
-    ? "USD"
-    : normalizeString(payload.currency, "currency", 3).toUpperCase();
-  if (!/^[A-Z]{3}$/.test(currency)) {
-    throw validationError("currency must be a three-letter ISO currency code");
-  }
-
+  const currency = parseCurrency(payload.currency);
   const buyerContact = normalizeBuyerContact(payload);
   const occurredAt = now.toISOString();
+
   return {
-    schema_version: "counterpilot.server_offer.v1",
+    schema_version: "counterpilot.offer_event.v1",
     transaction_id: `cp_offer_${crypto.randomUUID()}`,
     lifecycle_state: "offer_submitted",
     event_type: "offer_submitted",
+    actor_type: "buyer",
     occurred_at: occurredAt,
     received_at: occurredAt,
     source: "counterpilot_theme_block",
@@ -218,7 +339,7 @@ export function normalizeOfferPayload(payload, now = new Date()) {
     variant_reference_hash: variantRef
       ? `sha256:${hashValue(normalizeString(variantRef, "variant_ref", 512))}`
       : null,
-    offer_amount_minor: parseOfferAmountMinor(payload.offer_amount),
+    offer_amount_minor: parseMoneyMinor(payload.offer_amount, "offer_amount"),
     currency,
     quantity: parsePositiveInteger(payload.quantity ?? 1, "quantity"),
     buyer_contact_hash: buyerContact.buyer_contact_hash,
@@ -231,21 +352,115 @@ export function normalizeOfferPayload(payload, now = new Date()) {
   };
 }
 
+function normalizeMerchantPayload(payload, action) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw validationError("request body must be a JSON object");
+  }
+  const allowedFields = MERCHANT_ACTION_FIELDS[action];
+  validateAllowedFields(payload, allowedFields, "merchant action");
+  return {
+    store_id: normalizeString(payload.store_id, "store_id"),
+    counter_amount_minor: action === "counter" ? parseMoneyMinor(payload.counter_amount, "counter_amount") : null,
+    currency: action === "counter" ? parseCurrency(payload.currency) : null
+  };
+}
+
+export function buildOfferSnapshots(events) {
+  const snapshots = new Map();
+  for (const event of events) {
+    if (event.event_type === "offer_submitted") {
+      snapshots.set(event.transaction_id, {
+        transaction_id: event.transaction_id,
+        lifecycle_state: event.lifecycle_state,
+        event_type: event.event_type,
+        submitted_at: event.occurred_at,
+        updated_at: event.occurred_at,
+        store_id: event.store_id,
+        product_title: event.product_title,
+        product_reference_hash: event.product_reference_hash,
+        variant_reference_hash: event.variant_reference_hash,
+        offer_amount_minor: event.offer_amount_minor,
+        currency: event.currency,
+        quantity: event.quantity,
+        buyer_contact_reference: event.buyer_contact_reference
+      });
+      continue;
+    }
+
+    const snapshot = snapshots.get(event.transaction_id);
+    if (!snapshot) {
+      continue;
+    }
+    snapshot.lifecycle_state = event.lifecycle_state;
+    snapshot.event_type = event.event_type;
+    snapshot.updated_at = event.occurred_at;
+    snapshot.merchant_action_at = event.occurred_at;
+    if (event.event_type === "merchant_countered") {
+      snapshot.counter_amount_minor = event.counter_amount_minor;
+      snapshot.counter_currency = event.currency;
+    }
+  }
+  return snapshots;
+}
+
 export function sanitizeOfferForInbox(record) {
   return {
     transaction_id: record.transaction_id,
     lifecycle_state: record.lifecycle_state,
     event_type: record.event_type,
-    submitted_at: record.occurred_at,
+    submitted_at: record.submitted_at,
+    updated_at: record.updated_at,
+    merchant_action_at: record.merchant_action_at,
     store_id: record.store_id,
     product_title: record.product_title,
     product_reference_hash: record.product_reference_hash,
     variant_reference_hash: record.variant_reference_hash,
     offer_amount_minor: record.offer_amount_minor,
+    counter_amount_minor: record.counter_amount_minor,
+    counter_currency: record.counter_currency,
     currency: record.currency,
     quantity: record.quantity,
     buyer_contact_reference: record.buyer_contact_reference
   };
+}
+
+function getSnapshotOrThrow(events, transactionId, storeId) {
+  const snapshots = buildOfferSnapshots(events);
+  const snapshot = snapshots.get(transactionId);
+  if (!snapshot) {
+    throw validationError("offer transaction was not found", 404);
+  }
+  if (snapshot.store_id !== storeId) {
+    throw validationError("offer transaction does not belong to this store", 403);
+  }
+  return snapshot;
+}
+
+function createMerchantActionEvent(snapshot, action, payload, now = new Date()) {
+  if (snapshot.lifecycle_state !== "offer_submitted") {
+    throw validationError(`cannot ${action} an offer in ${snapshot.lifecycle_state} state`, 409);
+  }
+  if (action === "counter" && payload.currency !== snapshot.currency) {
+    throw validationError("counter currency must match the original offer currency");
+  }
+
+  const eventType = MERCHANT_ACTION_EVENTS[action];
+  const event = {
+    schema_version: "counterpilot.offer_event.v1",
+    transaction_id: snapshot.transaction_id,
+    lifecycle_state: eventType,
+    event_type: eventType,
+    actor_type: "merchant",
+    occurred_at: now.toISOString(),
+    store_id: snapshot.store_id,
+    store_reference_hash: `sha256:${hashValue(snapshot.store_id)}`,
+    source: "counterpilot_merchant_surface"
+  };
+  if (action === "counter") {
+    event.counter_amount_minor = payload.counter_amount_minor;
+    event.currency = payload.currency;
+  }
+  return event;
 }
 
 async function readJsonRequest(request, maxBodyBytes) {
@@ -269,9 +484,10 @@ async function readJsonRequest(request, maxBodyBytes) {
   }
 }
 
-async function handleOfferPost(request, response, store, maxBodyBytes) {
+async function handleOfferPost(request, requestUrl, response, store, maxBodyBytes, options) {
   const payload = await readJsonRequest(request, maxBodyBytes);
-  const record = normalizeOfferPayload(payload);
+  const trustedStoreId = resolveAppProxyStoreId(requestUrl, payload, options);
+  const record = normalizeOfferPayload(payload, new Date(), { trustedStoreId });
   await store.append(record);
   jsonResponse(response, 201, {
     received: true,
@@ -284,14 +500,49 @@ async function handleOfferPost(request, response, store, maxBodyBytes) {
   });
 }
 
-async function handleInboxGet(requestUrl, response, store) {
+async function handleInboxGet(request, requestUrl, response, store, options) {
+  verifyMerchantAuth(request, options);
   const storeFilter = requestUrl.searchParams.get("store_id") ?? requestUrl.searchParams.get("shop");
-  const records = await store.list();
-  const offers = records
-    .filter((record) => record.lifecycle_state === "offer_submitted")
+  const events = await store.list();
+  const snapshots = [...buildOfferSnapshots(events).values()]
     .filter((record) => !storeFilter || record.store_id === storeFilter)
     .map(sanitizeOfferForInbox);
-  jsonResponse(response, 200, { count: offers.length, offers });
+  jsonResponse(response, 200, { count: snapshots.length, offers: snapshots });
+}
+
+async function handleOfferDetailGet(transactionId, request, requestUrl, response, store, options) {
+  verifyMerchantAuth(request, options);
+  const storeId = normalizeString(requestUrl.searchParams.get("store_id") ?? requestUrl.searchParams.get("shop"), "store_id");
+  const events = await store.list();
+  const snapshot = getSnapshotOrThrow(events, transactionId, storeId);
+  jsonResponse(response, 200, { offer: sanitizeOfferForInbox(snapshot) });
+}
+
+async function handleMerchantActionPost(transactionId, action, request, response, store, maxBodyBytes, options) {
+  verifyMerchantAuth(request, options);
+  const payload = normalizeMerchantPayload(await readJsonRequest(request, maxBodyBytes), action);
+  const { events } = await store.appendWithEvents((existingEvents) => {
+    const snapshot = getSnapshotOrThrow(existingEvents, transactionId, payload.store_id);
+    return createMerchantActionEvent(snapshot, action, payload);
+  });
+  const snapshot = getSnapshotOrThrow(events, transactionId, payload.store_id);
+  jsonResponse(response, 200, { offer: sanitizeOfferForInbox(snapshot) });
+}
+
+function matchMerchantActionPath(pathname) {
+  const match = pathname.match(/^\/counterpilot\/merchant\/offers\/([^/]+)\/(accept|counter|decline)$/);
+  if (!match) {
+    return null;
+  }
+  return {
+    transactionId: decodeURIComponent(match[1]),
+    action: match[2]
+  };
+}
+
+function matchMerchantDetailPath(pathname) {
+  const match = pathname.match(/^\/counterpilot\/merchant\/offers\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 export function createCounterpilotServer(options = {}) {
@@ -311,11 +562,29 @@ export function createCounterpilotServer(options = {}) {
         return;
       }
       if (request.method === "POST" && OFFER_POST_PATHS.has(requestUrl.pathname)) {
-        await handleOfferPost(request, response, store, maxBodyBytes);
+        await handleOfferPost(request, requestUrl, response, store, maxBodyBytes, options);
         return;
       }
-      if (request.method === "GET" && INBOX_PATHS.has(requestUrl.pathname)) {
-        await handleInboxGet(requestUrl, response, store);
+      if (request.method === "GET" && requestUrl.pathname === MERCHANT_INBOX_PATH) {
+        await handleInboxGet(request, requestUrl, response, store, options);
+        return;
+      }
+      const actionPath = matchMerchantActionPath(requestUrl.pathname);
+      if (request.method === "POST" && actionPath) {
+        await handleMerchantActionPost(
+          actionPath.transactionId,
+          actionPath.action,
+          request,
+          response,
+          store,
+          maxBodyBytes,
+          options
+        );
+        return;
+      }
+      const detailTransactionId = matchMerchantDetailPath(requestUrl.pathname);
+      if (request.method === "GET" && detailTransactionId) {
+        await handleOfferDetailGet(detailTransactionId, request, requestUrl, response, store, options);
         return;
       }
       jsonResponse(response, 404, { error: "not_found" });

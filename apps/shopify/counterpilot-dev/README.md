@@ -18,8 +18,8 @@ shopper submits product-page offer
 This app shell currently contains the product-page theme app extension and a
 minimal local offer intake server used in the development-store proof. It is
 not the complete production app server yet. The next implementation step is
-merchant actions, buyer accept pages, draft order creation, webhook ingest,
-maturity jobs, and report generation.
+buyer accept pages, draft order creation, webhook ingest, maturity jobs, and
+report generation.
 
 ## Current Extension
 
@@ -58,13 +58,34 @@ The local server exposes:
 
 ```text
 POST /counterpilot/offers
+POST /apps/counterpilot/offers
 GET /counterpilot/merchant/offers
+GET /counterpilot/merchant/offers/:transaction_id
+POST /counterpilot/merchant/offers/:transaction_id/accept
+POST /counterpilot/merchant/offers/:transaction_id/counter
+POST /counterpilot/merchant/offers/:transaction_id/decline
 ```
 
 Submitted offers are stored in `.counterpilot-data/offers.jsonl`, which is
 operational storage and is intentionally ignored by Git. The merchant inbox
-route returns pending offers without raw buyer email, raw Shopify GIDs, checkout
-URLs, addresses, phone numbers, or buyer messages.
+routes replay the append-only event log and return current lifecycle state
+without raw buyer email, raw Shopify GIDs, checkout URLs, addresses, phone
+numbers, or buyer messages.
+
+The storefront app-proxy path is buyer-side only:
+
+```text
+POST /apps/counterpilot/offers
+```
+
+Merchant inbox and action routes intentionally remain off `/apps/...` paths.
+For local development they run without merchant auth by default. Set
+`COUNTERPILOT_MERCHANT_AUTH_TOKEN` to require `Authorization: Bearer ...` on
+merchant inbox and action requests.
+
+When an app-proxy secret is configured with `COUNTERPILOT_SHOPIFY_API_SECRET`
+or `SHOPIFY_API_SECRET`, the local server verifies Shopify app-proxy
+`signature` query parameters before accepting storefront offers.
 
 Run against a development store:
 
