@@ -134,6 +134,12 @@ Run the local maturity job against configured local data:
 npm run counterpilot:mature
 ```
 
+Generate the local merchant report:
+
+```powershell
+npm run counterpilot:report
+```
+
 Run against a Shopify development store:
 
 ```powershell
@@ -143,9 +149,10 @@ shopify app dev --store <your-dev-store>.myshopify.com
 The app shell contains the current product-page `Make an Offer` theme app
 extension plus a local server-backed loop for offer submission, merchant
 actions, buyer acceptance, Shopify draft-order checkout creation, paid order and
-refund webhook ingestion, return exposure tracking, and paid-order maturity.
-The next product milestone is merchant report generation through that same
-server-backed path.
+refund webhook ingestion, return exposure tracking, paid-order maturity, and
+merchant report generation. The next product milestone is the demo package:
+a short screen recording, sample generated report, one-page positioning, and a
+pricing hypothesis.
 
 ## Golden Acceptance Test
 

@@ -116,10 +116,14 @@ The app shell includes backend routes for:
 - Shopify `refunds/create` webhook ingest.
 - Shopify return status webhook ingest for maturity exposure.
 - CLI maturity job.
+- CLI merchant report generation.
 
-The remaining implementation needs backend routes or jobs for:
+The remaining product milestone is not another backend route. It is:
 
-- Report generation.
+- Demo package creation.
+- Sample generated merchant report.
+- One-page positioning.
+- Pricing hypothesis.
 
 Use Shopify-native rails where possible:
 
@@ -163,6 +167,26 @@ the config, and whose return exposure and reconciliation state are closed. It
 does not expose raw Shopify IDs, checkout URLs, tokens, buyer contact fields,
 or raw buyer messages.
 
+## Merchant Report Job
+
+After maturity is recorded, generate the merchant-facing report:
+
+```powershell
+cd apps\shopify\counterpilot-dev
+npm run counterpilot:report
+```
+
+The report is written to:
+
+```text
+.counterpilot-data/reports/counterpilot_merchant_report.md
+```
+
+It summarizes the offer funnel, current mature margin, refund and return
+impact, margin leakage, product/SKU breakdown, safe transaction ledger,
+assumptions, and reconciliation notes. It is explicitly non-causal and states
+that Counterpilot is not a recommendation model.
+
 ## Demo Checklist
 
 Before showing the product to another person:
@@ -181,7 +205,7 @@ Before showing the product to another person:
 12. Return exposure handling is either exercised or explicitly skipped with
     reason.
 13. Maturity is recorded with `npm run counterpilot:mature`.
-14. Merchant report is generated.
+14. Merchant report is generated with `npm run counterpilot:report`.
 15. Report/proof/export pass PII scans.
 
 ## Troubleshooting

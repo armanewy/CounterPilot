@@ -17,8 +17,9 @@ shopper submits product-page offer
 
 This app shell currently contains the product-page theme app extension and a
 minimal local offer intake server used in the development-store proof. It is
-not the complete production app server yet. The next implementation step is
-report generation from maturity events.
+not the complete production app server yet. It now includes local maturity and
+merchant report generation. The next milestone is demo-package creation, not
+more backend expansion.
 
 ## Current Extension
 
@@ -57,6 +58,12 @@ Run the local maturity job:
 
 ```shell
 npm run counterpilot:mature
+```
+
+Generate the local merchant report:
+
+```shell
+npm run counterpilot:report
 ```
 
 The local server exposes:
@@ -165,6 +172,13 @@ margin config exists:
 }
 ```
 
+The report job is also an admin/CLI job. It writes a merchant-facing Markdown
+report to `.counterpilot-data/reports/counterpilot_merchant_report.md` by
+replaying the latest sanitized transaction state. Stale mature events are
+excluded from the current margin view after later refunds or open returns until
+a corrected `mature` event exists. The report is explicitly non-causal and says
+Counterpilot is not a recommendation model.
+
 Counterpilot treats `offer_amount_minor`, `counter_amount_minor`, and
 `accepted_amount_minor` as per-unit prices. Order-level negotiated revenue is
 `accepted_amount_minor * quantity`.
@@ -239,5 +253,5 @@ working:
 - Public App Store submission.
 - Cross-merchant analytics.
 
-The immediate job is plumbing, not intelligence: make the manual offer loop work
-end to end and prove mature margin.
+The immediate product job is the demo package: screen recording, sample report,
+one-page positioning, and pricing hypothesis.

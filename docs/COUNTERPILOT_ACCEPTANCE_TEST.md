@@ -74,6 +74,16 @@ reports/counterpilot_dev_store_proof.json
 
 It used Shopify test payment evidence, so `production_evidence` is `false`.
 
+The local server-backed report generator is implemented as:
+
+```text
+npm run counterpilot:report
+```
+
+It writes the merchant-facing report from latest sanitized maturity state. The
+next product milestone after this acceptance test is a demo package, not more
+backend expansion.
+
 ## Blocking Failures
 
 Treat any of these as blockers:
