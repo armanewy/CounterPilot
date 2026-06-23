@@ -68,10 +68,18 @@ decline decisions were manual.
 
 ## Product/SKU Breakdown
 
-| Product                                | Offers | Paid | Current mature | Refunds    | Mature margin |
-| -------------------------------------- | ------ | ---- | -------------- | ---------- | ------------- |
-| Sample Snowboard Bundle (product_a12f) | 2      | 2    | 2              | $15.00 USD | $230.00 USD   |
-| Sample Jacket (product_b87c)           | 1      | 0    | 0              | $0.00 USD  | $0.00 USD     |
+- Sample Snowboard Bundle (product_a12f)
+  - Offers: 2
+  - Paid: 2
+  - Current mature: 2
+  - Refunds: $15.00 USD
+  - Mature margin: $230.00 USD
+- Sample Jacket (product_b87c)
+  - Offers: 1
+  - Paid: 0
+  - Current mature: 0
+  - Refunds: $0.00 USD
+  - Mature margin: $0.00 USD
 
 ## Offer-To-Asking Breakdown
 
@@ -80,11 +88,39 @@ schema does not persist asking_price_minor.
 
 ## Safe Transaction Ledger
 
-| Transaction    | Product                                | Lifecycle | Maturity status              | Offer       | Selected amount | Paid total  | Refund total | Return exposure | Mature margin | Production evidence |
-| -------------- | -------------------------------------- | --------- | ---------------------------- | ----------- | --------------- | ----------- | ------------ | --------------- | ------------- | ------------------- |
-| sample_txn_001 | Sample Snowboard Bundle (product_a12f) | mature    | current_mature               | $610.00 USD | $610.00 USD     | $610.00 USD | $0.00 USD    | closed          | $155.00 USD   | false               |
-| sample_txn_002 | Sample Snowboard Bundle (product_a12f) | mature    | current_mature               | $595.00 USD | $610.00 USD     | $610.00 USD | $15.00 USD   | none            | $75.00 USD    | false               |
-| sample_txn_003 | Sample Jacket (product_b87c)           | paid      | maturity_blocked_open_return | $180.00 USD | $195.00 USD     | $195.00 USD | $0.00 USD    | open            | not current   | false               |
+- sample_txn_001
+  - Product: Sample Snowboard Bundle (product_a12f)
+  - Lifecycle: mature
+  - Maturity status: current_mature
+  - Offer: $610.00 USD
+  - Selected amount: $610.00 USD
+  - Paid total: $610.00 USD
+  - Refund total: $0.00 USD
+  - Return exposure: closed
+  - Mature margin: $155.00 USD
+  - Production evidence: false
+- sample_txn_002
+  - Product: Sample Snowboard Bundle (product_a12f)
+  - Lifecycle: mature
+  - Maturity status: current_mature
+  - Offer: $595.00 USD
+  - Selected amount: $610.00 USD
+  - Paid total: $610.00 USD
+  - Refund total: $15.00 USD
+  - Return exposure: none
+  - Mature margin: $75.00 USD
+  - Production evidence: false
+- sample_txn_003
+  - Product: Sample Jacket (product_b87c)
+  - Lifecycle: paid
+  - Maturity status: maturity_blocked_open_return
+  - Offer: $180.00 USD
+  - Selected amount: $195.00 USD
+  - Paid total: $195.00 USD
+  - Refund total: $0.00 USD
+  - Return exposure: open
+  - Mature margin: not current
+  - Production evidence: false
 
 ## Assumptions Used
 
